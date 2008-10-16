@@ -93,8 +93,8 @@ from advene.gui.util import get_small_stock_button, image_from_position, dialog,
 from advene.gui.views import AdhocViewParametersParser
 import advene.gui.views.timeline
 #import advene.gui.views.activebookmarks
-#from advene.gui.edit.rules import EditRuleSet
-#from advene.gui.edit.dvdselect import DVDSelect
+from advene.gui.edit.rules import EditRuleSet
+from advene.gui.edit.dvdselect import DVDSelect
 from advene.gui.edit.elements import get_edit_popup
 from advene.gui.edit.create import CreateElementPopup
 #from advene.gui.edit.merge import Merger
@@ -105,13 +105,11 @@ from advene.gui.views.logwindow import LogWindow
 #import advene.gui.edit.imports
 #import advene.gui.edit.properties
 #import advene.gui.edit.montage
-#from advene.gui.edit.timeadjustment import TimeAdjustment
+from advene.gui.edit.timeadjustment import TimeAdjustment
 from advene.gui.views.viewbook import ViewBook
 from advene.gui.views.html import HTMLView
-#from advene.gui.views.scroller import ScrollerView
-#from advene.gui.views.caption import CaptionView
+from advene.gui.views.caption import CaptionView
 #import advene.gui.views.annotationdisplay
-from simpletal import simpleTAL
 
 class DummyGlade:
     """Transition class.
@@ -273,7 +271,6 @@ class AdveneGUI(object):
                     ( "", None, "" ),
                     ( _("Evaluator"), self.on_evaluator2_activate, _("Open python evaluator window") ),
                     ( _("Webserver log"), self.on_webserver_log1_activate, "" ),
-                    ( _("Navigation _History"), self.on_navigationhistory1_activate, _("Display navigation history") ),
                     ( _("_MediaInformation"), self.on_view_mediainformation_activate, _("Display information about the media") ),
                     ), "" ),
             (_("_Player"), (
@@ -1209,9 +1206,6 @@ class AdveneGUI(object):
         v=gtk.VBox()
         v.pack_start(hb, expand=False)
         v.pack_start(self.drawable, expand=True)
-        if config.data.preferences['display-scroller']:
-            self.scroller=ScrollerView(controller=self.controller)
-            v.pack_start(self.scroller.widget, expand=False)
         if config.data.preferences['display-caption']:
             self.captionview=CaptionView(controller=self.controller)
             self.register_view(self.captionview)
@@ -2895,9 +2889,11 @@ class AdveneGUI(object):
         return True
 
     def on_import_file1_activate (self, button=None, data=None):
-        v=ExternalImporter(controller=self.controller)
-        w=v.popup()
-        dialog.center_on_mouse(w)
+        # FIXME
+        self.log("FIXME: importer not available yet")
+        #v=ExternalImporter(controller=self.controller)
+        #w=v.popup()
+        #dialog.center_on_mouse(w)
         return False
 
     def on_undo1_activate (self, button=None, data=None):
@@ -3079,12 +3075,6 @@ class AdveneGUI(object):
 
         w.show_all()
 
-        return True
-
-    def on_navigationhistory1_activate (self, button=None, data=None):
-        #FIXME
-        #h=Bookmarks(self.controller, self.navigation_history, closable=False)
-        h.popup()
         return True
 
     def on_view_mediainformation_activate (self, button=None, data=None):
@@ -3529,6 +3519,8 @@ class AdveneGUI(object):
         return True
 
     def on_merge_package_activate(self, button=None, data=None):
+        self.log("FIXME: package merging not available yet")
+        return True
         if config.data.path['data']:
             d=config.data.path['data']
         else:
