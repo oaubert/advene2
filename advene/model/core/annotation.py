@@ -310,6 +310,18 @@ class Annotation(PackageElement, WithContentMixin):
         return self._tales_relations(context).filter(position=1)
 
     @tales_property
+    def _tales_typed_related_in(self, context):
+        """Dictionary of tuples (relation type id, list of related incoming annotations)
+        """
+        return dict( (at.id, r) for (at, r) in self.typed_related_in )
+
+    @tales_property
+    def _tales_typed_related_out(self, context):
+        """Dictionary of tuples (relation type id, list of related outgoing annotations)
+        """
+        return dict( (at.id, r) for (at, r) in self.typed_related_out )
+
+    @tales_property
     def _tales_snapshot_url(self, context):
         options=context.globals['options']
         controller=options['controller']
