@@ -3537,7 +3537,7 @@ class AdveneGUI(object):
         except Exception, e:
             self.log("Cannot load %s file: %s" % (filename, unicode(e)))
             return True
-        m=Merger(self.controller, sourcepackage=source, destpackage=self.controller.package)
+        #m=Merger(self.controller, sourcepackage=source, destpackage=self.controller.package)
         m.popup()
         return True
 

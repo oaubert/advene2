@@ -35,7 +35,7 @@ from advene.model.cam.list import Schema
 from advene.model.cam.resource import Resource
 from advene.model.cam.view import View
 from advene.model.cam.query import Query
-from advene.rules.elements import RuleSet, Rule, Event, Action, SubviewList
+from advene.rules.elements import RuleSet, Rule, Event, Action, SubviewList, SimpleQuery
 
 from advene.gui.util import dialog
 import advene.util.helper as helper
@@ -194,7 +194,7 @@ class CreateElementPopup(object):
             el.title=title_
             if t.id == 'application/x-advene-simplequery':
                 # Create a basic query
-                q=advene.rules.elements.SimpleQuery(source="here")
+                q=SimpleQuery(source="here")
                 el.content.data=q.xml_repr()
             self.controller.notify('QueryCreate', query=el)
         elif self.type_ == View:

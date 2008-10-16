@@ -48,8 +48,7 @@ from advene.model.cam.resource import Resource
 from advene.model.cam.query import Query
 
 from advene.gui.edit.timeadjustment import TimeAdjustment
-#from advene.gui.views.browser import Browser
-#from advene.gui.views.tagbag import TagBag
+from advene.gui.views.tagbag import TagBag
 from advene.gui.util import dialog, get_small_stock_button, get_pixmap_button, name2color
 from advene.gui.util.completer import Completer
 import advene.gui.popup
@@ -1106,10 +1105,7 @@ class TextContentHandler (ContentHandler):
                 b=self.view.get_buffer()
                 b.insert_at_cursor(unicode(e))
             return True
-        browser = Browser(element=self.element,
-                          controller=self.controller,
-                          callback=callback)
-        browser.popup()
+        self.controller.gui.open_adhoc_view('browser', element=self.element, callback=callback)
         return True
 
     def content_set(self, c):

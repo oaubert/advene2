@@ -37,12 +37,12 @@ import cairo
 import urllib
 
 try:
-    import advene.util.ElementTree as ET
+    import xml.etree.ElementTree as ET
 except ImportError:
     try:
         import elementtree.ElementTree as ET
     except ImportError:
-        import xml.etree.ElementTree as ET # python 2.5
+        import advene.util.ElementTree as ET
 
 from gettext import gettext as _
 

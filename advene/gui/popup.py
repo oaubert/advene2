@@ -23,7 +23,6 @@ Generic popup menu used by the various Advene views.
 
 import gtk
 import re
-import os
 
 from gettext import gettext as _
 
@@ -34,7 +33,7 @@ from advene.model.cam.annotation import Annotation
 from advene.model.cam.relation import Relation
 from advene.model.cam.tag import AnnotationType, RelationType
 from advene.model.cam.list import Schema
-from advene.model.cam.resource import Resource
+#from advene.model.cam.resource import Resource
 from advene.model.cam.view import View
 from advene.model.cam.query import Query
 
@@ -558,8 +557,8 @@ class Menu:
             self.add_menuitem(menu, *p, **kw)
         if self.readonly:
             return
-        add_item(_('Create a new folder...'), self.create_element, Resources, element)
-        add_item(_('Create a new resource file...'), self.create_element, ResourceData, element)
+        #add_item(_('Create a new folder...'), self.create_element, Resources, element)
+        #add_item(_('Create a new resource file...'), self.create_element, ResourceData, element)
         add_item(_('Insert a new resource file...'), self.insert_resource_data, element)
         add_item(_('Insert a new resource directory...'), self.insert_resource_directory, element)
         return
