@@ -296,16 +296,13 @@ class WithAbsoluteUrlMixin(object):
         """
         options = context.evaluate("options|nothing")
         if options is None:
-            raise AdveneTalesException
-        packages = options.get("packages")
-        if packages is None:
-            raise AdveneTalesException
-        base = options.get("base_url", "")
-        abs = self._compute_absolute_url(packages)
+            raise AdveneTalesException("Malformed context, options is not defined")
+        base = options.get("package_url", "")
+        abs = self._compute_absolute_url(options['aliases'])
         return _AbsoluteUrl("%s/%s" % (base, abs))
 
-    def _absolute_url_fail(self):
-        raise AdveneTalesException
+    def _absolute_url_fail(self, msg=""):
+        raise AdveneTalesException(msg)
 
 class _AbsoluteUrl(unicode):
     """

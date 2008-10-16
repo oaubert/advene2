@@ -779,26 +779,24 @@ class Package(WithMetaMixin, WithEventsMixin, WithAbsoluteUrlMixin, object):
 
     # TALES properties
 
-    def _compute_absolute_url(self, packages):
+    def _compute_absolute_url(self, aliases):
         """
         Used by `WithAbsoluteUrlMixin`
         """
-        for k,v in packages.iteritems():
-            if v is self:
-                return k
+        a=aliases.get(self, None)
+        if a is not None:
+            return a
         # if we reach that point, self if not in packages
         # try to find a suitable import
         if self.uri:
             kw = {"uri": self.uri}
         else:
             kw = {"url": self.url}
-        for k,v in packages.iteritems():
-            for imp in v.all.iter_imports(**kw):
-                return "%s/%s/package" % (k, imp.make_id_in(v))
+        for p, a in aliases.iteritems():
+            for imp in p.all.iter_imports(**kw):
+                return "%s/%s/package" % (a, imp.make_id_in(p))
         # if we reach that point, there is nothing we can do
-        self._absolute_url_fail()
-
-
+        self._absolute_url_fail("Cannot find reference for package %s" % self.uri)
 
     @property
     def _tales_medias(self):

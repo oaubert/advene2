@@ -545,8 +545,8 @@ class PackageElement(WithMetaMixin, WithEventsMixin, WithAbsUrlMixin, object):
             __contains__ = lambda s,x: self.has_tag(x, context_package)
         return TagCollection(self._owner)
 
-    def _compute_absolute_url(self, packages):
-        base = self._owner._compute_absolute_url(packages)
+    def _compute_absolute_url(self, aliases):
+        base = self._owner._compute_absolute_url(aliases)
         if base[-8:] == "/package":
             # remove '/package' from the end, and add our id
             return "%s:%s" % (base[:-8], self._id)
