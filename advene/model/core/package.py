@@ -802,7 +802,7 @@ class Package(WithMetaMixin, WithEventsMixin, WithAbsoluteUrlMixin, object):
 
     @property
     def _tales_medias(self):
-        return self.all.media
+        return self.all.medias
 
     @property
     def _tales_annotations(self):
