@@ -34,6 +34,7 @@ http://laszlok2.blogspot.com/2006/05/prince-of-cairo_28.html
 """
 
 import struct
+import os
 
 import gtk
 import cairo
@@ -678,7 +679,7 @@ class TagWidget(GenericColorButtonWidget):
             (r, g, b, opacity)=struct.unpack('HHHH', selection.data)
             if self.container is not None and hasattr(self.container, 'controller'):
                 self.tag.color="string:#%04x%04x%04x" % (r, g, b)
-                c.notify('TagUpdate', tag=self.tag)
+                self.container.controller.notify('TagUpdate', tag=self.tag)
             return True
         return False
 
