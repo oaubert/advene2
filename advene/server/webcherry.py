@@ -50,6 +50,7 @@ import advene.util.helper as helper
 from advene.model.cam.package import Package
 from advene.model.tales import AdveneContext
 from advene.model.exceptions import NoSuchElementError, UnreachableImportError
+import advene.util.session
 
 from simpletal.simpleTALES import PathNotFoundException
 from simpletal.simpleTAL import TemplateParseException
@@ -505,6 +506,9 @@ class Packages(Common):
             expr = tales
         else:
             expr = "here/%s" % tales
+
+        # Define the package as root package for the model layer
+        advene.util.session.session.package=self.controller.package
 
         context = self.controller.build_context (here=p, alias=alias)
         context.pushLocals()
