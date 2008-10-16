@@ -15,7 +15,7 @@ which `_SqliteBackend` provides a reference implementation.
 #      read-only access is possible), but also the possibility to lock
 #      differently each package in the database.
 
-from pysqlite2 import dbapi2 as sqlite
+from sqlite3 import dbapi2 as sqlite
 from os        import unlink
 from os.path   import exists
 from urllib    import url2pathname, pathname2url
