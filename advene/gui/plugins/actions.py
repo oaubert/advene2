@@ -294,7 +294,7 @@ class DefaultGUIActions:
             # apply it. Else open the view itself.
             if v.matchFilter['class'] in ('package', '*'):
                 ctx=self.controller.build_context()
-                url=ctx.evaluate('here/absolute_url') + '/view/' + v.id)
+                url=ctx.evaluate('here/absolute_url') + '/view/' + v.id
             else:
                 ctx=self.controller.build_context(here=v)
                 url=ctx.evaluate('here/absolute_url')
