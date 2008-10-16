@@ -22,7 +22,7 @@ from gettext import gettext as _
 import advene.core.config as config
 from advene.rules.elements import RegisteredAction
 
-import advene.model.tal.context
+from advene.model.tales import AdveneTalesException
 import advene.util.helper as helper
 import textwrap
 import gtk
@@ -215,11 +215,11 @@ class DefaultGUIActions:
         """
         if name in parameters:
             try:
-                result=context.evaluateValue(parameters[name])
-            except advene.model.tal.context.AdveneTalesException, e:
+                result=context.evaluate(parameters[name])
+            except AdveneTalesException, e:
                 try:
-                    rulename=context.evaluateValue('rule')
-                except advene.model.tal.context.AdveneTalesException:
+                    rulename=context.evaluate('rule')
+                except AdveneTalesException:
                     rulename=_("Unknown rule")
                 self.controller.log(_("Rule %(rulename)s: Error in the evaluation of the parameter %(parametername)s:") % {'rulename': rulename,
                                                                                                                           'parametername': name})
@@ -231,10 +231,10 @@ class DefaultGUIActions:
 
     def related_annotation_expressions(self, controller):
         p=[]
-        for t in controller.package.relationTypes:
-            p.append( ('annotation/typedRelatedOut/%s/first/begin' % t.id,
+        for t in controller.package.all.relation_types:
+            p.append( ('annotation/typed_related_out/%s/first/begin' % t.id,
                        _("The %s-related outgoing annotation") % controller.get_title(t)) )
-            p.append( ('annotation/typedRelatedIn/%s/first/begin' % t.id,
+            p.append( ('annotation/typed_related_in/%s/first/begin' % t.id,
                        _("The %s-related incoming annotation") % controller.get_title(t)) )
         return p
 
@@ -294,10 +294,10 @@ class DefaultGUIActions:
             # apply it. Else open the view itself.
             if v.matchFilter['class'] in ('package', '*'):
                 ctx=self.controller.build_context()
-                url=ctx.evaluateValue('here/view/%s/absolute_url' % v.id)
+                url=ctx.evaluate('here/absolute_url') + '/view/' + v.id)
             else:
                 ctx=self.controller.build_context(here=v)
-                url=ctx.evaluateValue('here/absolute_url')
+                url=ctx.evaluate('here/absolute_url')
             if url:
                 self.controller.open_url(url)
         elif t == 'dynamic':
@@ -536,7 +536,7 @@ class DefaultGUIActions:
             self.gui.popupwidget.undisplay(widget)
             return True
 
-        annotation=context.evaluateValue('annotation')
+        annotation=context.evaluate('annotation')
         if annotation is None:
             return True
         relations=annotation.outgoingRelations
