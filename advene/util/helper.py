@@ -43,7 +43,7 @@ from advene.model.cam.view import View
 from advene.model.cam.query import Query
 from advene.util.defaultdict import DefaultDict
 from advene.model.consts import DC_NS_PREFIX, ADVENE_NS_PREFIX
-from advene.model.tales import AdveneTalesException
+from advene.model.tales import AdveneTalesException, iter_global_methods
 
 # Initialize ElementTree namespace map with our own prefixes
 import xml.etree.ElementTree as ET
@@ -399,14 +399,12 @@ def get_valid_members (el):
             pl.append(name)
     if pl:
         l.append(_('---- Methods ----'))
-        l.extend(pl)
-    # Global methods
-    # FIXME 
-    # l.extend (AdveneContext.defaultMethods ())
-    # User-defined global methods
-    #FIXME
-    # l.extend (config.data.global_methods)
+        l.extend(sorted(pl))
 
+    pl=list(iter_global_methods())
+    if pl:
+        l.append(_('--- Global methods ---'))
+        l.extend(sorted(pl))
     return l
 
 def get_statistics(fname):
