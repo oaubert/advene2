@@ -2,6 +2,9 @@
 I define the common super-class of all package element classes.
 """
 
+import re
+from itertools import islice
+
 from advene.model.consts import _RAISE
 from advene.model.core.meta import WithMetaMixin
 from advene.model.events import ElementEventDelegate, WithEventsMixin
@@ -12,8 +15,6 @@ from advene.model.tales import tales_property, tales_use_as_context,\
 from advene.util.alias import alias
 from advene.util.autoproperty import autoproperty
 from advene.util.session import session
-
-from itertools import islice
 
 # the following constants must be used as values of a property ADVENE_TYPE
 # in all subclasses of PackageElement
@@ -553,7 +554,29 @@ class PackageElement(WithMetaMixin, WithEventsMixin, WithAbsUrlMixin, object):
         else:
             return "%s/%s" % (base, self._id)
 
-
+    @tales_property
+    def _tales_representation(self, context):
+        """Return a concise representation for the element.
+        """
+        c=context.globals['options']['controller']
+        return c.get_title(self)
+    
+    @tales_property
+    def _tales_color(self, context):
+        """Return the color of the element.
+        """
+        c=context.globals['options']['controller']
+        col=c.get_element_color(self)
+        if col is None:
+            return col
+        m=re.search('#(..)..(..)..(..)..', col)
+        if m:
+            # Approximate the color, since CSS specification only
+            # allows 24-bit color definition
+            return '#'+''.join(m.groups())
+        else:
+            return col
+    
 class DeletedPackageElement(object):
     """
     I am just a dummy class to which deleted elements are mutated.
