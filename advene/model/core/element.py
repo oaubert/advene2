@@ -715,6 +715,21 @@ class ElementCollection(object):
                 raise NotImplementedError("RestCollection can not be filtered")
         return RestCollection(self)
 
+class ElementCollectionWrapper(ElementCollection):
+    """Wrap an ElementCollection around an existing list.
+    """
+    def __init__(self, l, p):
+        super(ElementCollectionWrapper, self).__init__(p)
+        self._wrapped=l
+
+    def __len__(self):
+        return len(self._wrapped)
+
+    def __iter__(self):
+        return self._wrapped.__iter__()
+
+    def __getitem__(self, i):
+        return self._wrapped.__getitem__(i)
 
 class Reference(object):
     """
