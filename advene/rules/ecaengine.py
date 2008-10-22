@@ -29,10 +29,9 @@ import sched
 import threading
 import copy
 import StringIO
-import urllib
 
 from advene.util.session import session
-import advene.rules.elements
+from advene.rules.elements import Action, ActionList, Rule, RuleSet, ECACatalog
 
 class ECAEngine:
     """ECAEngine class.
@@ -73,7 +72,7 @@ class ECAEngine:
         # History of events
         self.event_history = []
         self.controller=controller
-        self.catalog=advene.rules.elements.ECACatalog()
+        self.catalog=ECACatalog()
         self.scheduler=sched.scheduler(time.time, time.sleep)
         self.schedulerthread=threading.Thread(target=self.scheduler.run)
 
@@ -100,9 +99,9 @@ class ECAEngine:
         # Note: to add an additional class, do not forget to update
         # the notify method
         self.rulesets = {
-            'default': advene.rules.elements.RuleSet(),
-            'internal': advene.rules.elements.RuleSet(),
-            'user': advene.rules.elements.RuleSet()
+            'default': RuleSet(),
+            'internal': RuleSet(),
+            'user': RuleSet(),
             }
 
     def clear_ruleset(self, type_='user'):
@@ -111,7 +110,7 @@ class ECAEngine:
         @param type_: the ruleset's class
         @type type_: string
         """
-        self.rulesets[type_] = advene.rules.elements.RuleSet()
+        self.rulesets[type_] = RuleSet()
         self.update_rulesets()
 
     def extend_ruleset(self, rs, type_='user'):
@@ -158,7 +157,7 @@ class ECAEngine:
         @return: the new ruleset
         @rtype: RuleSet
         """
-        self.rulesets[type_] = advene.rules.elements.RuleSet(uri=filename, catalog=self.catalog, priority=priority)
+        self.rulesets[type_] = RuleSet(uri=filename, catalog=self.catalog, priority=priority)
         self.update_rulesets()
         return self.rulesets[type_]
 
@@ -188,7 +187,7 @@ class ECAEngine:
         @param delay: a delay for execution (in s)
         @type delay: float
         """
-        if isinstance(action, advene.rules.elements.ActionList):
+        if isinstance(action, ActionList):
             for a in action:
                 self.schedule(a, context, delay)
             return
@@ -280,11 +279,11 @@ class ECAEngine:
         """
         if method is None or event is None:
             return
-        rule=advene.rules.elements.Rule(name="internal",
-                                        priority=200,
-                                        event=event,
-                                        condition=condition,
-                                        action=advene.rules.elements.Action(method=method))
+        rule=Rule(name="internal",
+                  priority=200,
+                  event=event,
+                  condition=condition,
+                  action=Action(method=method))
         self.add_rule(rule, 'internal')
         return rule
 
@@ -337,91 +336,6 @@ class ECAEngine:
         A special named parameter is delay, which will be given in ms.
         It contains the delay to apply to the rule execution.
         """
-        #print "notify %s for %s" % (event_name, str(kw))
-
-        if config.data.preferences['record-actions']:
-            # FIXME: we should not store the whole element, it is too costly
-            d=dict(kw)
-            d['event_name'] = event_name
-            d['parameters'] = param
-            # Store timestamp in ms since the application start
-            d['timestamp'] = (time.time() - config.data.startup_time) * 1000
-            d['movie'] = self.controller.player.get_default_media()
-            d['movietime'] = self.controller.player.current_position_value
-	        # package uri annotation relation annotationtype relationtype schema
-	        # Logging content depending on keys
-            if 'uri' in d:
-                d['content']='movie="'+str(d['uri'])+'"'
-            if 'element' in d:
-                if isinstance(d['element'],advene.model.annotation.Annotation):
-                    #print "%s" % d['element']
-                    d['annotation']=d['element']
-                elif isinstance(d['element'],advene.model.annotation.Relation):
-                    d['relation']=d['element']
-                elif isinstance(d['element'],advene.model.schema.AnnotationType):
-                    d['annotationtype']=d['element']
-                elif isinstance(d['element'],advene.model.schema.RelationType):
-                    d['relationtype']=d['element']
-                elif isinstance(d['element'],advene.model.schema.Schema):
-                    d['schema']=d['element']
-                elif isinstance(d['element'],advene.model.view.View):
-                    d['view']=d['element']
-                elif isinstance(d['element'],advene.model.package.Package):
-                    d['package']=d['element']
-            if 'annotation' in d:
-                a=d['annotation']
-                if a is not None:
-                    d['content']= "\n".join(
-		            ( 'annotation=' + a.id,
-                      'type=' + a.type.id,
-                      'mimetype=' + a.type.mimetype,
-                      'content="'+ urllib.quote(a.content.data.encode('utf-8'))+'"')
-		            )
-            elif 'relation' in d:
-                r=d['relation']
-                if r is not None:
-                    d['content']= "\n".join(
-                    ( 'relation=' + r.id,
-                      'type=' + r.type.id,
-                      'mimetype=' + r.type.mimetype,
-                      'source=' + r.members[0].id,
-                      'dest=' + r.members[1].id ) 
-                    )
-            elif 'annotationtype' in d:
-                at=d['annotationtype']
-                if at is not None:
-                    d['content']= "\n".join(
-                    ('annotationtype='+at.id,
-                     'schema=' + at.schema.id,
-                     'mimetype=' + at.mimetype)
-                    )
-            elif 'relationtype' in d:
-                rt=d['relationtype']
-                if rt is not None:
-                    d['content']= "\n".join(
-                    ('relationtype=' + rt.id,
-                     'schema=' + rt.schema.id,
-                     'mimetype=' + rt.mimetype)
-                    )
-            elif 'schema' in d:
-                s=d['schema']
-                if s is not None:
-                    d['content']= 'schema=' + s.id
-            elif 'view' in d:
-                v=d['view']
-                if v is not None:
-                    if isinstance(v, advene.model.view.View):
-                        d['content']= "\n".join(
-                        ('view=' + v.id,
-                         'content="'+ urllib.quote(v.content.data.encode('utf-8'))+'"')
-                        )
-                    else:
-                        d['content']= 'view=' + str(v)
-            elif 'package' in d:
-                p=d['package']
-                if p is not None:
-                    d['content']= 'package=' + p.title
-            self.event_history.append(d)
         immediate=False
         if 'immediate' in kw:
             immediate=True
