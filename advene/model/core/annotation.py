@@ -5,7 +5,7 @@ I define the class of annotations.
 import itertools
 
 from advene.model.consts import _RAISE
-from advene.model.core.element import PackageElement, ElementCollection, \
+from advene.model.core.element import PackageElement, ElementCollection, ElementCollectionWrapper, \
                                       ANNOTATION, MEDIA, RESOURCE, RELATION
 from advene.model.core.content import WithContentMixin
 from advene.model.tales import tales_property, tales_use_as_context
@@ -313,13 +313,13 @@ class Annotation(PackageElement, WithContentMixin):
     def _tales_typed_related_in(self, context):
         """Dictionary of tuples (relation type id, list of related incoming annotations)
         """
-        return dict( (at.id, r) for (at, r) in self.typed_related_in )
+        return dict( (at.id, ElementCollectionWrapper(r, session.package)) for (at, r) in self.typed_related_in )
 
     @tales_property
     def _tales_typed_related_out(self, context):
         """Dictionary of tuples (relation type id, list of related outgoing annotations)
         """
-        return dict( (at.id, r) for (at, r) in self.typed_related_out )
+        return dict( (at.id, ElementCollectionWrapper(r, session.package)) for (at, r) in self.typed_related_out )
 
     @tales_property
     def _tales_snapshot_url(self, context):
