@@ -564,6 +564,15 @@ class MediaColumn(FinderColumn):
         hb.pack_start(self.url_label)
         vbox.pack_start(hb, expand=False)
 
+        def display_annotations(b):
+            node=ListNode( [ a for a in self.controller.package.all.annotations if a.media == self.node.element ], _("Annotations"))
+            self.callback(self, node)
+            return True
+
+        b=gtk.Button(_("Annotations"))
+        b.connect('clicked', display_annotations)
+        vbox.pack_start(b, expand=False)
+
         vbox.show_all()
         return vbox
 CLASS2COLUMN[Media]=MediaColumn
