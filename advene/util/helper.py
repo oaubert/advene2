@@ -366,10 +366,10 @@ def get_valid_members (el):
         l.insert(0, _('---- Elements ----'))
 
     # Introspection
-    pl=sorted(e[0].replace('_tales_', '')
-              for e in inspect.getmembers(type(el))
-              if e[0].startswith('_tales_') or (
-            isinstance(e[1], property) and e[1].fget is not None))
+    pl=sorted(set(e[0].replace('_tales_', '')
+                  for e in inspect.getmembers(type(el))
+                  if e[0].startswith('_tales_') or (
+                isinstance(e[1], property) and e[1].fget is not None)))
     if pl:
         l.append(_('---- Attributes ----'))
         l.extend(pl)
