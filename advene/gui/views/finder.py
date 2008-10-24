@@ -340,12 +340,18 @@ class RelationColumn(FinderColumn):
         self.view.set_relation(node.element)
         return True
 
+    
     def build_widget(self):
         vbox=gtk.VBox()
 
+        def annotation_callback(button):
+            node=Node(button.annotation, self.controller.get_title(button.annotation))
+            self.callback(self, node)
+            return True
+
         l=gtk.Button(_("Relation"), use_underline=False)
         vbox.pack_start(l, expand=False)
-        self.view=RelationDisplay(controller=self.controller, relation=self.node.element)
+        self.view=RelationDisplay(controller=self.controller, relation=self.node.element, annotation_callback=annotation_callback)
         vbox.add(self.view.widget)
         vbox.show_all()
         return vbox
