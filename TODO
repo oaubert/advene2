@@ -1,6 +1,8 @@
 Questions
 =========
 
+- backend method: search_string + options
+
 - How to properly implement TALES query ? It was a global method, but
    it could be a core.element method, although it prevents its use as
    a filter on a standard list.
