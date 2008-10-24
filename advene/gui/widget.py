@@ -759,16 +759,19 @@ gobject.type_register(TimestampMarkWidget)
 class AnnotationRepresentation(gtk.Button):
     """Representation for an annotation.
     """
-    def __init__(self, annotation, controller):
+    def __init__(self, annotation, controller, callback=None):
         super(AnnotationRepresentation, self).__init__()
         self.annotation=annotation
         self.controller=controller
+        self.callback=callback
         self.add(self.controller.gui.get_illustrated_text(text=self.controller.get_title(annotation),
                                                           position=annotation.begin,
                                                           vertical=False,
                                                           height=20))
         self.connect('button-press-event', self.button_press_handler, annotation)
         self.connect('drag-data-get', self.drag_sent)
+        if self.callback is not None:
+            self.connect('clicked', callback)
         # The widget can generate drags
         self.drag_source_set(gtk.gdk.BUTTON1_MASK,
                              config.data.drag_type['annotation']

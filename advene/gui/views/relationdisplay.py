@@ -39,12 +39,15 @@ class RelationDisplay(AdhocView):
     view_id = 'relationdisplay'
     tooltip = _("Display the contents of a relation")
 
-    def __init__(self, controller=None, parameters=None, relation=None):
+    def __init__(self, controller=None, parameters=None, relation=None, annotation_callback=None):
+        """
+        """
         super(RelationDisplay, self).__init__(controller=controller)
         self.close_on_package_load = True
         self.contextual_actions = ()
         self.controller=controller
         self.relation=relation
+        self.annotation_callback=annotation_callback
         self.widget=self.build_widget()
         self.refresh()
 
@@ -91,7 +94,7 @@ class RelationDisplay(AdhocView):
             self.label['title'].set_markup(title)
             self.label['contents'].set_text('')
             for a in self.relation:
-                self.members_widget.pack_start(AnnotationRepresentation(a, self.controller), expand=False)
+                self.members_widget.pack_start(AnnotationRepresentation(a, self.controller, callback=self.annotation_callback), expand=False)
             self.widget.show_all()
         return False
 
