@@ -1,6 +1,8 @@
 Questions
 =========
 
+- filter elements against media
+
 - backend method: search_string + options
 
 - How to properly implement TALES query ? It was a global method, but
