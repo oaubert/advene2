@@ -529,7 +529,6 @@ class AdveneGUI(object):
             l=[ (_("All annotations"),
                  None) ] + [
                 (_("Annotations of type %s") % self.controller.get_title(at),
-                 # FIXME: invalid expression here. We should use iter_elements(p)
                  'here/all/annotation_types/%s/annotations' % at.id) for at in self.controller.package.all.annotation_types ] + [ (_("Views"), 'here/all/views'), (_("Tags"), 'tags'), (_("Ids"), "ids") ]
             for (label, expression) in l:
                 i=gtk.CheckMenuItem(label, use_underline=False)
@@ -4101,8 +4100,7 @@ class AdveneGUI(object):
             if filename.endswith('.txt'):
                 # Intermediary import. Fix some details.
                 at=i.annotationtype
-                # FIXME
-                #at.mimetype='application/x-advene-structured'
+                at.mimetype='application/x-advene-structured'
                 at.representation='here/content/parsed/num'
                 at.title=_("Incomplete shots")
             self.controller.package._modified = True
