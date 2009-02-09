@@ -525,7 +525,7 @@ class Packages(Common):
         try:
             objet = context.evaluate(expr)
         except PathNotFoundException, e:
-            self.start_html (_("Error"), duplicate_title=True. mode='navigation')
+            self.start_html (_("Error"), duplicate_title=True, mode='navigation')
             res.append (_("""The TALES expression %s is not valid.""") % tales)
             res.append (unicode(e.args).encode('utf-8'))
             return "".join(res)

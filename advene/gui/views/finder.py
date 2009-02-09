@@ -39,7 +39,7 @@ from advene.model.cam.media import Media
 import advene.rules.elements
 import advene.gui.popup
 import advene.util.helper as helper
-from advene.gui.util import drag_data_get_cb, get_target_types, enable_drag_source, contextual_drag_begin, name2color
+from advene.gui.util import drag_data_get_cb, get_target_types, enable_drag_source, contextual_drag_begin
 
 name="Package finder view plugin"
 

@@ -22,7 +22,6 @@
 import sys
 import re
 import os
-import operator
 
 import gtk
 

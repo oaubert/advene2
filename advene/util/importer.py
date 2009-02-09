@@ -237,7 +237,8 @@ class GenericImporter(object):
 
         a=self.package.create_annotation(type=type_,
                                          ident=ident,
-                                         fragment=MillisecondFragment(begin=begin, end=end))
+                                         begin=begin, 
+                                         end=end)
         a.author=author
         a.date=timestamp
         a.title=title

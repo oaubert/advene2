@@ -21,7 +21,6 @@
 # http://visionegg.org/trac/file/trunk/visionegg/VisionEgg/qtlowlevel.py
 # which is LGPL
 
-import os
 import ctypes
 
 # FIXME: use registry to locate DLL

@@ -25,7 +25,6 @@ import os
 import time
 
 import advene.util.spawn as spawn
-import Image
 
 class StreamInformation:
     def __init__(self):
@@ -66,7 +65,7 @@ class PlayerLauncher:
         """Run the Xine player
         """
         if not self.launcher.start ():
-            raise Exception(_("Cannot start the player"))
+            raise Exception("Cannot start the player")
         return
 
     def init (self):
@@ -307,10 +306,10 @@ class Player:
         s.streamstatus=Player.UndefinedStatus
 
         l=self.get_multiline_command('playlist show')
-        re=re.compile('\*>\s+\d+\s+(.+)$')
-        v=[ re.search(i).group(1)
+        rgx=re.compile('\*>\s+\d+\s+(.+)$')
+        v=[ rgx.search(i).group(1)
             for i in l
-            if re.search(i) ]
+            if rgx.search(i) ]
         if len(v) == 1:
             s.url=v[0]
 

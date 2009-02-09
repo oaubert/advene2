@@ -17,7 +17,6 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #
 import sys
-import sets
 import re
 import cgi
 import struct
@@ -31,7 +30,6 @@ import advene.core.config as config
 
 from advene.model.schema import AnnotationType, RelationType
 from advene.model.annotation import Annotation, Relation
-from advene.model.fragment import MillisecondFragment
 from advene.gui.views import AdhocView
 import advene.gui.edit.elements
 from advene.gui.edit.create import CreateElementPopup

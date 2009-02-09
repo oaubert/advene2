@@ -19,8 +19,6 @@
 """Dialogs for the creation of new elements.
 """
 
-import advene.core.config as config
-
 from gettext import gettext as _
 
 import sys

@@ -36,6 +36,8 @@ http://laszlok2.blogspot.com/2006/05/prince-of-cairo_28.html
 import struct
 import os
 
+from gettext import gettext as _
+
 import gtk
 import cairo
 import pango

@@ -29,7 +29,6 @@ import sched
 import threading
 import copy
 import StringIO
-import urllib
 
 from advene.util.session import session
 from advene.rules.elements import Action, ActionList, Rule, RuleSet, ECACatalog

@@ -46,7 +46,7 @@ from advene.model.cam.view import View
 from advene.model.cam.query import Query
 from advene.util.defaultdict import DefaultDict
 from advene.model.consts import DC_NS_PREFIX, ADVENE_NS_PREFIX
-from advene.model.tales import AdveneTalesException, iter_global_methods
+from advene.model.tales import iter_global_methods
 
 # Initialize ElementTree namespace map with our own prefixes
 import xml.etree.ElementTree as ET
@@ -136,15 +136,7 @@ def snapshot2png (image, output=None):
         png=TypedString(image.data)
         png.contenttype='image/png'
     elif code is not None:
-        try:
-            i = Image.fromstring ("RGB", (image.width, image.height), image.data,
-                                  "raw", code)
-            ostream = StringIO.StringIO ()
-            i.save(ostream, 'png')
-            png=TypedString(ostream.getvalue())
-            png.contenttype='image/png'
-        except NameError:
-            print "snapshot: conversion module not available"
+        print "snapshot: conversion module not available"
     else:
         print "snapshot: unknown image type ", repr(image.type)
 
@@ -425,16 +417,16 @@ def get_statistics(fname):
         try:
             z=zipfile.ZipFile(fname, 'r')
         except Exception, e:
-            raise AdveneException(_("Cannot read %(filename)s: %(error)s") % {'filename': fname,
+            raise Exception(_("Cannot read %(filename)s: %(error)s") % {'filename': fname,
                                                                               'error': unicode(e)})
 
         # Check the validity of mimetype
         try:
             typ = z.read('mimetype')
         except KeyError:
-            raise AdveneException(_("File %s is not an Advene zip package.") % fname)
-        if typ != advene.model.zippackage.MIMETYPE:
-            raise AdveneException(_("File %s is not an Advene zip package.") % fname)
+            raise Exception(_("File %s is not an Advene zip package.") % fname)
+        if typ != 'foo': # FIXME advene.model.zippackage.MIMETYPE:
+            raise Exception(_("File %s is not an Advene zip package.") % fname)
 
         try:
             st=z.read('META-INF/statistics.xml')
@@ -457,6 +449,7 @@ def get_statistics(fname):
     s=StringIO.StringIO(st)
     #h=advene.model.package.StatisticsHandler()
     #data=h.parse_file(s)
+    data={}
     s.close()
 
     m=_("""Package %(title)s:
