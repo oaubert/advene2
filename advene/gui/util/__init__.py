@@ -328,7 +328,7 @@ def drag_data_get_cb(widget, context, selection, targetType, timestamp, controll
         # Directly pass URIs for Annotation, types and views
         if not isinstance(el, d[targetType]):
             return False
-        selection.set(selection.target, 8, el.uri.encode('utf8'))
+        selection.set(selection.target, 8, el.uriref.encode('utf8'))
         return True
     elif targetType == typ['adhoc-view']:
         if helper.get_view_type(el) != 'adhoc':

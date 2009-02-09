@@ -193,7 +193,7 @@ class AnnotationTable(AdhocView):
         els=[ model[p][COLUMN_ELEMENT] for p in paths ]
 
         if targetType == config.data.target_type['annotation']:
-            selection.set(selection.target, 8, "\n".join( e.uri.encode('utf8')
+            selection.set(selection.target, 8, "\n".join( e.uriref.encode('utf8')
                                                           for e in els
                                                           if isinstance(e, Annotation) ))
             return True
