@@ -794,22 +794,20 @@ class AdveneController(object):
         # This does not really belong here, but it is the more convenient and
         # maybe more effective way to implement it
 
-        # FIXME FIXME: this should be implemented through the model's signals
-
-        #if event_name in self.modifying_events:
+        if event_name in self.modifying_events:
             # Find the element's package
             # Kind of hackish... This information should be clearly available somewhere
             # FIXME: to redo completely
-            #el_name=event_name.lower().replace('create','').replace('editend','').replace('delete', '')
-            #el=kw[el_name]
-            #p=el.owner
-            #p._modified = True
-            #if event_name.endswith('Delete'):
-            #    # We removed an element, so remove its id from the _idgenerator set
-            #    p._idgenerator.remove(el.id)
-            #elif event_name.endswith('Create'):
-            #    # We created an element. Make sure its id is registered in the _idgenerator
-            #    p._idgenerator.add(el.id)
+            el_name=event_name.lower().replace('create','').replace('editend','').replace('delete', '')
+            el=kw[el_name]
+            p=el.owner
+            p._modified = True
+            if event_name.endswith('Delete'):
+                # We removed an element, so remove its id from the _idgenerator set
+                p._idgenerator.remove(el.id)
+            elif event_name.endswith('Create'):
+                # We created an element. Make sure its id is registered in the _idgenerator
+                p._idgenerator.add(el.id)
 
         if 'immediate' in kw:
             self.event_handler.notify(event_name, *param, **kw)
@@ -1196,7 +1194,7 @@ class AdveneController(object):
                                                 media=annotation.media,
                                                 begin=annotation.begin,
                                                 end=annotation.end,
-                                                mimetype='FIXME',
+                                                mimetype=annotationType.mimetype,
                                                 type = annotationType)
 
         if position is not None:
@@ -1209,14 +1207,13 @@ class AdveneController(object):
         # FIXME: we need a generic type conversion framework here
         an.content.data=annotation.content.data
 
-        # FIXME: how to know annotation.relations ?
-        #if delete and not annotation.relations:
-        #    if notify:
-        #        self.notify('EditSessionStart', element=annotation, immediate=True)
-        #    #self.package.annotations.remove(annotation)
-        #    if notify:
-        #        self.notify('AnnotationMove', annotation=annotation, comment="Transmute annotation")
-        #        self.notify('AnnotationDelete', annotation=annotation, comment="Transmute annotation")
+        if delete and not annotation.relations:
+            if notify:
+                self.notify('EditSessionStart', element=annotation, immediate=True)
+            annotation.delete()
+            if notify:
+                self.notify('AnnotationMove', annotation=annotation, comment="Transmute annotation")
+                self.notify('AnnotationDelete', annotation=annotation, comment="Transmute annotation")
         if notify:
             if delete:
                 self.notify('AnnotationEditEnd', annotation=an, comment="Transmute annotation")
@@ -1232,7 +1229,7 @@ class AdveneController(object):
                                             media=annotation.media,
                                             begin=annotation.end,
                                             end=annotation.end + annotation.duration,
-                                            mimetype='FIXME',
+                                            mimetype=annotation.type.mimetype,
                                             type=annotation.type)
         if an.end > annotation.media.duration:
             an.end = annotation.media.duration
