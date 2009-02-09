@@ -2570,8 +2570,8 @@ class TimeLine(AdhocView):
                     elif action == 'cancel':
                         # Delete the annotation
                         self.controller.notify('EditSessionStart', element=an, immediate=True)
-                        an.delete()
                         self.controller.notify('AnnotationDelete', annotation=an)
+                        an.delete()
                     return True
 
                 if (self.controller.player.status != self.controller.player.PlayingStatus
