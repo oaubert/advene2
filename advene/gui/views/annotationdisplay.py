@@ -129,7 +129,7 @@ class AnnotationDisplay(AdhocView):
                 data=self.annotation.content.parsed()
                 svg_data='''<svg xmlns='http://www.w3.org/2000/svg' version='1' viewBox="0 0 320 300" x='0' y='0' width='320' height='200'><%(shape)s style="fill:none;stroke:green;stroke-width:2;" width="%(width)s%%" height="%(height)s%%" x="%(x)s%%" y="%(y)s%%"></rect></svg>''' % data
             if svg_data:
-                pixbuf=overlay_svg_as_pixbuf(self.controller.package.imagecache[self.annotation.media.od][self.annotation.begin],
+                pixbuf=overlay_svg_as_pixbuf(self.controller.package.imagecache[self.annotation.media.id][self.annotation.begin],
                                              self.annotation.content.data)
                 d['contents']=''
                 d['imagecontents']=pixbuf
