@@ -1,0 +1,44 @@
+*** Conversion stopped at 
+gui.plugins.actions: define CreateBookmark action
+5602
+***
+
+* cached_duration -> max_duration
+* get_default_media -> get_current_mediafile
+* get_stbv_list -> stbv_list (property)
+* get_utbv_list -> utbv_list (property)
+
+
+* get_id -> replace
+
+annotationTypes -> all.annotation_types
+relationTypes -> all.relation_types
+content.stream -> content.get_as_file()
+el.getMetaData(...) -> el.meta.get(...)
+evaluateValue -> evaluate
+controller.get_timestamp -> config.data....
+
+uri -> uriref (except for packages)
+
+fragment -> *suppress*
+
+Check ADVENE_NS_PREFIX vs config.data.namespace issues (cf controller.utbv_list)
+
+helper.get_id -> package.get
+
+createView -> create_view (...)
+
+setData -> data
+
+get_element_by_id -> *suppress*
+
+author->creator/contributor
+date->created/modified
+
+TODO: timestamp DND target should have a media-id attr
+TODO: meta.get/set -> remove "/".join
+
+TODO: _fieldnames -> attr. of annotation type
+TODO: imagecache -> attr. of media
+TODO: ElementEditBegin->EditSessionStart
+      ElementEditEnd -> EditSessionEnd
