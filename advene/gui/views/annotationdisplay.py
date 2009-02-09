@@ -20,14 +20,13 @@
 """
 
 import gtk
-import gobject
 from gettext import gettext as _
 
 import advene.core.config as config
 from advene.core.imagecache import ImageCache
 from advene.gui.views import AdhocView
 import advene.util.helper as helper
-from advene.gui.util import png_to_pixbuf
+from advene.gui.util import png_to_pixbuf, overlay_svg_as_pixbuf
 from advene.model.cam.annotation import Annotation
 from advene.model.cam.tag import AnnotationType
 
@@ -49,6 +48,7 @@ class AnnotationDisplay(AdhocView):
         self.annotation=annotation
         self.no_image_pixbuf=png_to_pixbuf(ImageCache.not_yet_available_image, width=50)
         self.widget=self.build_widget()
+        self.refresh()
 
     def set_annotation(self, a=None):
         """This method takes either an annotation, a time value or None as parameter.
@@ -94,7 +94,6 @@ class AnnotationDisplay(AdhocView):
                 title='<span background="%s">Annotation Type <b>%s</b></span>' % (col, self.controller.get_title(self.annotation))
             else:
                 title='Annotation <b>%s</b>' % self.controller.get_title(self.annotation)
-
             if len(self.annotation.annotations):
                 b=min(a.begin for a in self.annotation.annotations)
                 e=max(a.end for a in self.annotation.annotations)
@@ -112,6 +111,8 @@ class AnnotationDisplay(AdhocView):
                 'imagecontents': None,
                 }
         else:
+            # FIXME: there should be a generic content handler
+            # mechanism for basic display of various contents
             col=self.controller.get_element_color(self.annotation)
             if col:
                 title='<span background="%s">Annotation <b>%s</b></span>' % (col, self.annotation.id)
@@ -120,36 +121,16 @@ class AnnotationDisplay(AdhocView):
             d={ 'title': title,
                 'begin': helper.format_time(self.annotation.begin),
                 'end': helper.format_time(self.annotation.end) }
+            svg_data=None
             if self.annotation.content.mimetype.startswith('image/'):
-                # SVG autodetection does not seem to work too well. Let's help it.
-                if 'svg' in self.annotation.content.mimetype:
-                    try:
-                        loader = gtk.gdk.PixbufLoader('svg')
-                    except Exception, e:
-                        print "Unable to load the SVG pixbuf loader: ", str(e)
-                        loader=None
-                else:
-                    loader = gtk.gdk.PixbufLoader()
-                if loader is not None:
-                    try:
-                        loader.write (self.annotation.content.data)
-                        loader.close ()
-                        p = loader.get_pixbuf ()
-                        width = p.get_width()
-                        height = p.get_height()
-                        ic=self.controller.gui.imagecache
-                        if ic is None:
-                            png=ImageCache.not_yet_available_image
-                        else:
-                            png=ic[self.annotation.begin]
-                        pixbuf=png_to_pixbuf(png).scale_simple(width, height, gtk.gdk.INTERP_BILINEAR)
-                        p.composite(pixbuf, 0, 0, width, height, 0, 0, 1.0, 1.0, gtk.gdk.INTERP_BILINEAR, 255)
-                    except gobject.GError, e:
-                        # The PNG data was invalid.
-                        print "Invalid image data", e
-                        pixbuf=gtk.gdk.pixbuf_new_from_file(config.data.advenefile( ( 'pixmaps', 'notavailable.png' ) ))
-                else:
-                    pixbuf=gtk.gdk.pixbuf_new_from_file(config.data.advenefile( ( 'pixmaps', 'notavailable.png' ) ))
+                svg_data=self.annotation.content.data
+            elif self.annotation.content.mimetype == 'application/x-advene-zone':
+                # Build svg
+                data=self.annotation.content.parsed()
+                svg_data='''<svg xmlns='http://www.w3.org/2000/svg' version='1' viewBox="0 0 320 300" x='0' y='0' width='320' height='200'><%(shape)s style="fill:none;stroke:green;stroke-width:2;" width="%(width)s%%" height="%(height)s%%" x="%(x)s%%" y="%(y)s%%"></rect></svg>''' % data
+            if svg_data:
+                pixbuf=overlay_svg_as_pixbuf(self.controller.package.imagecache[self.annotation.media.od][self.annotation.begin],
+                                             self.annotation.content.data)
                 d['contents']=''
                 d['imagecontents']=pixbuf
             else:
@@ -166,7 +147,15 @@ class AnnotationDisplay(AdhocView):
                 else:
                     self.sw['imagecontents'].show_all()
                     self.sw['contents'].hide()
-                    self.label['imagecontents'].set_from_pixbuf(d['imagecontents'])
+
+                    pixbuf=d['imagecontents']
+                    w=self.widget.get_allocation().width - 6
+                    width=pixbuf.get_width()
+                    height=pixbuf.get_height()
+                    if width > w and w > 0:
+                        height = 1.0 * w * height / width
+                        pixbuf=pixbuf.scale_simple(int(w), int(height), gtk.gdk.INTERP_BILINEAR)
+                    self.label['imagecontents'].set_from_pixbuf(pixbuf)
             else:
                 self.label[k].set_text(v)
         if self.annotation is None or isinstance(self.annotation, AnnotationType):
@@ -238,6 +227,5 @@ class AnnotationDisplay(AdhocView):
 
         v.show_all()
         image.hide()
-        self.refresh()
         v.set_no_show_all(True)
         return v

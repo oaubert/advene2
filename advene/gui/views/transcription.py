@@ -63,7 +63,7 @@ class TranscriptionView(AdhocView):
         self.options = {
             'display-bounds': False,
             'display-time': False,
-            'separator': ' ',
+            'separator': '\n',
             # Use the default representation parameter for annotations
             'default-representation': True,
             # If representation is not empty, it is used as a TALES
@@ -266,12 +266,12 @@ class TranscriptionView(AdhocView):
         for a in l:
             beginiter=b.get_iter_at_mark(b.get_mark("b_%s" % a.id))
             enditer  =b.get_iter_at_mark(b.get_mark("e_%s" % a.id))
-            self.controller.notify('ElementEditBegin', element=a, immediate=True)
+            self.controller.notify('EditSessionStart', element=a, immediate=True)
             if update(a, b.get_text(beginiter, enditer)):
                 self.controller.notify("AnnotationEditEnd", annotation=a, batch=batch_id)
             else:
                 impossible.append(a)
-            self.controller.notify('ElementEditCancel', element=a)
+            self.controller.notify('EditSessionEnd', element=a)
         if impossible:
             dialog.message_dialog(label=_("Cannot convert the following annotations,\nthe representation pattern is too complex.\n%s") % ",".join( [ a.id for a in impossible ] ))
         return True
@@ -481,6 +481,7 @@ class TranscriptionView(AdhocView):
     def populate_popup_cb(self, textview, menu):
         if self.currentannotation is None:
             return False
+        menu.foreach(menu.remove)
 
         item=gtk.SeparatorMenuItem()
         item.show()

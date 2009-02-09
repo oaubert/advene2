@@ -1,5 +1,6 @@
 #
-# This file is part of Advene.
+# Advene: Annotate Digital Videos, Exchange on the NEt
+# Copyright (C) 2008 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
 #
 # Advene is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -12,7 +13,7 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Foobar; if not, write to the Free Software
+# along with Advene; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #
 """Advene http server.
@@ -31,13 +32,16 @@ URL syntax
   AdveneController.
 """
 
+import advene.core.config as config
+import advene.core.version
+
 import sys
 import os
 import re
 import urllib
 import cgi
+import socket
 import imghdr
-import inspect
 
 from gettext import gettext as _
 
@@ -61,7 +65,7 @@ def remove_tales_prefix(name):
     else:
         return name
 
-DEBUG = True
+DEBUG=True
 class Common:
     """Common functionalities for all cherrypy nodes.
     """
@@ -141,7 +145,7 @@ class Common:
         @return: nothing
         """
         if mode is None:
-            mode = self.controller.server.displaymode
+            mode = config.data.webserver['displaymode']
         cherrypy.response.status=200
         if mode == 'navigation' or mimetype is None or mimetype == 'text/html':
             mimetype='text/html; charset=utf-8'
@@ -166,6 +170,7 @@ class Common:
             res.append(_("""
             <p>
             <a href="/admin">Server administration</a> |
+            <a href="/media">Media control</a> |
             <a href="%(path)s?mode=raw">Raw view</a>
             </p>
             Location: %(locationbar)s
@@ -272,7 +277,7 @@ class Admin(Common):
         This method displays the administration page of the server, which
         should link to all functionalities.
         """
-        res=[ self.start_html (_("Server Administration"), duplicate_title=True) ]
+        res=[ self.start_html (_("Server Administration"), duplicate_title=True, mode='navigation') ]
         if self.controller.server.displaymode == 'raw':
             switch='navigation'
         else:
@@ -306,12 +311,12 @@ class Admin(Common):
         This method displays the data files in the data directory.
         Maybe it should be removed when the server runs embedded.
         """
-        res=[ self.start_html (_("Available files"), duplicate_title=True) ]
+        res=[ self.start_html (_("Available files"), duplicate_title=True, mode='navigation') ]
         res.append ("<ul>")
 
         l=[ os.path.join(self.controller.server.packages_directory, n)
             for n in os.listdir(self.controller.server.packages_directory)
-            if n.lower().endswith('.pdb') ]
+            if n.lower().endswith('.czp') ]
         l.sort(lambda a, b: cmp(a.lower(), b.lower()))
         for uri in l:
             name, ext = os.path.splitext(uri)
@@ -343,7 +348,7 @@ class Admin(Common):
             # cause problems with the GUI
             self.controller.load_package (uri=uri, alias=alias)
             return "".join( (
-                self.start_html (_("Package %s loaded") % alias, duplicate_title=True),
+                self.start_html (_("Package %s loaded") % alias, duplicate_title=True, mode='navigation'),
                 _("""<p>Go to the <a href="/packages/%(alias)s">%(alias)s</a> package, or to the <a href="/packages">package list</a>.""") % { 'alias': alias }
                 ))
         except Exception, e:
@@ -358,7 +363,7 @@ class Admin(Common):
         try:
             self.controller.unregister_package (alias)
             return "".join((
-                self.start_html (_("Package %s deleted") % alias, duplicate_title=True),
+                self.start_html (_("Package %s deleted") % alias, duplicate_title=True, mode='navigation'),
                 _("""<p>Go to the <a href="/packages">package list</a>.""")
                 ))
         except Exception, e:
@@ -379,7 +384,7 @@ class Admin(Common):
                 self.controller.save_package()
                 alias='default'
             return "".join((
-                self.start_html (_("Package %s saved") % alias, duplicate_title=True),
+                self.start_html (_("Package %s saved") % alias, duplicate_title=True, mode='navigation'),
                 _("""<p>Go to the <a href="/packages/%(alias)s">%(alias)s</a> package, or to the <a href="/packages">package list</a>.""") % { 'alias': alias }
                 ))
         except Exception, e:
@@ -393,7 +398,7 @@ class Admin(Common):
         """Reset packages list.
         """
         self.controller.reset()
-        return self.start_html (_('Server reset'), duplicate_title=True)
+        return self.start_html (_('Server reset'), duplicate_title=True, mode='navigation')
     reset.exposed=True
 
     def halt(self):
@@ -430,7 +435,7 @@ class Packages(Common):
         packages. The generated list provides links for accessing,
         reloading, saving or removing the package.
         """
-        res=[ self.start_html (_("Loaded package(s)")) ]
+        res=[ self.start_html (_("Loaded package(s)"), mode='navigation') ]
 
         res.append (_("""
         <h1>Loaded package(s)</h1>
@@ -520,7 +525,7 @@ class Packages(Common):
         try:
             objet = context.evaluate(expr)
         except PathNotFoundException, e:
-            self.start_html (_("Error"), duplicate_title=True)
+            self.start_html (_("Error"), duplicate_title=True. mode='navigation')
             res.append (_("""The TALES expression %s is not valid.""") % tales)
             res.append (unicode(e.args).encode('utf-8'))
             return "".join(res)
@@ -781,10 +786,10 @@ class Root(Common):
     def index(self):
         """Display the server root document.
         """
-        res=[ self.start_html (_("Advene webserver"), duplicate_title=True) ]
+        res=[ self.start_html (_("Advene webserver"), duplicate_title=True, mode='navigation') ]
         res.append(_("""<p>Welcome on the <a href="http://liris.cnrs.fr/advene/">Advene</a> webserver run by %(userid)s on %(serveraddress)s.</p>""") %
                          {
-                'userid': os.environ['USER'],
+                'userid': config.data.userid,
                 'serveraddress': cherrypy.request.base,
                 })
 
@@ -834,6 +839,7 @@ class AdveneWebServer:
         """
         self.controller=controller
         self.urlbase = u"http://localhost:%d/" % port
+        self.displaymode = config.data.webserver['displaymode']
 
         settings = {
             'global': {
@@ -841,23 +847,35 @@ class AdveneWebServer:
                 #'server.socket_queue_size': 5,
                 #'server.protocol_version': "HTTP/1.0",
                 'log.screen': False,
-                'log.access_file': '/tmp/advene-webserver.log',
-                'log.error_file': '/tmp/advene-error.log',
+                'log.access_file': config.data.advenefile('webserver.log', 'settings'),
+                'log.error_file': config.data.advenefile('webserver-error.log', 'settings'),
                 'server.reverse_dns': False,
-                # For the moment, advene.model is not
-                # other-thread-compatible, so do not use a threadPool
-                'server.thread_pool': 0,
+                'server.thread_pool': 10,
                 'engine.autoreload_on': False,
-                'server.environment': "development",
-                #'server.environment': "production",
+                #'server.environment': "development",
+                'server.environment': "production",
                 },
+            #    '/admin': {
+            #        'session_authenticate_filter.on' :True
+            #        },
             }
         cherrypy.config.update(settings)
 
-        cherrypy.tree.mount(Root(controller), config={})
 
-        self.displaymode='navigation'
-        self.packages_directory='/tmp'
+        # Not used for the moment.
+        self.authorized_hosts = {'127.0.0.1': 'localhost'}
+
+        app_config={
+            '/favicon.ico': {
+                'tools.staticfile.on': True,
+                'tools.staticfile.filename': config.data.advenefile( ( 'pixmaps', 'advene.ico' ) ),
+                },
+            '/data': {
+                'tools.staticdir.on': True,
+                'tools.staticdir.dir': config.data.path['web'],
+                },
+            }
+        cherrypy.tree.mount(Root(controller), config=app_config)
 
         try:
             # server.quickstart *must* be started from the main thread.

@@ -135,7 +135,8 @@ class HTMLEditor(textview_class, HTMLParser):
          'li': { 'left-margin': 48 },
          'ul': {},
          'ol': {},
-         'tal': { 'background': 'violet' }
+         'tal': { 'background': 'violet',
+                  },
          }
 
     def __init__(self, *cnf, **kw):
@@ -153,6 +154,23 @@ class HTMLEditor(textview_class, HTMLParser):
             self.set_buffer(gtksourceview.SourceBuffer())
         self.set_editable(True)
         self.set_wrap_mode(gtk.WRAP_WORD)
+
+        # Callers can override this with a custom method to load URLs.
+        # The method takes a URL as parameter, and returns the
+        # corresponding data.
+        # If it returns None, then normal processing is done.
+        self.custom_url_loader=None
+
+        # Class parsers are invoked when meeting a tag with a 'class'
+        # attribute. They can do their own processing of the tag, and
+        # return a widget or pixbuf as well as a method which will be used to
+        # process enclosed elements.
+        # If the method is None, enclosed elements will be processed by
+        # the standard parser.
+        # Signature: widget, enclosed_processor = parser(tag, attr)
+        self._class_parsers=[]
+        self.enclosed_processor=None
+
         self.__tb = self.get_buffer()
         self.__last = None
         self.__tags = { }
@@ -180,7 +198,11 @@ class HTMLEditor(textview_class, HTMLParser):
                                                  b.get_iter_at_mark(m),
                                                  b.get_iter_at_mark(m._endmark))
                             b.delete_mark(m)
-                            b.delete_mark(m._endmark)
+                            if hasattr(m, '_endmark') and not m._endmark.get_deleted():
+                                # Could already be deleted (for
+                                # instance, br tag have startmark ==
+                                # endmark)
+                                b.delete_mark(m._endmark)
                         except AttributeError, e:
                             print "Exception for %s" % m._tag, unicode(e).encode('utf-8')
                     elif  hasattr(m, '_endtag'):
@@ -259,7 +281,7 @@ class HTMLEditor(textview_class, HTMLParser):
             # There is already a mark/tag at the current cursor
             # position. So if we add a new mark here, we cannot
             # guarantee their order.
-            # Insert an invisile chara to alleviate this problem.
+            # Insert an invisible char to alleviate this problem.
             self.__tb.insert_at_cursor(u'\u2063')
             cursor = self.__tb.get_iter_at_mark(self.__tb.get_insert())
             # Safety test. Normally useles...
@@ -268,21 +290,91 @@ class HTMLEditor(textview_class, HTMLParser):
                 print "Strange, there should be not tag mark here."
         return cursor
 
+    def insert_widget(self, widget, cursor=None):
+        if cursor is None:
+            cursor = self._get_iter_for_creating_mark()
+
+        anchor=self.__tb.create_child_anchor(cursor)
+        self.add_child_at_anchor(widget, anchor)
+        widget._anchor=anchor
+        anchor._tag=widget._tag
+        anchor._attr=widget._attr
+        anchor.has_tal = [ (k, v) for (k, v) in widget._attr if k.startswith('tal:') ]
+        self.__tags.setdefault(widget._tag, []).append(anchor)
+
+    def insert_pixbuf(self, pixbuf, cursor=None):
+        """Insert a pixbuf.
+
+        It must have _tag and _attr attributes (that are used to
+        display contextual information).
+        """
+        if cursor is None:
+            cursor = self._get_iter_for_creating_mark()
+        self.__tb.insert_pixbuf(cursor, pixbuf)
+
+    def update_pixbuf(self, old_pixbuf, new_pixbuf):
+        """Update a pixbuf.
+
+        It must have _tag and _attr attributes (that are used to
+        display contextual information).
+        """
+        i=self.__tb.get_start_iter()
+        while True:
+            p=i.get_pixbuf()
+            if p is not None and p == old_pixbuf:
+                start=i.copy()
+                i.forward_char()
+                self.__tb.delete(start, i)
+                self.__tb.insert_pixbuf(start, new_pixbuf)
+                break
+            if not i.forward_char():
+                break
+        return
+
+    def url_load(self, url):
+        if self.custom_url_loader is not None:
+            try:
+                data=self.custom_url_loader(url)
+                msg=''
+            except Exception, ex:
+                data=None
+                msg=ex
+            if data is not None:
+                return data, msg
+            elif isinstance(msg, Exception):
+                # There was an error.
+                return data, unicode(msg)
+            # Useless else: use default code.
+            # else:
+            #    pass
+
+        # Wait maximum 3s for connection
+        dto = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(3)
+        if not url.startswith('http:') and not url.startswith('file:'):
+            url='file:'+url
+        try:
+            f = urllib2.urlopen(url)
+            data = f.read()
+            f.close()
+            msg=''
+        except Exception, ex:
+            data=None
+            msg=str(ex)
+        socket.setdefaulttimeout(dto)
+        return data, msg
+
     def handle_img(self, tag, attr):
         dattr=dict(attr)
-        # Wait maximum 1s for connection
-        socket.setdefaulttimeout(1)
-        try:
-            src=dattr['src']
-            if not src.startswith('http:') and not src.startswith('file:'):
-                src='file:'+src
-            f = urllib2.urlopen(src)
-            data = f.read()
-            alt=dattr.get('alt', '')
-        except Exception, ex:
-            print "Error loading %s: %s" % (dattr.get('src', "[No src attribute]"), ex)
-            data = None
-            alt=dattr.get('alt', 'Broken image')
+        src=dattr.get('src')
+        if src:
+            data, msg=self.url_load(src)
+            if data is None:
+                print "Error loading %s: %s" % (src, msg)
+                alt=dattr.get('alt', 'Broken image')
+            else:
+                alt=dattr.get('alt', '')
+
         # Process width and height attributes
         attrwidth = dattr.get('width')
         attrheight = dattr.get('height')
@@ -295,7 +387,7 @@ class HTMLEditor(textview_class, HTMLParser):
 
             def set_size(pixbuf, width, height):
                 if attrwidth and attrheight:
-                    # Both are specified. Simple use them.
+                    # Both are specified. Simply use them.
                     width, height = attrwidth, attrheight
                 elif attrwidth and not attrheight:
                     # Only width is specified.
@@ -317,20 +409,13 @@ class HTMLEditor(textview_class, HTMLParser):
             pixbuf=None
 
         if pixbuf is None:
-            pixbuf=gtk.gdk.pixbuf_new_from_xpm_data(broken_xpm)
+            pixbuf=gtk.gdk.pixbuf_new_from_xpm_data(broken_xpm)        
+        pixbuf._tag=tag
+        pixbuf._attr=attr
+        self.insert_pixbuf(pixbuf)
 
-        cursor = self._get_iter_for_creating_mark()
-        if pixbuf is not None:
-            self.__tb.insert_pixbuf(cursor, pixbuf)
-            pixbuf._tag=tag
-            pixbuf._attr=attr
-        else:
-            mark = self.__tb.create_mark(None, cursor, True)
-            mark._tag=tag
-            mark._attr=attr
-            mark._startmark=mark
-            mark._endmark=mark
-            self.__tb.insert(cursor, alt)
+    def register_class_parser(self, p):
+        self._class_parsers.append(p)
 
     def handle_starttag(self, tag, attr):
         """Tag opening.
@@ -339,6 +424,25 @@ class HTMLEditor(textview_class, HTMLParser):
         registered its position so that the format is applied later,
         when closing it.
         """
+        dattr=dict(attr)
+        if self.enclosed_processor is not None:
+            if not self.enclosed_processor('start', tag, dattr):
+                self.enclosed_processor=None
+            return
+
+        if 'class' in dattr:
+            # See if there is a dedicated parser for this class
+            for p in self._class_parsers:
+                widget, self.enclosed_processor = p(tag, dattr)
+                if widget is not None:
+                    if isinstance(widget, gtk.gdk.Pixbuf):
+                        self.insert_pixbuf(widget)
+                    elif isinstance(widget, gtk.Widget):
+                        self.insert_widget(widget)
+                    else:
+                        self.log("Unknown element type")
+                    return
+
         if tag == 'img':
             self.handle_img(tag, attr)
             return
@@ -361,10 +465,7 @@ class HTMLEditor(textview_class, HTMLParser):
         mark._tag=tag
         mark._attr=attr
         mark.has_tal = [ (k, v) for (k, v) in attr if k.startswith('tal:') ]
-        if tag in self.__tags:
-            self.__tags[tag].append(mark)
-        else:
-            self.__tags[tag] = [ mark ]
+        self.__tags.setdefault(tag, []).append(mark)
 
         if tag == 'br':
             self.__tb.insert(cursor, '\n')
@@ -375,7 +476,6 @@ class HTMLEditor(textview_class, HTMLParser):
             # nested lists
             self.__tb.insert(cursor, '\n')
 
-
     def handle_data(self, data):
         """
         This method receives data from a tag which, typically, is text
@@ -384,6 +484,10 @@ class HTMLEditor(textview_class, HTMLParser):
         characters of tabulation and fall as a simple page of blank
         space. In the first line we do this service.
         """
+        if self.enclosed_processor is not None:
+            if not self.enclosed_processor('data', data):
+                self.enclosed_processor=None
+            return
         data = ' '.join(data.split()) + ' '
         cursor = self.__tb.get_iter_at_mark(self.__tb.get_insert())
         self.__tb.insert(cursor, data)
@@ -400,6 +504,11 @@ class HTMLEditor(textview_class, HTMLParser):
         labels and apply the formatting. The process is extremely
         simple.
         """
+        if self.enclosed_processor is not None:
+            if not self.enclosed_processor('end', tag):
+                self.enclosed_processor=None
+            return
+
         if tag in self.__standalone:
             return
         # Create an end-mark to be able to restore HTML tags
@@ -427,6 +536,83 @@ class HTMLEditor(textview_class, HTMLParser):
             mark._startmark=mark
             mark._endmark=mark
 
+    def dump(self):
+        res=[]
+
+        b=self.__tb
+        i=b.get_start_iter()
+        textstart=i.copy()
+
+        # We add an index for every startmark, so that we can close
+        # the corresponding endmarks with the right order
+        index=0
+
+        self._last_endtag=None
+
+        def output_text(fr, to, tag):
+            """Output text data.
+
+            Appropriately strip starting newline if it was inserted
+            after a block endtag.
+            """
+            txt=fr.get_visible_text(to)
+            if self._last_endtag in self.__block:
+                txt=txt.lstrip()
+            if tag in self.__block:
+                txt=txt.rstrip()
+            txt=txt.replace('\n', '<n>')
+            self._last_endtag=None
+            res.append((fr.get_offset(), "%s : %d" % (txt, to.get_offset())))
+
+        while True:
+            p=i.get_pixbuf()
+            if p is not None:
+                output_text(textstart, i, None)
+                textstart=i.copy()
+                if hasattr(p, 'as_html'):
+                    res.append((i.get_offset(), "<pixbuf.as_html>"))
+                else:
+                    res.append((i.get_offset(), "<plain pixbuf>"))
+                if not i.forward_char():
+                    break
+                else:
+                    continue
+
+            p=i.get_child_anchor()
+            if p is not None:
+                res.append( (i.get_offset(), "<widget.as_html>"))
+
+            for m in i.get_marks():
+                if hasattr(m, '_endtag'):
+                    if m._endtag in self.__standalone:
+                        continue
+                    output_text(textstart, i, m._endtag)
+                    res.append( (i.get_offset(), "</%s>" % m._endtag) )
+                    textstart=i.copy()
+                    self._last_endtag=m._endtag
+                elif hasattr(m, '_tag'):
+                    output_text(textstart, i, m._tag)
+                    if m._tag in self.__standalone:
+                        closing='></%s>' % m._tag
+                    else:
+                        closing='>'
+                    if m._attr:
+                        res.append( (i.get_offset(), "<%s %s%s" % (m._tag,
+                                                                   " ".join( '%s="%s"' % (k, v) for (k, v) in m._attr ),
+                                                                   closing)))
+                    else:
+                        res.append( (i.get_offset(), "<%s%s" % (m._tag, closing) ) )
+
+                    if m._tag in self.__block or m._tag == 'br':
+                        res.append( (i.get_offset(), '\n'))
+                    textstart=i.copy()
+
+            if not i.forward_char():
+                break
+        # Write the remaining text
+        output_text(textstart, b.get_end_iter(), 'end')
+        return "\n".join( "%d: %s" % t for t in res )
+
     def dump_html(self, fd=None):
         """Dump html.
         """
@@ -448,19 +634,32 @@ class HTMLEditor(textview_class, HTMLParser):
             Appropriately strip starting newline if it was inserted
             after a block endtag.
             """
-            txt=b.get_text(fr, to).replace(u'\u2063', '')
+            txt=fr.get_visible_text(to)
             if self._last_endtag in self.__block:
                 txt=txt.lstrip()
             if tag in self.__block:
                 txt=txt.rstrip()
-            txt=txt.replace('\n', '<br>')
+            txt=txt.replace('\n', '<br>\n')
             self._last_endtag=None
             fd.write(txt)
 
         while True:
             p=i.get_pixbuf()
             if p is not None:
-                fd.write("<img %s></img>" % " ".join( '%s="%s"' % (k, v) for (k, v) in p._attr ))
+                output_text(textstart, i, None)
+                textstart=i.copy()
+                if hasattr(p, 'as_html'):
+                    fd.write(p.as_html())
+                else:
+                    fd.write("<img %s></img>" % " ".join( '%s="%s"' % (k, v) for (k, v) in p._attr ))
+                if not i.forward_char():
+                    break
+                else:
+                    continue
+
+            p=i.get_child_anchor()
+            if p is not None:
+                fd.write(p.get_widgets()[0].as_html())
 
             for m in i.get_marks():
                 if hasattr(m, '_endtag'):
@@ -634,7 +833,8 @@ class ContextDisplay(gtk.TreeView):
             if parent is None:
                 # Changed the tag name
                 mark._tag=newtext
-                mark._endmark._endtag=newtext
+                if hasattr(mark, '_endmark'):
+                    mark._endmark._endtag=newtext
             else:
                 # Changed an attribute. Regenerate the whole _attr
                 # list
@@ -644,7 +844,7 @@ class ContextDisplay(gtk.TreeView):
                     l.append( model.get(it, 1, 2) )
                     it=model.iter_next(it)
                 mark._attr=l
-                
+
             print "Edited", mark._tag, mark._attr
             return False
 
@@ -657,7 +857,7 @@ class ContextDisplay(gtk.TreeView):
         cell.set_property('editable', True)
         cell.connect('edited', edited_cell, 2)
         self.append_column(gtk.TreeViewColumn("Value", cell, text=2))
-        
+
     def set_context(self, context):
         model=self.get_model()
         model.clear()

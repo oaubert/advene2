@@ -67,6 +67,7 @@ import advene.util.session
 from advene.model.cam.view import View
 from advene.model.cam.query import Query
 from advene.util.defaultdict import DefaultDict
+from advene.util.website_export import WebsiteExporter
 
 from advene.model.tales import AdveneContext, AdveneTalesException
 
@@ -193,6 +194,7 @@ class AdveneController(object):
         self.event_handler = advene.rules.ecaengine.ECAEngine (controller=self)
         self.modifying_events = self.event_handler.catalog.modifying_events
         self.event_queue = []
+        self.tracers=[]
 
         # Load default actions
         advene.rules.actions.register(self)
@@ -324,6 +326,11 @@ class AdveneController(object):
         """Register the GUI for the controller.
         """
         self.gui=gui
+
+    def register_tracer(self, tracer):
+        """Register a trace builder
+        """
+        self.tracers.append(tracer)
 
     def register_event(self, name, description, modifying=False):
         """Register a new event.
@@ -592,14 +599,12 @@ class AdveneController(object):
         result=None
         if query.content.mimetype == 'application/x-advene-simplequery':
             qexpr=SimpleQuery()
-            # FIXME: content.model is not a DOMelement anymore!!
-            qexpr.from_dom(query.content.model)
+            qexpr.from_xml(query.content.stream)
             result=qexpr.execute(context=context)
         elif query.content.mimetype == 'application/x-advene-quicksearch':
             # Parse quicksearch query
             qexpr=Quicksearch(controller=self)
-            # FIXME: content.model is not a DOMelement anymore!!
-            qexpr.from_dom(query.content.model)
+            qexpr.from_xml(query.content.stream)
             if expr is not None:
                 # Override the source... Is it a good idea ?
                 qexpr.source=expr
@@ -794,6 +799,7 @@ class AdveneController(object):
         #if event_name in self.modifying_events:
             # Find the element's package
             # Kind of hackish... This information should be clearly available somewhere
+            # FIXME: to redo completely
             #el_name=event_name.lower().replace('create','').replace('editend','').replace('delete', '')
             #el=kw[el_name]
             #p=el.owner
@@ -850,6 +856,7 @@ class AdveneController(object):
                 return True
             if ic is not None and i is not None and i.height != 0:
                 ic[position] = helper.snapshot2png (i)
+                self.notify('SnapshotUpdate', position=i.date)
         else:
             # FIXME: do something useful (warning) ?
             pass
@@ -1044,7 +1051,7 @@ class AdveneController(object):
             # UNIX/Windows interoperability: convert pathnames
             n=mediafile.replace('\\', os.sep).replace('/', os.sep)
 
-            name=os.path.basename(n)
+            name=unicode(os.path.basename(n))
             for d in config.data.path['moviepath'].split(os.pathsep):
                 if d == '_':
                   # Get package dirname
@@ -1053,10 +1060,10 @@ class AdveneController(object):
                     if d.startswith('file:'):
                         d=d.replace('file://', '')
                     d=urllib.url2pathname(d)
-                    d=os.path.dirname(d)
+                    d=unicode(os.path.dirname(d), sys.getfilesystemencoding())
                 if '~' in d:
                     # Expand userdir
-                    d=os.path.expanduser(d)
+                    d=unicode(os.path.expanduser(d), sys.getfilesystemencoding())
 
                 n=os.path.join(d, name)
                 # FIXME: if d is a URL, use appropriate method (urllib.??)
@@ -1158,7 +1165,7 @@ class AdveneController(object):
             el.delete()
         return True
 
-    def transmute_annotation(self, annotation, annotationType, move=False, position=None, notify=True):
+    def transmute_annotation(self, annotation, annotationType, delete=False, position=None, notify=True):
         """Transmute an annotation to a new type.
 
         If delete is True, then delete the source annotation.
@@ -1170,16 +1177,16 @@ class AdveneController(object):
             if position is None:
                 # Do not just duplicate the annotation
                 return None
-            elif move:
-                # If move, then we can simply move the annotation
+            elif delete:
+                # If delete, then we can simply move the annotation
                 d=annotation.duration
                 annotation.begin=position
                 annotation.end=position+d
                 if notify:
                     self.notify("AnnotationEditEnd", annotation=annotation, comment="Transmute annotation")
-                    self.notify('ElementEditCancel', element=annotation)
+                    self.notify('EditSessionEnd', element=annotation)
                 return annotation
-        if move:
+        if delete:
             an = annotation
             an.type = annotationType
         else:
@@ -1202,8 +1209,16 @@ class AdveneController(object):
         # FIXME: we need a generic type conversion framework here
         an.content.data=annotation.content.data
 
+        # FIXME: how to know annotation.relations ?
+        #if delete and not annotation.relations:
+        #    if notify:
+        #        self.notify('EditSessionStart', element=annotation, immediate=True)
+        #    #self.package.annotations.remove(annotation)
+        #    if notify:
+        #        self.notify('AnnotationMove', annotation=annotation, comment="Transmute annotation")
+        #        self.notify('AnnotationDelete', annotation=annotation, comment="Transmute annotation")
         if notify:
-            if move:
+            if delete:
                 self.notify('AnnotationEditEnd', annotation=an, comment="Transmute annotation")
             else:
                 self.notify("AnnotationCreate", annotation=an, comment="Transmute annotation")
@@ -1243,9 +1258,10 @@ class AdveneController(object):
         an.content.data=annotation.content.data
 
         # Shorten the first one.
+        self.notify('EditSessionStart', element=annotation, immediate=True)
         annotation.end = position
-
         self.notify("AnnotationEditEnd", annotation=annotation, comment="Duplicate annotation")
+        self.notify('EditSessionEnd', element=annotation)
         self.notify("AnnotationCreate", annotation=an, comment="Duplicate annotation")
         return an
 
@@ -1253,7 +1269,7 @@ class AdveneController(object):
         """Merge annotation s into annotation d.
         """
         batch_id=object()
-        self.notify('ElementEditBegin', element=d, immediate=True)
+        self.notify('EditSessionStart', element=d, immediate=True)
         if extend_bounds:
             # Extend the annotation bounds (mostly used for same-type
             # annotations)
@@ -1264,11 +1280,28 @@ class AdveneController(object):
         # Merging data
         # FIXME: handle differing mimetypes
         d.content.data=d.content.data + '\n' + s.content.data
-
+        #mts=s.type.mimetype
+        #mtd=d.type.mimetype
+        #if mtd == 'text/plain':
+        #    d.content.data=d.content.data + '\n' + s.content.data
+        #elif ( mtd == mts and mtd == 'application/x-advene-structured' ):
+        #    # Compare fields and merge identical fields
+        #    sdata=s.content.parsed()
+        #    ddata=d.content.parsed()
+        #    for k, v in sdata.iteritems():
+        #        if k in ddata:
+        #            # Merge fields
+        #            ddata[k] = "|".join( (sdata[k], ddata[k]) )
+        #        else:
+        #            ddata[k] = sdata[k]
+        #    # Re-encode ddata
+        #    d.content.data="\n".join( [ "%s=%s" % (k, unicode(v).replace('\n', '%0A')) for (k, v) in ddata.iteritems() if k != '_all' ] )
+        #elif mtd == 'application/x-advene-structured':
+        #    d.content.data=d.content.data + '\nmerged_content="' + cgi.urllib.quote(s.content.data)+'"'
         self.notify("AnnotationMerge", annotation=d,comment="Merge annotations", batch=batch_id)
         self.delete_element(s, batch_id=batch_id)
         self.notify("AnnotationEditEnd", annotation=d, comment="Merge annotations", batch=batch_id)
-        self.notify('ElementEditCancel', element=d)
+        self.notify('EditSessionEnd', element=d)
         return d
 
     def select_player(self, p):
@@ -1277,6 +1310,14 @@ class AdveneController(object):
         # Stop the current player.
         self.player.stop(0)
         self.player.exit()
+        if 'record' in self.player.player_capabilities:
+            # The old player was a recorder. Chances are that we
+            # recorded something. In this case, set the default_media
+            # to the recorded file path.
+            l=self.player.playlist_get_list()
+            if l and not self.get_current_mediafile():
+                self.set_mediafile(l[0])
+
         # Start the new one
         self.player=p()
         if not 'record' in p.player_capabilities:
@@ -1686,9 +1727,7 @@ class AdveneController(object):
                         self.log(_("Infinite loop in STBV %(name)s: the %(imp)s view is invoked multiple times.") % { 'name': self.get_title(view),
                                                                                                                       'imp': self.get_title(v) })
                     else:
-                        f=v.content.as_file
-                        rs.from_xml(f, catalog=self.event_handler.catalog, origin=v.uriref)
-                        f.close()
+                        rs.from_xml_string(v.content.data, catalog=self.event_handler.catalog, origin=v.uriref)
                         parsed_views.append(v)
                 subviews=rs.filter_subviews()
 
@@ -1738,6 +1777,15 @@ class AdveneController(object):
         """General exit callback."""
         if not self.cleanup_done:
             # Stop the event handler
+            if config.data.debug:
+                start=self._state
+                end=self.event_handler.dump()
+                import difflib
+                diff=difflib.Differ()
+                print "-----------"
+                for l in diff.compare(start, end):
+                    print l
+                print "-----------"
             self.event_handler.reset_queue()
             self.event_handler.clear_state()
             self.event_handler.update_rulesets()
@@ -2011,39 +2059,32 @@ class AdveneController(object):
     def create_static_view(self, elements=None):
         """Create a static view from the given elements.
         """
+        p=self.package
+        ident=p._idgenerator.get_id(View)
+        v=p.create_view(id=ident, mimetype='text/html')
+        p._idgenerator.add(ident)
         if not elements:
-            return None
+            self.notify('ViewCreate', view=v, immediate=True)
+            return v
         if isinstance(elements[0], Annotation):
-            p=self.package
-            ident=p._idgenerator.get_id(View)
-            v=p.create_view(id=ident, mimetype='text/html')
             if len(elements) > 1:
                 v.title=_("Comment on set of %d annotations") % len(elements)
             else:
                 v.title=_("Comment on %s") % self.get_title(elements[0])
-
-            p._idgenerator.add(ident)
-
             data=[]
             for element in elements:
                 ctx=self.build_context(element)
                 data.append(_("""<h1>Comment on %(title)s</h1>
-    <a tal:define="a package/annotations/%(id)s" tal:attributes="href a/player_url" href=%(href)s><img width="160" height="100" tal:attributes="src a/snapshot_url" src="%(imgurl)s"></img></a><br>""") % { 
+<span class="advene:annotation" advene:annotation="%(id)s" advene:presentation="link:snapshot"><a title="Click to play the movie in Advene" tal:attributes="href package/annotations/%(id)s/player_url" href="%(href)s"><img title="Click here to play" width="160" height="100" tal:attributes="src package/annotations/%(id)s/snapshot_url" src="%(imgurl)s" ></img></a></span>""") % {
                     'title': self.get_title(element),
                     'id': element.id,
                     'href': ctx.evaluate('here/player_url'),
                     'imgurl': ctx.evaluate('here/snapshot_url'),
                     })
             v.content.data="\n".join(data)
-            self.notify('ViewCreate', view=v, immediate=True)
-            return v
         elif isinstance(elements[0], AnnotationType):
-            p=self.package
-            ident=p._idgenerator.get_id(View)
-            v=p.create_view(id=ident, mimetype='text/html')
             at_title=self.get_title(elements[0])
             v.title=_("List of %s annotations") % at_title
-            p._idgenerator.add(ident)
 
             data=["""<div tal:define="at package/annotation_types/%s">""" % elements[0].id,
                   """<h1>List of <em tal:content="at/representation">%s</em> annotations</h1>""" % at_title,
@@ -2059,9 +2100,8 @@ class AdveneController(object):
 </p>
 </div></div>"""]
             v.content.data="\n".join(data)
-            self.notify('ViewCreate', view=v, immediate=True)
-            return v
-        return None
+        self.notify('ViewCreate', view=v, immediate=True)
+        return v
 
     def get_export_filters(self):
         importer_package=Package(config.data.advenefile('exporters.xml'))
@@ -2096,6 +2136,12 @@ class AdveneController(object):
                 self.log(_("Error when exporting: %s") % unicode(e))
         stream.close()
         self.log(_("Data exported to %s") % filename)
+        return True
+
+    def website_export(self, destination='/tmp/n', views=None, max_depth=3, progress_callback=None, video_url=None):
+        exporter=WebsiteExporter(self, destination, views, max_depth, progress_callback, video_url)
+        # FIXME
+        exporter.website_export()
         return True
 
 if __name__ == '__main__':

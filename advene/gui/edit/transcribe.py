@@ -22,6 +22,7 @@
 import sys
 import re
 import os
+import operator
 
 import gtk
 
@@ -40,7 +41,7 @@ import advene.util.helper as helper
 from gettext import gettext as _
 
 from advene.gui.views import AdhocView
-from advene.gui.util import dialog, get_pixmap_button, get_small_stock_button
+from advene.gui.util import dialog, get_pixmap_button, get_small_stock_button, name2color
 from advene.gui.util import decode_drop_parameters
 from advene.gui.edit.properties import EditWidget
 from advene.gui.util.completer import Completer
@@ -71,7 +72,7 @@ class TranscriptionImporter(advene.util.importer.GenericImporter):
 class TranscriptionEdit(AdhocView):
     view_name = _("Note taking")
     view_id = 'transcribe'
-    tooltips = _("Note taking facility")
+    tooltip = _("Synchronized note taking editor")
     def __init__ (self, controller=None, parameters=None, filename=None):
         super(TranscriptionEdit, self).__init__(controller=controller)
         self.close_on_package_load = False
@@ -102,9 +103,9 @@ class TranscriptionEdit(AdhocView):
             }
 
         self.colors = {
-            'default': gtk.gdk.color_parse ('lightblue'),
-            'ignore':  gtk.gdk.color_parse ('tomato'),
-            'current': gtk.gdk.color_parse ('green'),
+            'default': name2color('lightblue'),
+            'ignore':  name2color('tomato'),
+            'current': name2color('green'),
             }
 
         self.marks = []
@@ -242,7 +243,7 @@ class TranscriptionEdit(AdhocView):
                                     ,
                                     gtk.gdk.ACTION_COPY | gtk.gdk.ACTION_MOVE)
         self.textview.connect('drag-data-received', self.textview_drag_received)
-        
+
         # Hook the completer component
         completer=Completer(textview=self.textview,
                             controller=self.controller,
@@ -318,7 +319,7 @@ class TranscriptionEdit(AdhocView):
 
     def insert_timestamp_mark(self, it=None):
         """Insert a timestamp mark with the current player position.
-        
+
         If iter is not specified, insert at the current cursor position.
         """
         t=self.controller.player.current_position_value - self.options['delay']
@@ -417,7 +418,7 @@ class TranscriptionEdit(AdhocView):
                            flags=gtk.DIALOG_DESTROY_WITH_PARENT,
                            buttons=( gtk.STOCK_OK, gtk.RESPONSE_OK,
                                      gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL ))
-            ta=TimeAdjustment(value=button.value, 
+            ta=TimeAdjustment(value=button.value,
                               controller=self.controller)
             d.vbox.pack_start(ta.widget, expand=False)
             d.show_all()
@@ -802,7 +803,7 @@ class TranscriptionEdit(AdhocView):
         if ignore_next:
             res.extend( ('<strike>', text, '</strike>') )
         else:
-            res.append( text )        
+            res.append( text )
         return ''.join(res)
 
     def save_as_cb(self, button=None):
@@ -1147,16 +1148,16 @@ class TranscriptionEdit(AdhocView):
             self.options[option_name]=t.get_active()
             return True
 
-        b=gtk.ToggleToolButton(stock_id=gtk.STOCK_JUMP_TO)
+        b=gtk.ToggleToolButton(gtk.STOCK_JUMP_TO)
         b.set_active(self.options['autoscroll'])
         b.set_tooltip(self.tooltips, _("Automatically scroll to the mark position when playing"))
         b.connect('toggled', handle_toggle, 'autoscroll')
         b.set_label(_("Autoscroll"))
         tb.insert(b, -1)
 
-        b=gtk.ToggleToolButton()
         i=gtk.Image()
         i.set_from_file(config.data.advenefile( ( 'pixmaps', 'clock.png') ))
+        b=gtk.ToggleToolButton()
         b.set_icon_widget(i)
         b.set_label(_("Autoinsert"))
         b.set_active(self.options['autoinsert'])

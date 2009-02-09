@@ -30,7 +30,7 @@ import advene.gui.edit.elements
 import advene.gui.popup
 
 import advene.util.helper as helper
-from advene.gui.util import dialog
+from advene.gui.util import dialog, png_to_pixbuf, contextual_drag_begin, contextual_drag_end
 
 COLUMN_ELEMENT=0
 COLUMN_CONTENT=1
@@ -41,6 +41,8 @@ COLUMN_END=5
 COLUMN_DURATION=6
 COLUMN_BEGIN_FORMATTED=7
 COLUMN_END_FORMATTED=8
+COLUMN_PIXBUF=9
+COLUMN_COLOR=10
 
 name="Element tabular view plugin"
 
@@ -81,7 +83,7 @@ class AnnotationTable(AdhocView):
         """Build the ListStore containing the data.
 
         """
-        l=gtk.ListStore(object, str, str, str, long, long, long, str, str)
+        l=gtk.ListStore(object, str, str, str, long, long, long, str, str, gtk.gdk.Pixbuf, str)
         if not self.elements:
             return l
         for a in self.elements:
@@ -95,6 +97,9 @@ class AnnotationTable(AdhocView):
                            a.duration,
                            helper.format_time(a.begin),
                            helper.format_time(a.end),
+                           png_to_pixbuf(self.controller.gui.imagecache[a.begin],
+                                         height=32),
+                           self.controller.get_element_color(a),
                            ) )
         return l
 
@@ -116,6 +121,11 @@ class AnnotationTable(AdhocView):
         tree_view.set_search_equal_func(search_content)
 
         columns={}
+
+        columns['snapshot']=gtk.TreeViewColumn(_("Snapshot"), gtk.CellRendererPixbuf(), pixbuf=COLUMN_PIXBUF)
+        columns['snapshot'].set_reorderable(True)
+        tree_view.append_column(columns['snapshot'])
+
         for (name, label, col) in (
             ('content', _("Content"), COLUMN_CONTENT),
             ('type', _("Type"), COLUMN_TYPE),
@@ -132,9 +142,12 @@ class AnnotationTable(AdhocView):
         columns['begin'].set_sort_column_id(COLUMN_BEGIN)
         columns['end'].set_sort_column_id(COLUMN_END)
         self.model.set_sort_column_id(COLUMN_BEGIN, gtk.SORT_ASCENDING)
+        columns['type'].add_attribute(columns['type'].get_cell_renderers()[0],
+                                      'cell-background',
+                                      COLUMN_COLOR)
 
         # Resizable columns: content, type
-        for name in ('content', 'type'):
+        for name in ('content', 'type', 'snapshot'):
             columns[name].set_sizing(gtk.TREE_VIEW_COLUMN_FIXED)
             columns[name].set_resizable(True)
             columns[name].set_min_width(40)
@@ -149,7 +162,22 @@ class AnnotationTable(AdhocView):
                                   ,
                                   gtk.gdk.ACTION_LINK | gtk.gdk.ACTION_COPY | gtk.gdk.ACTION_MOVE)
 
-        #tree_view.connect('drag-data-get', self.drag_data_get_cb)
+        def get_element():
+            selection = tree_view.get_selection ()
+            if not selection:
+                return None
+            store, paths=selection.get_selected_rows()
+            l=[ store.get_value (store.get_iter(p), COLUMN_ELEMENT) for p in paths ]
+            if not l:
+                return None
+            elif len(l) == 1:
+                return l[0]
+            else:
+                return l
+        tree_view.connect('drag-begin', contextual_drag_begin, get_element, self.controller)
+        tree_view.connect('drag-end', contextual_drag_end)
+
+        tree_view.connect('drag-data-get', self.drag_data_get_cb)
 
         sw = gtk.ScrolledWindow()
         sw.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
@@ -160,16 +188,21 @@ class AnnotationTable(AdhocView):
         return sw
 
     def drag_data_get_cb(self, treeview, context, selection, targetType, timestamp):
-        model, it = treeview.get_selection().get_selected()
+        model, paths = treeview.get_selection().get_selected_rows()
 
-        el = model.get_value(it, COLUMN_ELEMENT)
+        els=[ model[p][COLUMN_ELEMENT] for p in paths ]
 
         if targetType == config.data.target_type['annotation']:
-            # FIXME: handle multiple selection
-            if not isinstance(el, Annotation):
-                return False
-            selection.set(selection.target, 8, el.uriref.encode('utf8'))
+            selection.set(selection.target, 8, "\n".join( e.uri.encode('utf8')
+                                                          for e in els
+                                                          if isinstance(e, Annotation) ))
             return True
+        elif (targetType == config.data.target_type['text-plain']
+              or targetType == config.data.target_type['TEXT']
+              or targetType == config.data.target_type['STRING']):
+            selection.set(selection.target, 8, "\n".join(e.content.data.encode('utf8')
+                                                          for e in els
+                                                          if isinstance(e, Annotation) ))
         else:
             print "Unknown target type for drag: %d" % targetType
         return True

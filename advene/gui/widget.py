@@ -45,14 +45,14 @@ import gobject
 import advene.core.config as config
 from advene.core.imagecache import ImageCache
 
-from advene.gui.util import png_to_pixbuf
-from advene.gui.util import encode_drop_parameters
+from advene.gui.util import png_to_pixbuf, enable_drag_source, name2color
+from advene.gui.util import encode_drop_parameters, get_color_style
 import advene.util.helper as helper
 from advene.model.cam.annotation import Annotation
 
 import advene.gui.popup
 
-active_color=gtk.gdk.color_parse ('#fdfd4b')
+active_color=name2color('#fdfd4b')
 
 class GenericColorButtonWidget(gtk.DrawingArea):
     """ Widget emulating a color button widget
@@ -276,18 +276,8 @@ class AnnotationWidget(GenericColorButtonWidget):
 
         w=gtk.Window(gtk.WINDOW_POPUP)
         w.set_decorated(False)
-
-        style=w.get_style().copy()
-        black=gtk.gdk.color_parse('black')
-        white=gtk.gdk.color_parse('white')
-
-        for state in (gtk.STATE_ACTIVE, gtk.STATE_NORMAL,
-                      gtk.STATE_SELECTED, gtk.STATE_INSENSITIVE,
-                      gtk.STATE_PRELIGHT):
-            style.bg[state]=black
-            style.fg[state]=white
-            style.text[state]=white
-            #style.base[state]=white
+        # Set white on black background
+        style=get_color_style(w, 'black', 'white')
         w.set_style(style)
 
         v=gtk.VBox()
@@ -357,16 +347,15 @@ class AnnotationWidget(GenericColorButtonWidget):
     def drag_sent(self, widget, context, selection, targetType, eventTime):
         """Handle the drag-sent event.
         """
-        try:
-            widgets=self.container.get_selected_annotation_widgets()
-            if not widget in widgets:
-                widgets=None
-        except AttributeError:
-            widgets=None
-        if not widgets:
-            widgets=[ widget ]
-
         if targetType == config.data.target_type['annotation']:
+            try:
+                widgets=self.container.get_selected_annotation_widgets()
+                if not widget in widgets:
+                    widgets=None
+            except AttributeError:
+                widgets=None
+            if not widgets:
+                widgets=[ widget ]
             selection.set(selection.target, 8, "\n".join( w.annotation.uriref for w in widgets ).encode('utf8'))
         elif targetType == config.data.target_type['uri-list']:
             l=(self.controller.build_context(here=w.annotation).evaluate('here/absolute_url')
@@ -501,6 +490,7 @@ class AnnotationWidget(GenericColorButtonWidget):
             c=w
             context.set_source_rgba(0, 0, 0, .5)
             context.move_to(0, height)
+            context.line_to(0, int(height * v))
             for v in l:
                 context.line_to(int(c), int(height * v))
                 c += w
@@ -767,42 +757,10 @@ class AnnotationRepresentation(gtk.Button):
         self.add(self.controller.gui.get_illustrated_text(text=self.controller.get_title(annotation),
                                                           position=annotation.begin,
                                                           vertical=False,
-                                                          height=20))
+                                                          height=20,
+                                                          color=controller.get_element_color(annotation)))
         self.connect('button-press-event', self.button_press_handler, annotation)
-        self.connect('drag-data-get', self.drag_sent)
-        if self.callback is not None:
-            self.connect('clicked', callback)
-        # The widget can generate drags
-        self.drag_source_set(gtk.gdk.BUTTON1_MASK,
-                             config.data.drag_type['annotation']
-                             + config.data.drag_type['uri-list']
-                             + config.data.drag_type['text-plain']
-                             + config.data.drag_type['TEXT']
-                             + config.data.drag_type['STRING']
-                             + config.data.drag_type['timestamp']
-                             + config.data.drag_type['tag']
-                             ,
-                             gtk.gdk.ACTION_LINK)
-
-    def drag_sent(self, widget, context, selection, targetType, eventTime):
-        """Handle the drag-sent event.
-        """
-        if targetType == config.data.target_type['annotation']:
-            selection.set(selection.target, 8, widget.annotation.uriref.encode('utf8'))
-        elif targetType == config.data.target_type['uri-list']:
-            selection.set(selection.target, 8, self.controller.build_context(here=widget.annotation).evaluate('here/absolute_url').encode('utf8'))
-        elif (targetType == config.data.target_type['text-plain']
-              or targetType == config.data.target_type['TEXT']
-              or targetType == config.data.target_type['STRING']):
-            selection.set(selection.target, 8, widget.annotation.content.data.encode('utf8'))
-        elif targetType == config.data.target_type['timestamp']:
-            selection.set(selection.target, 
-                          8, 
-                          encode_drop_parameters(timestamp=widget.annotation.begin,
-                                                 comment=self.controller.get_title(widget.annotation)))
-        else:
-            return False
-        return True
+        enable_drag_source(self, self.annotation, self.controller)
 
     def button_press_handler(self, widget, event, annotation):
         if event.button == 3 and event.type == gtk.gdk.BUTTON_PRESS:
@@ -818,17 +776,33 @@ gobject.type_register(AnnotationRepresentation)
 class RelationRepresentation(gtk.Button):
     """Representation for a relation.
     """
-    if config.data.os == 'win32':
-        arrow={ 'to': u'->', 'from': u'<-' }
-    else:
+    if config.data.os == 'linux':
         arrow={ 'to': u'\u2192', 'from': u'\u2190' }
+    else:
+        arrow={ 'to': u'->', 'from': u'<-' }
 
     def __init__(self, relation, controller, direction='to'):
         self.relation=relation
         self.controller=controller
         self.direction=direction
-        super(RelationRepresentation, self).__init__(u'%s %s %s' % (self.arrow[direction], controller.get_title(relation), self.arrow[direction]))
+        super(RelationRepresentation, self).__init__()
+        l=gtk.Label()
+        self.add(l)
+        l.show()
+        self.refresh()
         self.connect('button-press-event', self.button_press_handler, relation)
+        enable_drag_source(self, self.relation, self.controller)
+
+    def refresh(self):
+        l=self.get_children()[0]
+        t=u'%s %s %s' % (self.arrow[self.direction], 
+                         self.controller.get_title(self.relation), 
+                         self.arrow[self.direction])
+        color=self.controller.get_element_color(self.relation)
+        if color:
+            l.set_markup('<span background="%s">%s</span>' % (color, t.replace('<', '&lt;')))
+        else:
+            l.set_text(t)
 
     def button_press_handler(self, widget, event, relation):
         if event.button == 3 and event.type == gtk.gdk.BUTTON_PRESS:
@@ -853,7 +827,7 @@ class TimestampRepresentation(gtk.Button):
     """
     def __init__(self, value, controller, width=None, epsilon=None, comment_getter=None, visible_label=True):
         """Instanciate a new TimestampRepresentation.
-        
+
         @param value: the timestamp value
         @type value: int
         @param controller: the controller
@@ -883,18 +857,7 @@ class TimestampRepresentation(gtk.Button):
         self.extend_popup_menu=None
         self.highlight=False
 
-        style=self.get_style().copy()
-        black=gtk.gdk.color_parse('black')
-        white=gtk.gdk.color_parse('white')
-
-        for state in (gtk.STATE_ACTIVE, gtk.STATE_NORMAL,
-                      gtk.STATE_SELECTED, gtk.STATE_INSENSITIVE,
-                      gtk.STATE_PRELIGHT):
-            style.bg[state]=black
-            style.base[state]=black
-            style.fg[state]=white
-            style.text[state]=white
-            #style.base[state]=white
+        style=get_color_style(self, 'black', 'white')
         self.set_style(style)
 
         box=gtk.VBox()
@@ -914,53 +877,8 @@ class TimestampRepresentation(gtk.Button):
         self.refresh()
 
         self.connect('button-press-event', self._button_press_handler)
-        self.connect('drag-data-get', self._drag_sent)
-        # The widget can generate drags
-        self.drag_source_set(gtk.gdk.BUTTON1_MASK,
-                             config.data.drag_type['timestamp']
-                             + config.data.drag_type['text-plain']
-                             + config.data.drag_type['TEXT']
-                             + config.data.drag_type['STRING']
-                             ,
-                             gtk.gdk.ACTION_LINK | gtk.gdk.ACTION_COPY | gtk.gdk.ACTION_MOVE)
 
-        # Define drag cursor
-        def _drag_begin(widget, context):
-            w=gtk.Window(gtk.WINDOW_POPUP)
-            w.set_decorated(False)
-            w.set_style(style)
-
-            v=gtk.VBox()
-            v.set_style(style)
-            i=gtk.Image()
-            v.pack_start(i, expand=False)
-            l=gtk.Label()
-            l.set_style(style)
-            l.set_ellipsize(pango.ELLIPSIZE_END)
-            v.pack_start(l, expand=False)
-
-            if self.value is None:
-                val=-1
-            else:
-                val=self.value
-            i.set_from_pixbuf(png_to_pixbuf (self.controller.package.imagecache.get(val, epsilon=self.epsilon), width=config.data.preferences['drag-snapshot-width']))
-            l.set_markup('<small>%s</small>' % helper.format_time(self.value))
-
-            w.add(v)
-            w.show_all()
-            w.set_default_size(3 * config.data.preferences['drag-snapshot-width'], -1)
-            widget._icon=w
-            context.set_icon_widget(w, 0, 0)
-            return True
-
-        def _drag_end(widget, context):
-            widget._icon.destroy()
-            widget._icon=None
-            return True
-        # drag_set_icon_cursor does not work on native Gtk on MacOS X
-        if not (config.data.os == 'darwin' and not os.environ.get('DISPLAY')):
-            self.connect('drag-begin', _drag_begin)
-            self.connect('drag-end', _drag_end)
+        enable_drag_source(self, self.get_value, self.controller)
 
         def enter_bookmark(widget, event):
             self.controller.notify('BookmarkHighlight', timestamp=self.value, immediate=True)
@@ -973,6 +891,21 @@ class TimestampRepresentation(gtk.Button):
         self.connect('enter-notify-event', enter_bookmark)
         self.connect('leave-notify-event', leave_bookmark)
 
+        self._rules=[]
+        # React to UpdateSnapshot events
+        def snapshot_update_cb(context, target):
+            if abs(context.globals['position'] - self._value) <= self.epsilon:
+                # Update the representation
+                self.refresh()
+            return True
+        def remove_rules(*p):
+            for r in self._rules:
+                self.controller.event_handler.remove_rule(r, 'internal')
+            return False
+        self._rules.append(self.controller.event_handler.internal_rule (event='SnapshotUpdate',
+                                                                        method=snapshot_update_cb))
+        self.connect('destroy', remove_rules)
+
     def get_value(self):
         return self._value
     def set_value(self, v):
@@ -982,23 +915,6 @@ class TimestampRepresentation(gtk.Button):
         self._value=v
         self.refresh()
     value=property(get_value, set_value, doc="Timestamp value")
-
-    def _drag_sent(self, widget, context, selection, targetType, eventTime):
-        """Handle the drag-sent event.
-        """
-        if (targetType == config.data.target_type['text-plain']
-              or targetType == config.data.target_type['TEXT']
-              or targetType == config.data.target_type['STRING']):
-            selection.set(selection.target, 8, helper.format_time(self._value).encode('utf-8'))
-        elif targetType == config.data.target_type['timestamp']:
-            if self.comment_getter is not None:
-                    selection.set(selection.target, 8, encode_drop_parameters(timestamp=self._value,
-                                                                              comment=self.comment_getter()))
-            else:
-                    selection.set(selection.target, 8, encode_drop_parameters(timestamp=self._value))
-        else:
-            return False
-        return True
 
     def goto_and_refresh(self, *p):
         """Goto the timestamp, and refresh the image if necessary and possible.
@@ -1063,13 +979,13 @@ class TimestampRepresentation(gtk.Button):
         """
         data={ 'image_url': 'http:/media/snapshot/advene/%d' % self._value,
                'player_url': 'http:/media/play/%d' % self._value,
-               'timestamp': helper.format_time(self._value) 
+               'timestamp': helper.format_time(self._value)
                }
         ret="""<a href="%(player_url)s"><img width="120" border="0" src="%(image_url)s" alt="" /></a>""" % data
         if with_timestamp:
             ret = ''.join( (ret, """<br /><em><a href="%(player_url)s">%(timestamp)s</a></em>""" % data) )
         return ret
-                          
+
     def set_width(self, w):
         """Set the width of the snapshot and refresh the display.
         """
@@ -1080,6 +996,7 @@ class TimestampRepresentation(gtk.Button):
         """Invalidate the snapshot image.
         """
         self.controller.package.imagecache.invalidate(self.value, self.epsilon)
+        self.controller.notify('SnapshotUpdate', position=self.value)
         self.refresh()
         return True
 
@@ -1110,11 +1027,11 @@ class TimestampRepresentation(gtk.Button):
         if self.extend_popup_menu is not None:
             self.extend_popup_menu(menu, self)
         menu.show_all()
-        
+
         if popup:
             menu.popup(None, None, None, 0, gtk.get_current_event_time())
         return menu
-    
+
     def set_color(self, color):
         # FIXME: does not work ATM
         self.modify_bg(gtk.STATE_NORMAL, color)

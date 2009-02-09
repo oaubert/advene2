@@ -952,8 +952,8 @@ class ECACatalog:
 
     # FIXME: Maybe this should be put in an external resource file
     event_names={
-        'ElementEditBegin':       _("Start of the editing of an element"),
-        'ElementEditCancel':      _("Cancel of the editing of an element"),
+        'EditSessionStart':       _("Start of the editing of an element"),
+        'EditSessionEnd':      _("Cancel of the editing of an element"),
         'ElementEditDestroy':     _("Destruction of the edit window of an element"),
         'ElementEditEnd':         _("Validation of the editing of an element"),
         'PackageEditEnd':         _("Ending editing of a package"),
@@ -965,6 +965,7 @@ class ECACatalog:
         'AnnotationActivate':     _("Activation of an annotation"),
         'AnnotationDeactivate':   _("Deactivation of an annotation"),
         'AnnotationMerge':        _("Merging of two annotations"),
+        'AnnotationMove':         _("Moving an annotation"),
         'RelationActivate':       _("Activation of a relation"),
         'RelationDeactivate':     _("Deactivation of a relation"),
         'RelationCreate':         _("Creation of a new relation"),
@@ -1006,6 +1007,9 @@ class ECACatalog:
         'MediaChange':            _("Modification of the associated media"),
         'BookmarkHighlight':      _("Highlight a bookmark"),
         'BookmarkUnhighlight':    _("Unhighlight a bookmark"),
+        'DurationUpdate':         _("Updating duration of the movie"),
+        'PopupDisplay':           _("Displaying a popup"),
+        'SnapshotUpdate':         _("Updating a snapshot"),
         }
 
     # Events that set the controller.modified state
@@ -1050,6 +1054,7 @@ class ECACatalog:
         'popup': _("Popup actions"),
         'sound': _("Sound actions"),
         'state': _("State actions"),
+        'expert': _("Expert actions"),
         }
 
     def __init__(self):

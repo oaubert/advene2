@@ -33,6 +33,7 @@ import pango
 import re
 import os
 import struct
+import itertools
 
 try:
     import gtksourceview
@@ -42,6 +43,7 @@ except ImportError:
 from advene.model.cam.package import Package
 from advene.model.cam.annotation import Annotation
 from advene.model.cam.relation import Relation
+from advene.model.cam.list import Schema
 from advene.model.cam.tag import AnnotationType, RelationType
 from advene.model.cam.view import View
 from advene.model.cam.resource import Resource
@@ -49,7 +51,7 @@ from advene.model.cam.query import Query
 
 from advene.gui.edit.timeadjustment import TimeAdjustment
 from advene.gui.views.tagbag import TagBag
-from advene.gui.util import dialog, get_small_stock_button, get_pixmap_button, name2color
+from advene.gui.util import dialog, get_pixmap_toolbutton, name2color
 from advene.gui.util.completer import Completer
 import advene.gui.popup
 from advene.gui.widget import AnnotationRepresentation, RelationRepresentation
@@ -84,7 +86,7 @@ def get_edit_popup (el, controller=None, editable=True):
                 return p
     for c in _edit_popup_list:
         if c.can_edit (el):
-            controller.notify('ElementEditBegin', element=el, immediate=True)
+            controller.notify('EditSessionStart', element=el, immediate=True)
             return c(el, controller, editable)
     raise TypeError(_("No edit popup available for element %s") % el)
 
@@ -134,56 +136,26 @@ class EditElementPopup (AdhocView):
         if self._widget is None:
             vbox=gtk.VBox()
 
+            tb=gtk.Toolbar()
+            tb.set_style(gtk.TOOLBAR_ICONS)
+
+            b=gtk.ToolButton(gtk.STOCK_OK)
+            b.connect('clicked', self.validate_cb)
+            self.controller.gui.tooltips.set_tip(b, _("Apply changes and close the edit window"))
+            tb.insert(b, -1)
+
+            b=gtk.ToolButton (gtk.STOCK_APPLY)
+            b.connect('clicked', self.apply_cb)
+            self.controller.gui.tooltips.set_tip(b, _("Apply changes"))
+            tb.insert(b, -1)
+
+            self.extend_toolbar(tb)
+
+            vbox.pack_start(tb, expand=False)
             vbox.pack_start(self.make_widget(editable=self.editable))
 
-            # Button bar
-            hbox = gtk.HButtonBox()
-
-            b = gtk.Button (stock=gtk.STOCK_OK)
-            b.connect('clicked', self.validate_cb)
-            hbox.add (b)
-
-            b = gtk.Button (stock=gtk.STOCK_APPLY)
-            b.connect('clicked', self.apply_cb)
-            hbox.add (b)
-
-            def apply_and_open(b):
-                self.apply_cb(b, None)
-                # Open in web browser
-                ctx=self.controller.build_context()
-                url=ctx.evaluate('here/absolute_url')
-                self.controller.open_url('/'.join( (url, 'view', self.element.id) ))
-                return True
-
-            def apply_and_activate(b):
-                self.apply_cb(b, None)
-                self.controller.activate_stbv(self.element)
-                p=self.controller.player
-                if p.status == p.PauseStatus:
-                    self.controller.update_status('resume')
-                elif p.status == p.PlayingStatus:
-                    pass
-                else:
-                    self.controller.update_status('start')
-                return True
-
-            if isinstance(self.element, View):
-                t = helper.get_view_type(self.element)
-                if t == 'static':
-                    # FIXME: find the test corresponding to a package view
-                    # and self.element.matchFilter['class'] in ('package', '*'):
-                    b = get_pixmap_button( 'web.png', apply_and_open)
-                    self.controller.gui.tooltips.set_tip(b, _("Apply changes and visualise in web browser"))
-                    hbox.add(b)
-                elif t == 'dynamic':
-                    b = get_small_stock_button( gtk.STOCK_MEDIA_PLAY, apply_and_activate)
-                    self.controller.gui.tooltips.set_tip(b, _("Apply changes and activate the view"))
-                    hbox.add(b)
-
-            vbox.pack_start (hbox, expand=False)
-
             def destroy_cb(*p):
-                if self.controller and self.controller.gui: 
+                if self.controller and self.controller.gui:
                     self.controller.gui.unregister_edit_popup(self)
                 return True
             vbox.connect('destroy', destroy_cb)
@@ -202,6 +174,13 @@ class EditElementPopup (AdhocView):
 
         return self._widget
 
+    def extend_toolbar(self, tb):
+        """Extend the widget toolbar.
+
+        Child classes can add their own items to the toolbar.
+        """
+        return True
+
     def register_form (self, f):
         self.forms.append(f)
 
@@ -210,6 +189,13 @@ class EditElementPopup (AdhocView):
         """
         for f in self.forms:
             f.refresh()
+
+    def close(self, *p):
+        for f in self.forms:
+            c=getattr(f, 'close', None)
+            if callable(c):
+                c()
+        return super(EditElementPopup, self).close(*p)
 
     def can_edit (el):
         """Return True if the class can edit the given element.
@@ -254,9 +240,30 @@ class EditElementPopup (AdhocView):
             self.close()
         return True
 
+    def apply_and_open(self, b):
+        self.apply_cb(b, None)
+        # Open in web browser
+        ctx=self.controller.build_context()
+        url=ctx.evaluate('here/absolute_url')
+        self.controller.open_url('/'.join( (url, 'view', self.element.id) ))
+        return True
+
+    def apply_and_activate(self, b):
+        self.apply_cb(b, None)
+        self.controller.activate_stbv(self.element)
+        p=self.controller.player
+        if p.status == p.PauseStatus:
+            self.controller.update_status('resume')
+        elif p.status == p.PlayingStatus:
+            pass
+        else:
+            self.controller.update_status('start')
+        return True
+
     def close_cb (self, button=None, data=None):
         """Method called when closing a form."""
-        self.controller.notify("ElementEditCancel", element=self.element, comment="Window closed")
+        self.controller.notify("EditSessionEnd", element=self.element, comment="Window closed")
+        self.close()
         return True
 
     def key_pressed_cb (self, widget=None, event=None):
@@ -295,6 +302,11 @@ class EditElementPopup (AdhocView):
     def edit (self, callback=None, modal=False, label=None):
         """Display the edit window.
         """
+        if self.widget.get_parent():
+            # The widget is already displayed.
+            w=self.widget.get_toplevel()
+            w.set_urgency_hint(True)
+            return self.element
         self.callback=callback
         self.key_cb[gtk.keysyms.Return] = self.validate_cb
         self.key_cb[gtk.keysyms.Escape] = self.close_cb
@@ -311,7 +323,7 @@ class EditElementPopup (AdhocView):
                            buttons=( gtk.STOCK_OK, gtk.RESPONSE_OK,
                                      gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL ))
 
-            d.vbox.add(self.vbox)
+            d.vbox.add(self.widget)
             d.vbox.show_all()
 
             d.connect('key-press-event', dialog.dialog_keypressed_cb)
@@ -348,6 +360,15 @@ class EditElementPopup (AdhocView):
 
         self.callback=callback
 
+        tb=gtk.Toolbar()
+        self.extend_toolbar(tb)
+        if tb.get_children():
+            # There are some items. Display them
+            tb.props.icon_size=gtk.ICON_SIZE_SMALL_TOOLBAR
+            tb.set_style(gtk.TOOLBAR_ICONS)
+            self.vbox.pack_start(tb, expand=False)
+        else:
+            tb.destroy()
         w=self.make_widget (editable=self.editable, compact=True)
         self.vbox.add (w)
         self._widget = self.vbox
@@ -369,15 +390,15 @@ class EditElementPopup (AdhocView):
                               types=None,
                               labels=None):
         """Shortcut for creating an Attributes form and registering it."""
-        f = EditAttributesForm(element, controller=self.controller)
-        f.set_attributes(fields)
+        f = EditAttributesForm (element, controller=self.controller)
+        f.set_attributes (fields)
         if editable and editables is not None:
-            f.set_editables(editables)
+            f.set_editable (editables)
         if types is not None:
-            f.set_types(types)
+            f.set_types (types)
         if labels is not None:
-            f.set_labels(labels)
-        self.register_form(f)
+            f.set_labels (labels)
+        self.register_form (f)
         return f
 
 class EditAnnotationPopup (EditElementPopup):
@@ -399,13 +420,62 @@ class EditAnnotationPopup (EditElementPopup):
         l.sort(key=lambda a: a.begin, reverse=(direction == -1))
         if l:
             a=l[0]
-            new=self.controller.gui.edit_element(a)
+            new=self.controller.gui.edit_element(a, destination=self._destination)
             # Validate the current one
             self.validate_cb()
         return True
 
+    def extend_toolbar(self, tb):
+        if tb.get_children():
+            tb.insert(gtk.SeparatorToolItem(), -1)
+
+        b=get_pixmap_toolbutton(gtk.STOCK_GO_BACK, self.goto, -1)
+        b.set_tooltip(self.controller.gui.tooltips, _("Apply changes and edit previous annotation of same type"))
+        tb.insert(b, -1)
+
+        b=get_pixmap_toolbutton(gtk.STOCK_GO_FORWARD, self.goto, +1)
+        b.set_tooltip(self.controller.gui.tooltips, _("Apply changes and edit next annotation of same type"))
+        tb.insert(b, -1)
+
+        def toggle_highlight(b, ann):
+            if b.highlight:
+                event="AnnotationActivate"
+                label= _("Unhighlight annotation")
+                b.highlight=False
+            else:
+                event="AnnotationDeactivate"
+                label=_("Highlight annotation")
+                b.highlight=True
+            self.controller.gui.tooltips.set_tip(b, label)
+            self.controller.notify(event, annotation=ann)
+            return True
+
+        b=get_pixmap_toolbutton('highlight.png', toggle_highlight, self.element)
+        b.highlight=True
+        tb.insert(b, -1)
+        return True
+
     def make_widget (self, editable=True, compact=False):
         vbox = gtk.VBox ()
+
+        nb=gtk.Notebook()
+        vbox.pack_start(nb, expand=False)
+
+        def small_label(t):
+            l=gtk.Label()
+            l.set_markup('<span size="x-small">%s</span>' % t)
+            return l
+
+        def begin_callback(t):
+            for c in self.forms:
+                if hasattr(c, 'contentform') and hasattr(c.contentform, 'set_begin'):
+                    c.contentform.set_begin(t)
+            return True
+
+        f = EditFragmentForm(element=self.element, controller=self.controller,
+                             begin_callback=begin_callback)
+        self.register_form (f)
+        nb.append_page(f.get_view(compact=compact), small_label(_("Fragment")))
 
         # Annotation data
         f = self.make_registered_form (element=self.element,
@@ -424,22 +494,16 @@ class EditAnnotationPopup (EditElementPopup):
                                                'modified': _('Modified'),
                                                }
                                        )
-        ex=self.expandable(f.get_view(), _("Attributes"), expanded=False)
-
-        vbox.pack_start (ex, expand=False)
-
-        f = EditFragmentForm(element=self.element, controller=self.controller)
-        self.register_form (f)
-        vbox.pack_start (f.get_view(compact=compact), expand=False)
+        nb.append_page(f.get_view(), small_label(_("Metadata")))
 
         f = EditRelationsForm(element=self.element, controller=self.controller)
         self.register_form(f)
-        vbox.pack_start (self.expandable(f.get_view(), _("Relations"), expanded=not compact),
-                         expand=False)
+        nb.append_page(f.get_view(compact=compact), small_label(_("Relations")))
 
+        # FIXME: implement tag support
         #f = EditTagForm(element=self.element, controller=self.controller, editable=editable)
         #self.register_form(f)
-        #vbox.pack_start (f.get_view(compact=compact), expand=False)
+        #nb.append_page(f.get_view(compact=compact), small_label(_("Tags")))
 
         f = EditContentForm(self.element.content, controller=self.controller,
                             mimetypeeditable=False, parent=self.element)
@@ -448,34 +512,11 @@ class EditAnnotationPopup (EditElementPopup):
         self.register_form(f)
         vbox.pack_start(t, expand=True)
 
-        hb=gtk.HBox()
 
-        b=get_small_stock_button(gtk.STOCK_GO_BACK, self.goto, -1)
-        self.controller.gui.tooltips.set_tip(b, _("Edit previous annotation of same type"))
-        hb.pack_start(b, expand=False)
-
-        b=get_small_stock_button(gtk.STOCK_GO_FORWARD, self.goto, +1)
-        self.controller.gui.tooltips.set_tip(b, _("Edit next annotation of same type"))
-        hb.pack_start(b, expand=False)
-
-        def toggle_highlight(b, ann):
-            if b.highlight:
-                event="AnnotationActivate"
-                label= _("Unhighlight annotation")
-                b.highlight=False
-            else:
-                event="AnnotationDeactivate"
-                label=_("Highlight annotation")
-                b.highlight=True
-            self.controller.gui.tooltips.set_tip(b, label)
-            self.controller.notify(event, annotation=ann)
-            return True
-
-        b=get_pixmap_button('highlight.png', toggle_highlight, self.element)
-        b.highlight=True
-        hb.pack_start(b, expand=False)
-
-        vbox.pack_start(hb, expand=False)
+        def select_default(widget):
+            widget.set_current_page(0)
+            return False
+        nb.connect_after('realize', select_default)
 
         return vbox
 
@@ -507,7 +548,7 @@ class EditRelationPopup (EditElementPopup):
                                                'modified': _('Modified'),
                                                }
                                        )
-        ex=self.expandable(f.get_view(), _("Attributes"), expanded=False)
+        ex=self.expandable(f.get_view(), _("Metadata"), expanded=False)
         vbox.pack_start(ex, expand=False)
 
         def button_press_handler(widget, event, annotation):
@@ -524,9 +565,10 @@ class EditRelationPopup (EditElementPopup):
         hb = gtk.HBox()
         for a in self.element:
             b = AnnotationRepresentation(a, controller=self.controller)
-            hb.add(b)
+            b.set_alignment(0, 0)
+            hb.pack_start(b, expand=False)
         hb.show_all()
-        vbox.pack_start(self.framed(hb, _("Members")), expand=True)
+        vbox.pack_start(self.framed(hb, _("Members")), expand=False)
 
         # Tags
         #f = EditTagForm(element=self.element, controller=self.controller, editable=editable)
@@ -557,16 +599,29 @@ class EditViewPopup (EditElementPopup):
         self.controller.notify("ViewEditEnd", view=element)
         return True
 
+    def extend_toolbar(self, tb):
+        t = helper.get_view_type(self.element)
+        # FIXME: check toplevel metadata
+        if t == 'static': #  and self.element.matchFilter['class'] in ('package', '*'):
+            b = get_pixmap_toolbutton( 'web.png', self.apply_and_open)
+            self.controller.gui.tooltips.set_tip(b, _("Apply changes and visualise in web browser"))
+            tb.insert(b, -1)
+        elif t == 'dynamic':
+            b = get_pixmap_toolbutton( gtk.STOCK_MEDIA_PLAY, self.apply_and_activate)
+            self.controller.gui.tooltips.set_tip(b, _("Apply changes and activate the view"))
+            tb.insert(b, -1)
+        return True
+
     def make_widget (self, editable=True, compact=False):
         vbox = gtk.VBox ()
 
-        f = self.make_registered_form (element=self.element,
-                                       fields=('title', ),
-                                       editable=editable,
-                                       editables=('title', ),
-                                       labels={ 'title':     _('Title') }
-                                       )
-        vbox.pack_start (f.get_view (), expand=False)
+        f = EditAttributeForm(title=_("Title (name)"),
+                              element=self.element, name='title',
+                              controller=self.controller,
+                              editable=editable,
+                              tooltip=_("Name of the view"))
+        self.register_form(f)
+        vbox.pack_start(f.get_view(), expand=False)
 
         f = self.make_registered_form (element=self.element,
                                        fields=('id', 'uriref',
@@ -583,8 +638,10 @@ class EditViewPopup (EditElementPopup):
                                                'modified': _('Modified'),
                                                }
                                        )
-        vbox.pack_start (self.expandable(f.get_view (), _("Attributes"),
+        vbox.pack_start (self.expandable(f.get_view (), _("Metadata"),
                                          expanded=False), expand=False)
+
+        # FIXME: allow to edit toplevel metadata
 
         # Tags (not tags in view)
         #f = EditTagForm(element=self.element, controller=self.controller, editable=editable)
@@ -615,13 +672,13 @@ class EditQueryPopup (EditElementPopup):
     def make_widget (self, editable=True, compact=False):
         vbox = gtk.VBox ()
 
-        f = self.make_registered_form (element=self.element,
-                                       fields=('title', ),
-                                       editable=editable,
-                                       editables=('title', ),
-                                       labels={ 'title':     _('Title') }
-                                       )
-        vbox.pack_start (f.get_view (), expand=False)
+        f = EditAttributeForm(title=_("Title (name)"),
+                              element=self.element, name='title',
+                              controller=self.controller,
+                              editable=editable,
+                              tooltip=_("Name of the query"))
+        self.register_form(f)
+        vbox.pack_start(f.get_view (), expand=False)
 
         f = self.make_registered_form (element=self.element,
                                        fields=('id', 'uriref',
@@ -638,7 +695,7 @@ class EditQueryPopup (EditElementPopup):
                                                'modified': _('Modified'),
                                                }
                                        )
-        vbox.pack_start (self.expandable(f.get_view (), expanded=not compact),
+        vbox.pack_start (self.expandable(f.get_view (),  _("Metadata"), expanded=False),
                          expand=False)
 
         f = EditContentForm (self.element.content, controller=self.controller,
@@ -658,22 +715,44 @@ class EditPackagePopup (EditElementPopup):
     def notify(self, element):
         # Side effect of the notify method: we use it to update the
         # appropriate attributes of the package.
+        self.controller.set_default_media(element.meta.get(config.data.namespace+"mediafile"),
+                                          package=element)
+        d=element.meta.get(config.data.namespace+"duration")
+        if d:
+            try:
+                d=long(d)
+            except ValueError:
+                d=0
+            # FIXME: is cached_duration still valid?
+            element.cached_duration = d
+        else:
+            element.cached_duration = 0
         self.controller.notify("PackageEditEnd", package=element)
         return True
 
     def make_widget (self, editable=False, compact=False):
         vbox=gtk.VBox()
+
+        sg=gtk.SizeGroup(gtk.SIZE_GROUP_HORIZONTAL)
+
+        f = EditAttributeForm(title=_("Title (name)"),
+                              element=self.element, name='title',
+                              controller=self.controller,
+                              editable=editable,
+                              tooltip=_("Name of the package"),
+                              sizegroup=sg)
+        self.register_form(f)
+        vbox.pack_start(f.get_view(), expand=False)
+
         f = self.make_registered_form (element=self.element,
                                        fields=('id', 'uriref',
-                                               'title',
                                                'creator', 'created',
                                                'contributor', 'modified',
                                                'description'),
                                        types={ },
                                        editable=editable,
-                                       editables=('description', 'title'),
+                                       editables=('description', ),
                                        labels={'id':     _('Id'),
-                                               'title': _('Title'),
                                                'uriref':    _('URI'),
                                                'creator': _('Creator'),
                                                'contributor': _('Contributor'),
@@ -681,13 +760,26 @@ class EditPackagePopup (EditElementPopup):
                                                'modified': _('Modified'),
                                                }
                                        )
+
+        vbox.pack_start (self.expandable(f.get_view (),  _("Metadata"), expanded=False),
+                         expand=False)
+
+        f = EditAttributeForm(title=_("Description"),
+                              element=self.element, name='description',
+                              controller=self.controller,
+                              editable=editable,
+                              tooltip=_("Textual description of the package"),
+                              sizegroup=sg)
+        self.register_form(f)
         vbox.pack_start(f.get_view(), expand=False)
+
 
         f = EditMetaForm(title=_("Default dynamic view"),
                          element=self.element, name='default_stbv',
                          namespaceid='advenetool', controller=self.controller,
                          editable=editable,
-                         tooltip=_("Dynamic view to activate on package load"))
+                         tooltip=_("Dynamic view to activate on package load"),
+                         sizegroup=sg)
         self.register_form(f)
         vbox.pack_start(f.get_view(), expand=False)
 
@@ -695,7 +787,8 @@ class EditPackagePopup (EditElementPopup):
                          element=self.element, name='default_utbv',
                          namespaceid='advenetool', controller=self.controller,
                          editable=editable,
-                         tooltip=_("Static view to open on package load"))
+                         tooltip=_("Static view to open on package load"),
+                         sizegroup=sg)
         self.register_form(f)
         vbox.pack_start(f.get_view(), expand=False)
 
@@ -703,7 +796,8 @@ class EditPackagePopup (EditElementPopup):
                          element=self.element, name='default_adhoc',
                          namespaceid='advenetool', controller=self.controller,
                          editable=editable,
-                         tooltip=_("Adhoc view to open on package load"))
+                         tooltip=_("Adhoc view to open on package load"),
+                         sizegroup=sg)
         self.register_form(f)
         vbox.pack_start(f.get_view(), expand=False)
 
@@ -711,7 +805,8 @@ class EditPackagePopup (EditElementPopup):
                          element=self.element, name='duration',
                          namespaceid='advenetool', controller=self.controller,
                          editable=editable,
-                         tooltip=_("Cached duration in ms"))
+                         tooltip=_("Cached duration in ms"),
+                         sizegroup=sg)
         self.register_form(f)
         vbox.pack_start(f.get_view(), expand=False)
 
@@ -719,9 +814,58 @@ class EditPackagePopup (EditElementPopup):
                          element=self.element, name='mediafile',
                          namespaceid='advenetool', controller=self.controller,
                          editable=editable,
-                         tooltip=_("Location of associated media file"))
+                         tooltip=_("Location of associated media file"),
+                         sizegroup=sg)
         self.register_form(f)
         vbox.pack_start(f.get_view(), expand=False)
+
+        return vbox
+
+class EditSchemaPopup (EditElementPopup):
+    def can_edit (el):
+        return isinstance (el, Schema)
+    can_edit = staticmethod (can_edit)
+
+    def notify(self, element):
+        self.controller.notify("SchemaEditEnd", schema=element)
+        return True
+
+    def make_widget (self, editable=True, compact=False):
+        vbox=gtk.VBox()
+
+        sg=gtk.SizeGroup(gtk.SIZE_GROUP_HORIZONTAL)
+        f = EditAttributeForm(title=_("Title (name)"),
+                              element=self.element, name='title',
+                              controller=self.controller,
+                              editable=editable,
+                              tooltip=_("Name of the schema"),
+                              sizegroup=sg)
+        self.register_form(f)
+        vbox.pack_start(f.get_view(), expand=False)
+
+        f = self.make_registered_form (element=self.element,
+                                       fields=('id', 'uriref',
+                                               'creator', 'created',
+                                               'contributor', 'modified',
+                                               'color', 'element_color', 'description'),
+                                       types={ 'color': 'tales',
+                                               'element_color': 'tales' },
+                                       editable=editable,
+                                       editables=('description', ),
+                                       labels={'id':     _('Id'),
+                                               'uriref':    _('URI'),
+                                               'creator': _('Creator'),
+                                               'contributor': _('Contributor'),
+                                               'created':   _('Created'),
+                                               'modified': _('Modified'),
+                                               'description': _('Description'),
+                                               'color': _('Couleur'),
+                                               'element_color': _('Couleur des éléments'),
+                                               }
+                                       )
+
+        vbox.pack_start (self.expandable(f.get_view (),  _("Metadata"), expanded=False),
+                         expand=False)
 
         return vbox
 
@@ -737,18 +881,29 @@ class EditAnnotationTypePopup (EditElementPopup):
     def make_widget (self, editable=False, compact=False):
         vbox = gtk.VBox()
 
+        sg=gtk.SizeGroup(gtk.SIZE_GROUP_HORIZONTAL)
+
+        f = EditAttributeForm(title=_("Title (name)"),
+                              element=self.element, name='title',
+                              controller=self.controller,
+                              editable=editable,
+                              tooltip=_("Name of the type"),
+                              sizegroup=sg)
+        self.register_form(f)
+        vbox.pack_start(f.get_view(), expand=False)
+
         f = self.make_registered_form (element=self.element,
                                        fields=('id', 'uriref',
                                                'creator', 'created',
                                                'contributor', 'modified',
-                                               'title', 'mimetype',
+                                               'mimetype',
                                                'description', 'representation',
                                                'color', 'element_color'),
                                        types={'color': 'tales',
                                               'element_color': 'tales',
                                               'representaiton': 'tales'},
                                        editable=editable,
-                                       editables=('contributor', 'description', 'representation', 'color', 'element_color', 'title', 'mimetype'),
+                                       editables=('contributor', 'description', 'representation', 'color', 'element_color', 'mimetype'),
                                        labels={'id':     _('Id'),
                                                'title': _('Title'),
                                                'mimetype': _('MIME Type'),
@@ -757,6 +912,9 @@ class EditAnnotationTypePopup (EditElementPopup):
                                                'contributor': _('Contributor'),
                                                'created':   _('Created'),
                                                'modified': _('Modified'),
+                                               'description': _('Description'),
+                                               'color': _('Couleur'),
+                                               'element_color': _('Couleur des éléments'),
                                                }
                                        )
         vbox.add(f.get_view())
@@ -775,26 +933,46 @@ class EditRelationTypePopup (EditElementPopup):
     def make_widget (self, editable=False, compact=False):
         vbox=gtk.VBox()
 
+        sg=gtk.SizeGroup(gtk.SIZE_GROUP_HORIZONTAL)
+        f = EditAttributeForm(title=_("Title (name)"),
+                              element=self.element, name='title',
+                              controller=self.controller,
+                              editable=editable,
+                              tooltip=_("Name of the type"),
+                              sizegroup=sg)
+        self.register_form(f)
+        vbox.pack_start(f.get_view(), expand=False)
+
+        f = EditAttributeForm(title=_("MIME Type"),
+                              element=self.element, name='mimetype',
+                              controller=self.controller,
+                              editable=editable,
+                              tooltip=_("MIMEType of the content"),
+                              type='mimetype',
+                              sizegroup=sg)
+        self.register_form(f)
+        vbox.pack_start(f.get_view(), expand=False)
+
         f = self.make_registered_form (element=self.element,
                                        fields=('id', 'uriref',
                                                'creator', 'created',
                                                'contributor', 'modified',
-                                               'title', 'mimetype',
                                                'description', 'representation',
                                                'color', 'element_color'),
                                        types={'color': 'tales',
                                               'element_color': 'tales',
                                               'representaiton': 'tales'},
                                        editable=editable,
-                                       editables=('contributor', 'description', 'representation', 'color', 'element_color', 'title', 'mimetype'),
+                                       editables=('contributor', 'description', 'representation', 'color', 'element_color'),
                                        labels={'id':     _('Id'),
-                                               'title': _('Title'),
-                                               'mimetype': _('MIME Type'),
                                                'uriref':    _('URI'),
                                                'creator': _('Creator'),
                                                'contributor': _('Contributor'),
                                                'created':   _('Created'),
                                                'modified': _('Modified'),
+                                               'description': _('Description'),
+                                               'color': _('Couleur'),
+                                               'element_color': _('Couleur des éléments'),
                                                }
                                        )
         vbox.add(f.get_view ())
@@ -858,6 +1036,9 @@ class EditForm(object):
     This class defines the method that an EditForm is expected to
     implement.
     """
+    def close(self):
+        return True
+
     def check_validity(self):
         """Checks the validity of the data."""
         return True
@@ -963,6 +1144,10 @@ class EditContentForm(EditForm):
                                           ('application/x-advene-ruleset',
                                            'application/x-advene-simplequery')))
 
+    def close(self):
+        self.contentform.close()
+        return True
+
     def set_editable (self, bool):
         self.editable = bool
 
@@ -999,7 +1184,7 @@ class EditContentForm(EditForm):
         if self.element.mimetype == 'application/x-advene-ruleset':
             compact=True
 
-        if not compact:
+        if not compact and config.data.preferences['expert-mode']:
             hbox = gtk.HBox()
             l=gtk.Label(_("MIME Type"))
             hbox.pack_start(l, expand=False)
@@ -1176,32 +1361,27 @@ class TextContentHandler (ContentHandler):
 
         if not compact:
             tb=gtk.Toolbar()
+            vbox.toolbar=tb
             tb.set_style(gtk.TOOLBAR_ICONS)
 
-            b=gtk.ToolButton()
-            b.set_stock_id(gtk.STOCK_OPEN)
+            b=gtk.ToolButton(gtk.STOCK_OPEN)
             b.set_tooltip(self.tooltips, _("Open a file (C-o)"))
             b.connect('clicked', self.content_open)
             tb.insert(b, -1)
 
-            b=gtk.ToolButton()
-            b.set_stock_id(gtk.STOCK_SAVE)
+            b=gtk.ToolButton(gtk.STOCK_SAVE)
             b.set_tooltip(self.tooltips, _("Save to a file (C-s)"))
             b.connect('clicked', self.content_save)
             tb.insert(b, -1)
 
-            b=gtk.ToolButton()
-            b.set_stock_id(gtk.STOCK_REFRESH)
+            b=gtk.ToolButton(gtk.STOCK_REFRESH)
             b.set_tooltip(self.tooltips, _("Reload the file (C-r)"))
             b.connect('clicked', self.content_reload)
             tb.insert(b, -1)
 
             if config.data.preferences['expert-mode']:
-                i=gtk.Image()
-                i.set_from_file(config.data.advenefile( ('pixmaps', 'browser.png') ))
-                b=gtk.ToolButton(icon_widget=i)
+                b=get_pixmap_toolbutton('browser.png', self.browser_open)
                 b.set_tooltip(self.tooltips, _("Insert a value from the browser (C-i)"))
-                b.connect('clicked', self.browser_open)
                 tb.insert(b, -1)
 
             vbox.pack_start(tb, expand=False)
@@ -1232,13 +1412,11 @@ class TextContentHandler (ContentHandler):
                 return True
 
             if not compact:
-                b=gtk.ToolButton()
-                b.set_stock_id(gtk.STOCK_UNDO)
+                b=gtk.ToolButton(gtk.STOCK_UNDO)
                 b.connect('clicked', undo)
                 tb.insert(b, -1)
 
-                b=gtk.ToolButton()
-                b.set_stock_id(gtk.STOCK_REDO)
+                b=gtk.ToolButton(gtk.STOCK_REDO)
                 b.connect('clicked', redo)
                 tb.insert(b, -1)
 
@@ -1254,7 +1432,7 @@ class TextContentHandler (ContentHandler):
         if col is not None:
             color=name2color(col)
             self.view.modify_base(gtk.STATE_NORMAL, color)
-            
+
         # Hook the completer component
         if hasattr(self.parent.owner, '_indexer'):
             completer=Completer(textview=self.view,
@@ -1399,20 +1577,17 @@ class GenericContentHandler (ContentHandler):
         tb=gtk.Toolbar()
         tb.set_style(gtk.TOOLBAR_ICONS)
 
-        b=gtk.ToolButton()
-        b.set_stock_id(gtk.STOCK_OPEN)
+        b=gtk.ToolButton(gtk.STOCK_OPEN)
         b.set_tooltip(self.tooltips, _("Open a file (C-o)"))
         b.connect('clicked', self.content_open)
         tb.insert(b, -1)
 
-        b=gtk.ToolButton()
-        b.set_stock_id(gtk.STOCK_SAVE)
+        b=gtk.ToolButton(gtk.STOCK_SAVE)
         b.set_tooltip(self.tooltips, _('Save to a file (C-s)'))
         b.connect('clicked', self.content_save)
         tb.insert(b, -1)
 
-        b=gtk.ToolButton()
-        b.set_stock_id(gtk.STOCK_REFRESH)
+        b=gtk.ToolButton(gtk.STOCK_REFRESH)
         b.set_tooltip(self.tooltips, _('Reload the file (C-r)'))
         b.connect('clicked', self.content_reload)
         tb.insert(b, -1)
@@ -1434,12 +1609,13 @@ config.data.register_content_handler(GenericContentHandler)
 class EditFragmentForm(EditForm):
     """Edit the bounds of an annotation.
     """
-    def __init__(self, element=None, controller=None, editable=True):
+    def __init__(self, element=None, controller=None, editable=True, begin_callback=None):
         self.begin=None
         self.end=None
         self.element = element
         self.controller = controller
         self.editable=editable
+        self.begin_callback=begin_callback
 
     def check_validity(self):
         if self.begin.value >= self.end.value:
@@ -1470,7 +1646,8 @@ class EditFragmentForm(EditForm):
         self.begin=TimeAdjustment(value=self.element.begin,
                                   controller=self.controller,
                                   editable=self.editable,
-                                  compact=compact)
+                                  compact=compact,
+                                  callback=self.begin_callback)
         f=gtk.Frame()
         f.set_label(_("Begin"))
         f.add(self.begin.get_widget())
@@ -1489,7 +1666,7 @@ class EditFragmentForm(EditForm):
 
 class EditGenericForm(EditForm):
     def __init__(self, title=None, getter=None, setter=None,
-                 controller=None, editable=True, tooltip=None, type=None, focus=False):
+                 controller=None, editable=True, tooltip=None, type=None, focus=False, sizegroup=None):
         self.title=title
         self.getter=getter
         self.setter=setter
@@ -1497,12 +1674,12 @@ class EditGenericForm(EditForm):
         self.editable=editable
         self.entry=None
         self.view=None
+        self.sizegroup=sizegroup
         self.tooltip=tooltip
         self.type=type
         self.focus=focus
 
     def get_focus(self):
-        print "get_focus", self.title, self.focus
         if self.focus:
             self.entry.grab_focus()
             return True
@@ -1514,19 +1691,34 @@ class EditGenericForm(EditForm):
 
         l=gtk.Label(self.title)
         hbox.pack_start(l, expand=False)
+        if self.sizegroup is not None:
+            self.sizegroup.add_widget(l)
 
-        self.entry=gtk.Entry()
-        if self.tooltip:
-            tt=gtk.Tooltips()
-            tt.set_tip(self.entry, self.tooltip)
         v=self.getter()
         if v is None:
             v=""
-        self.entry.set_text(v)
-        self.entry.set_editable(self.editable)
+        if self.type == 'mimetype':
+            self.entry=gtk.combo_box_entry_new_text()
+            self.entry.append_text(v)
+            for t in itertools.chain(common_content_mimetypes, common_view_mimetypes):
+                self.entry.append_text(t)
+            self.entry.set_active(0)
+            self.entry.get_children()[0].set_editable(self.editable)
+        else:
+            self.entry=gtk.Entry()
+            if self.tooltip:
+                tt=gtk.Tooltips()
+                tt.set_tip(self.entry, self.tooltip)
+            self.entry.set_text(v)
+            self.entry.set_editable(self.editable)
         hbox.pack_start(self.entry)
 
         if self.type == 'color':
+            if not config.data.preferences['expert-mode'] and (not v or v.startswith('string:')):
+                # Hide the text entry if not in expert-mode and if the
+                # current color is statically defined or empty
+                self.entry.hide()
+                self.entry.set_no_show_all(True)
             b=gtk.ColorButton()
             b.set_use_alpha(False)
 
@@ -1571,19 +1763,26 @@ class EditGenericForm(EditForm):
         v=self.getter()
         if v is None:
             v=""
-        self.entry.set_text(v)
+        if self.type == 'mimetype':
+            self.entry.prepend_text(v)
+            self.entry.set_active(0)
+        else:
+            self.entry.set_text(v)
 
     def update_element(self):
         if not self.editable:
             return False
-        v=unicode(self.entry.get_text())
+        if self.type == 'mimetype':
+            v=unicode(self.entry.get_active_text())
+        else:
+            v=unicode(self.entry.get_text())
         self.setter(v)
         return True
 
 class EditMetaForm(EditGenericForm):
     def __init__(self, title=None, element=None, name=None,
                  namespaceid='advenetool', controller=None,
-                 editable=True, tooltip=None, type=None, focus=False):
+                 editable=True, tooltip=None, type=None, focus=False, sizegroup=None):
         getter=self.metadata_get_method(element, name, namespaceid)
         setter=self.metadata_set_method(element, name, namespaceid)
         super(EditMetaForm, self).__init__(title=title,
@@ -1593,7 +1792,24 @@ class EditMetaForm(EditGenericForm):
                                            editable=editable,
                                            tooltip=tooltip,
                                            type=type,
-                                           focus=focus)
+                                           focus=focus,
+                                           sizegroup=sizegroup)
+
+class EditAttributeForm(EditGenericForm):
+    def __init__(self, title=None, element=None, name=None,
+                 controller=None,
+                 editable=True, tooltip=None, type=None, focus=False, sizegroup=None):
+        getter=lambda: getattr(element, name)
+        setter=lambda v: setattr(element, name, v)
+        super(EditAttributeForm, self).__init__(title=title,
+                                                getter=getter,
+                                                setter=setter,
+                                                controller=controller,
+                                                editable=editable,
+                                                tooltip=tooltip,
+                                                type=type,
+                                                focus=focus,
+                                                sizegroup=sizegroup)
 
 class EditAttributesForm (EditForm):
     """Creates an edit form for the given element."""
@@ -1615,7 +1831,7 @@ class EditAttributesForm (EditForm):
     def set_attributes (self, attlist):
         self.attributes = attlist
 
-    def set_editables(self, attlist):
+    def set_editable (self, attlist):
         self.editable = attlist
 
     def set_labels (self, dic):
@@ -1987,7 +2203,9 @@ class EditRelationsForm(EditForm):
 
     def refresh(self):
         self.view.foreach(self.view.remove)
-        for i, r in []: # FIXME: enumerate(self.element.relations):
+        col1=gtk.SizeGroup(gtk.SIZE_GROUP_HORIZONTAL)
+        col2=gtk.SizeGroup(gtk.SIZE_GROUP_HORIZONTAL)
+        for i, r in []: # FIXME  enumerate(self.element.relations):
             # Determine the direction
             if r.members[0] == self.element:
                 direction="to"
@@ -1995,10 +2213,19 @@ class EditRelationsForm(EditForm):
             else:
                 direction="from"
                 other=r.members[0]
-            b=RelationRepresentation(r, controller=self.controller, direction=direction)
-            self.view.attach(b, 0, 1, i, i + 1)
+            hb=gtk.HBox()
+
+            b=RelationRepresentation(r, controller=self.controller, direction=direction)            
+            b.set_alignment(0, 0)
+            col1.add_widget(b)
+            hb.pack_start(b, expand=False)
+
             a=AnnotationRepresentation(other, controller=self.controller)
-            self.view.attach(a, 1, 2, i, i + 1)
+            a.set_alignment(0, 0)
+            col2.add_widget(a)
+            hb.pack_start(a, expand=False)
+            
+            self.view.pack_start(hb, expand=False)
         self.view.show_all()
         return
 
@@ -2011,6 +2238,6 @@ class EditRelationsForm(EditForm):
         return True
 
     def get_view(self, compact=False):
-        self.view=gtk.Table()
+        self.view=gtk.VBox()
         self.refresh()
         return self.view

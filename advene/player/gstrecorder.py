@@ -98,11 +98,9 @@ class Player:
     # Status
     PlayingStatus=0
     PauseStatus=1
-    ForwardStatus=2
-    BackwardStatus=3
-    InitStatus=4
-    EndStatus=5
-    UndefinedStatus=6
+    InitStatus=2
+    EndStatus=3
+    UndefinedStatus=4
 
     PositionKeyNotSupported=Exception("Position key not supported")
     PositionOriginNotSupported=Exception("Position origin not supported")
@@ -120,7 +118,7 @@ class Player:
 
         self.status=Player.UndefinedStatus
         self.current_position_value = 0
-        self.stream_duration = 60 * 60 * 1000
+        self.stream_duration = 0 # 60 * 60 * 1000
         self.relative_position=self.create_position(0,
                                                     origin=self.RelativePosition)
         self.position_update()
@@ -128,7 +126,21 @@ class Player:
     def build_pipeline(self):
         if self.videofile is None:
             return
-        self.pipeline=gst.parse_launch('v4l2src queue-size=4 ! video/x-raw-yuv,width=352,height=288 ! tee name=tee ! ffmpegcolorspace ! ffenc_mpeg4 bitrate=400000 ! queue ! avimux name=mux ! filesink location=%s  alsasrc device=hw:1,0 ! lame ! mux.  tee. ! queue ! xvimagesink name=sink sync=false' % self.videofile)
+        videofile=self.videofile
+        audiosrc='autoaudiosink'
+        videosink='autovideosink'
+        if config.data.os == 'darwin':
+            videosrc='osxvideosrc'
+        elif config.data.os == 'win32':
+            videosrc='dshowsrcwrapper'
+        else:
+            videosrc='v4l2src queue-size=4'
+            audiosrc='alsasrc device=hw:1,0'
+            videosink='xvimagesink'
+            if config.data.player['vout'] == 'x11':
+                sink='ffmpegcolorspace ! ximagesink'
+
+        self.pipeline=gst.parse_launch('%(videosrc)s ! video/x-raw-yuv,width=352,height=288 ! tee name=tee ! ffmpegcolorspace ! ffenc_mpeg4 bitrate=400000 ! queue ! avimux name=mux ! filesink location=%(videofile)s  %(audiosrc)s ! lame ! mux.  tee. ! queue ! %(videosink)s name=sink sync=false' % locals())
         #self.pipeline=gst.parse_launch('alsasrc name=source device=hw:1,0 ! lame ! filesink location=%s' % self.videofile)
         #self.player = self.pipeline.get_by_name('source')
         self.imagesink=self.pipeline.get_by_name('sink')
@@ -203,6 +215,7 @@ class Player:
         self.pause(position)
 
     def stop(self, position):
+        self.stream_duration=self.current_position
         if self.player is None:
             return
         self.player.set_state(gst.STATE_READY)
@@ -246,9 +259,7 @@ class Player:
         else:
             s.url=self.videofile
 
-        duration = 60 * 60 * 1000
-
-        s.length=duration
+        s.length=0
         s.position=self.current_position()
         s.status=self.current_status()
         return s
@@ -353,8 +364,11 @@ class Player:
 
     def set_visual(self, xid):
         self.xid = xid
-        self.imagesink.set_xwindow_id(self.xid)
-        self.imagesink.set_property('force-aspect-ratio', True)
+        try:
+            self.imagesink.set_xwindow_id(self.xid)
+            self.imagesink.set_property('force-aspect-ratio', True)
+        except AttributeError:
+            pass
         return True
 
     def restart_player(self):

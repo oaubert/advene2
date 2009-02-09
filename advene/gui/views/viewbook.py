@@ -79,6 +79,8 @@ class ViewBook(AdhocView):
 
         Each view is an Advene view, and must have a .widget attribute
         """
+        if v.view_id == 'htmlview':
+            permanent=True
         if name is None:
             try:
                 name=v.view_name
@@ -99,20 +101,19 @@ class ViewBook(AdhocView):
             self.detach_view(view)
             return True
 
-        def popup_menu(button, event, view):
-
-            def relocate_view(item, v, d):
-                # Reference the widget so that it is not destroyed
-                wid=v.widget
-                if not self.detach_view(v):
-                    return True
-                if d == 'popup':
-                    v.popup(label=v._label)
-                elif d in ('south', 'east', 'west', 'fareast'):
-                    v._destination=d
-                    self.controller.gui.viewbook[d].add_view(v, name=v._label)
+        def relocate_view(item, v, d):
+            # Reference the widget so that it is not destroyed
+            wid=v.widget
+            if not self.detach_view(v):
                 return True
+            if d == 'popup':
+                v.popup(label=v._label)
+            elif d in ('south', 'east', 'west', 'fareast'):
+                v._destination=d
+                self.controller.gui.viewbook[d].add_view(v, name=v._label)
+            return True
 
+        def popup_menu(button, event, view):
             if event.button == 3:
                 menu = gtk.Menu()
                 if not permanent:
@@ -171,7 +172,7 @@ class ViewBook(AdhocView):
 
         e=gtk.EventBox()
         if len(name) > 13:
-            shortname=unicode(name[:12]) + u'\u2026'
+            shortname=unicode(name)[:12] + u'\u2026'
         else:
             shortname=name
         l=gtk.Label(shortname)
@@ -187,10 +188,24 @@ class ViewBook(AdhocView):
                               config.data.drag_type['adhoc-view-instance'],
                               gtk.gdk.ACTION_COPY | gtk.gdk.ACTION_LINK)
         hb=gtk.HBox()
+
+        if not permanent:
+            b=get_pixmap_button('small_detach.png')
+            self.controller.gui.tooltips.set_tip(b, _("Detach view in its own window, or drag-and-drop to another zone"))
+            b.set_relief(gtk.RELIEF_NONE)
+            b.connect('clicked', relocate_view, v, 'popup')
+            b.connect('drag-data-get', label_drag_sent, v)
+            # The widget can generate drags
+            b.drag_source_set(gtk.gdk.BUTTON1_MASK,
+                              config.data.drag_type['adhoc-view-instance'],
+                              gtk.gdk.ACTION_COPY | gtk.gdk.ACTION_LINK)
+            hb.pack_start(b, expand=False, fill=False)
+
         hb.pack_start(e, expand=False, fill=False)
 
         if not permanent:
             b=get_pixmap_button('small_close.png')
+            self.controller.gui.tooltips.set_tip(b, _("Close view"))
             b.set_relief(gtk.RELIEF_NONE)
             b.connect('clicked', close_view, v)
             hb.pack_start(b, expand=False, fill=False)
@@ -214,6 +229,7 @@ class ViewBook(AdhocView):
             v=self.controller.create_static_view(elements=sources)
             p=get_edit_popup(v, controller=self.controller)
             self.add_view(p, name=_("Edit %s") % self.controller.get_title(v))
+            # FIXME: put focus on edit window
             return True
 
         def edit_annotation(a):
@@ -245,7 +261,8 @@ class ViewBook(AdhocView):
                     return True
                 name=v
                 label=v.title
-                view=self.controller.gui.open_adhoc_view(name, label=label, destination=self.location)
+                view=self.controller.gui.open_adhoc_view(name, label=label, destination=None)
+                self.add_view(view, name=view.view_name)
             elif 'name' in data:
                 name=data['name']
                 def stbv_name(v):
@@ -273,7 +290,10 @@ class ViewBook(AdhocView):
                         sm.append(i)
                 elif saved:
                     menu=gtk.Menu()
-                    i=gtk.MenuItem(_("Open a new view"))
+                    if name == 'comment':
+                        i=gtk.MenuItem(_("Create a new comment view"))
+                    else:
+                        i=gtk.MenuItem(_("Open a new view"))
                     i.connect('activate', lambda i: self.controller.gui.open_adhoc_view(name, label=label, destination=self.location))
                     menu.append(i)
                 else:
@@ -287,12 +307,16 @@ class ViewBook(AdhocView):
                         i.set_submenu(sm)
                         for v in saved:
                             i=gtk.MenuItem(v.title, use_underline=False)
-                            i.connect('activate', lambda i, vv: self.controller.gui.open_adhoc_view(vv, label=vv.title, destination=self.location), v)
+                            if name == 'comment':
+                                i.connect('activate', lambda i, vv: self.controller.gui.open_adhoc_view('edit', element=vv, destination=self.location), v)
+                            else:
+                                i.connect('activate', lambda i, vv: self.controller.gui.open_adhoc_view(vv, label=vv.title, destination=self.location), v)
                             sm.append(i)
                     menu.show_all()
                     menu.popup(None, None, None, 0, gtk.get_current_event_time())
                 else:
-                    view=self.controller.gui.open_adhoc_view(name, label=label, destination=self.location)
+                    view=self.controller.gui.open_adhoc_view(name, label=label, destination=None)
+                    self.add_view(view, name=view.view_name)
             else:
                 # Bug
                 self.log("Cannot happen")
@@ -313,6 +337,29 @@ class ViewBook(AdhocView):
             else:
                 print "Cannot find view ", selection.data
             return True
+        elif targetType == config.data.target_type['view']:
+            v=self.controller.package.views.get(unicode(selection.data, 'utf8'))
+            if helper.get_view_type(v) in ('static', 'dynamic'):
+                # Edit the view.
+                self.controller.gui.open_adhoc_view('edit', element=v, destination=self.location)
+            else:
+                print "Unhandled case in viewbook: targetType=view"
+            return True
+        elif targetType == config.data.target_type['query']:
+            v=self.controller.package.queries.get(unicode(selection.data, 'utf8'))
+            if v is not None:
+                self.controller.gui.open_adhoc_view('edit', element=v, destination=self.location)
+            return True
+        elif targetType == config.data.target_type['schema']:
+            v=self.controller.package.schemas.get(unicode(selection.data, 'utf8'))
+            if v is not None:
+                self.controller.gui.open_adhoc_view('edit', element=v, destination=self.location)
+            return True
+        elif targetType == config.data.target_type['relation']:
+            v=self.controller.package.relations.get(unicode(selection.data, 'utf8'))
+            if v is not None:
+                self.controller.gui.open_adhoc_view('edit', element=v, destination=self.location)
+            return True
         elif targetType == config.data.target_type['annotation-type']:
             at=self.controller.package.get(unicode(selection.data, 'utf8'))
             # Propose a menu to open various views for the annotation-type:
@@ -321,6 +368,7 @@ class ViewBook(AdhocView):
             i=gtk.MenuItem(_("Use annotation-type %s :") % title, use_underline=False)
             menu.append(i)
             for label, action in (
+                (_("to edit it"), lambda i :self.controller.gui.open_adhoc_view('edit', element=at, destination=self.location)),
                 (_("to create a new static view"), lambda i: create_and_open_view([ at ])),
                 (_("as a transcription"), lambda i: self.controller.gui.open_adhoc_view('transcription', source='here/annotation_types/%s/annotations' % at.id, destination=self.location, label=title)),
                 (_("in a timeline"), lambda i: self.controller.gui.open_adhoc_view('timeline', elements=at.annotations, annotationtypes=[ at ], destination=self.location, label=title)),
@@ -329,7 +377,7 @@ class ViewBook(AdhocView):
                 (_("in a query"), lambda i: self.controller.gui.open_adhoc_view('interactivequery', here=at, destination=self.location, label=_("Query %s") % title)),
                 (_("in the TALES browser"), lambda i: self.controller.gui.open_adhoc_view('browser', element=at, destination=self.location, label=_("Browsing %s") % title)),
                 ):
-                i=gtk.MenuItem(label, use_underline=False)
+                i=gtk.MenuItem(u"    " + label, use_underline=False)
                 i.connect('activate', action)
                 menu.append(i)
             menu.show_all()
@@ -339,7 +387,7 @@ class ViewBook(AdhocView):
             sources=[ self.controller.package.get(uri) for uri in unicode(selection.data, 'utf8').split('\n') ]
             # Propose a menu to open various views for the annotation:
             menu=gtk.Menu()
-            
+
             if len(sources) == 1:
                 a=sources[0]
                 title=self.controller.get_title(a)
@@ -353,7 +401,7 @@ class ViewBook(AdhocView):
                     (_("to display its contents"), lambda i: self.controller.gui.open_adhoc_view('annotationdisplay', annotation=a, destination=self.location, label=_("%s") % title)) ,
                     (_("as a bookmark"), lambda i: self.controller.gui.open_adhoc_view('activebookmarks', elements=[ a.begin ], destination=self.location)),
                     ):
-                    i=gtk.MenuItem(label, use_underline=False)
+                    i=gtk.MenuItem(u"    " + label, use_underline=False)
                     i.connect('activate', action)
                     menu.append(i)
 
@@ -369,7 +417,7 @@ class ViewBook(AdhocView):
                         i=gtk.MenuItem(self.controller.get_title(q), use_underline=False)
                         i.connect('activate', apply_query, q)
                         sm.append(i)
-                    i=gtk.MenuItem(_("as the context for the query..."), use_underline=False)
+                    i=gtk.MenuItem(u"    " + _("as the context for the query..."), use_underline=False)
                     i.set_submenu(sm)
                     menu.append(i)
             else:
@@ -378,10 +426,11 @@ class ViewBook(AdhocView):
                 menu.append(i)
                 for label, action in (
                     (_("to edit them"), lambda i: edit_selection(sources)),
+                    (_("in a table"), lambda i: self.controller.gui.open_adhoc_view('table', elements=sources)),
                     (_("to create a new static view"), lambda i: create_and_open_view(sources)),
                     (_("as bookmarks"), lambda i: self.controller.gui.open_adhoc_view('activebookmarks', elements=[ a.begin for a in sources ], destination=self.location)),
                     ):
-                    i=gtk.MenuItem(label, use_underline=False)
+                    i=gtk.MenuItem(u"    " + label, use_underline=False)
                     i.connect('activate', action)
                     menu.append(i)
             menu.show_all()
@@ -392,6 +441,8 @@ class ViewBook(AdhocView):
             v=self.controller.gui.open_adhoc_view('activebookmarks', destination=self.location)
             v.append(long(data['timestamp']), comment=data.get('comment', ''))
             return True
+        else:
+            print "Unknown drag target received ", targetType
         return False
 
     def build_widget(self):
@@ -407,8 +458,12 @@ class ViewBook(AdhocView):
                                gtk.DEST_DEFAULT_ALL,
                                config.data.drag_type['adhoc-view'] +
                                config.data.drag_type['adhoc-view-instance'] +
+                               config.data.drag_type['view'] +
+                               config.data.drag_type['query'] +
+                               config.data.drag_type['schema'] +
                                config.data.drag_type['annotation-type'] +
                                config.data.drag_type['annotation'] +
+                               config.data.drag_type['relation'] +
                                config.data.drag_type['timestamp'],
                                gtk.gdk.ACTION_COPY | gtk.gdk.ACTION_MOVE | gtk.gdk.ACTION_LINK)
 

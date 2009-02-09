@@ -37,6 +37,17 @@ import mimetypes
 import operator
 import time
 
+def find_in_path(name):
+    """Return the fullpath of the filename name if found in $PATH
+
+    Return None if name cannot be found.
+    """
+    for d in os.environ['PATH'].split(os.path.pathsep):
+        fullname=os.path.join(d, name)
+        if os.path.exists(fullname):
+            return fullname
+    return None
+
 class Config(object):
     """Configuration information, platform specific.
 
@@ -78,8 +89,10 @@ class Config(object):
 
     def __init__ (self):
 
-        self.startup_time=time.time()
+        self.debug=False
 
+        self.startup_time=time.time()
+        
         self.config_file=''
         self.parse_options()
 
@@ -111,6 +124,7 @@ class Config(object):
                 # current package path
                 'moviepath': '_',
                 'locale': 'c:\\Program Files\\Advene\\locale',
+                'shotdetect': 'c:\\Program Files\\Advene\\share\\shotdetect.exe',
                 }
         elif self.os == 'darwin':
             self.path = {
@@ -133,6 +147,7 @@ class Config(object):
                 'moviepath': '_',
                 # Locale dir FIXME
                 'locale': '/Applications/Advene.app/locale',
+                'shotdetect': 'shotdetect',
                 }
         else:
             self.path = {
@@ -154,6 +169,7 @@ class Config(object):
                 # current package path
                 'moviepath': '_',
                 'locale': '/usr/share/advene/locale',
+                'shotdetect': 'shotdetect',
                 }
 
         self.path['settings'] = self.get_settings_dir()
@@ -236,7 +252,7 @@ class Config(object):
             'package-auto-save': 'never',
             # auto-save interval in ms. Every 5 minutes by default.
             'package-auto-save-interval': 5 * 60 * 1000,
-            # Interface langugage. '' means system default.
+            # Interface language. '' means system default.
             'language': '',
             'save-default-workspace': 'never',
             'restore-default-workspace': 'ask',
@@ -255,6 +271,10 @@ class Config(object):
             # Language used for TTS. Standard 2 char. specification
             # (in fact, we use the espeak notation for simplicity).
             'tts-language': 'en',
+            'edition-history-size': 5,
+            # popup views may be forced into a specific viewbook,
+            # instead of default popup
+            'popup-destination': 'popup',
             }
 
         # Player options
@@ -279,6 +299,9 @@ class Config(object):
             'snapshot-chroma': 'RV32',
             'dvd-device': '/dev/dvd',
             }
+        if self.os in ('linux', 'darwin'):
+            # Use gstreamer by default on linux
+            self.player['plugin']='gstreamer'
 
         self.webserver = {
             'port': 1234,
@@ -325,24 +348,25 @@ class Config(object):
         self.target_type = {}
         self.drag_type = {}
         for name, typ, mime in (
-            ('text-plain',         0, 'text/plain'),
-            ('TEXT',               1, 'TEXT'),
-            ('STRING',             2, 'UTF8_STRING'),
-            ('annotation',        42, None),
-            ('rule',              43, None),
-            ('view',              44, None),
-            ('schema',            45, None),
-            ('annotation-type',   46, None),
-            ('relation-type',     47, None),
-            ('relation',          48, None),
-            ('adhoc-view',        49, 'application/x-advene-adhoc-view'),
-            ('annotation-resize', 50, None),
-            ('timestamp',         51, 'application/x-advene-timestamp'),
-            ('tag',               52, None),
-            ('color',             53, 'application/x-color'),
+            ('text-plain',           0, 'text/plain'),
+            ('TEXT',                 1, 'TEXT'),
+            ('STRING',               2, 'UTF8_STRING'),
+            ('annotation',          42, None),
+            ('rule',                43, None),
+            ('view',                44, None),
+            ('schema',              45, None),
+            ('annotation-type',     46, None),
+            ('relation-type',       47, None),
+            ('relation',            48, None),
+            ('adhoc-view',          49, 'application/x-advene-adhoc-view'),
+            ('annotation-resize',   50, None),
+            ('timestamp',           51, 'application/x-advene-timestamp'),
+            ('tag',                 52, None),
+            ('color',               53, 'application/x-color'),
             ('adhoc-view-instance', 54, 'application/x-advene-adhoc-view-instance'),
-            ('bookmark',          55, 'application/x-advene-bookmark'),
-            ('uri-list',          80, 'text/uri-list'),
+            ('bookmark',            55, 'application/x-advene-bookmark'),
+            ('query',               56, None),
+            ('uri-list',            80, 'text/uri-list'),
             ):
             self.target_type[name] = typ
             if mime is None:
@@ -398,7 +422,7 @@ class Config(object):
 
         # Content-handlers
         self.content_handlers = []
-        
+
         # Players, indexed by plugin name
         self.players = {}
 
@@ -409,12 +433,6 @@ class Config(object):
             self.win32_specific_config()
         elif self.os == 'darwin':
             self.darwin_specific_config()
-
-    @property
-    def timestamp(self):
-        """Formatted timestamp for the current date.
-        """
-        return datetime.now().isoformat()
 
     def check_settings_directory(self):
         """Check if the settings directory is present, and create it if necessary.
@@ -715,23 +733,22 @@ class Config(object):
         args=[]
         filters=[]
 
-        args.extend( [ '--intf', 'dummy' ] )
+        args.append( '--intf=dummy' )
 
         if os.path.isdir(self.path['plugins']):
-            args.extend([ '--plugin-path', self.path['plugins'] ])
+            args.append( '--plugin-path=%s' % self.path['plugins'] )
         if self.player['verbose'] is not None:
             args.append ('--verbose')
             args.append (self.player['verbose'])
         if self.player['vout'] != 'default':
-            args.extend( [ '--vout', self.player['vout'] ] )
+            args.append( '--vout=%s' % self.player['vout'] )
         if self.player['svg']:
-            args.extend( [ '--text-renderer', 'svg' ] )
+            args.append( '--text-renderer=svg' )
         if self.player['bundled']:
             args.append( '--no-plugins-cache' )
         if filters != []:
             # Some filters have been defined
-            args.extend (['--vout-filter', ":".join(filters)])
-        args.extend( '--snapshot-width 160 --snapshot-height 100'.split() )
+            args.append ('--vout-filter=%s' %":".join(filters))
         #print "player args", args
         return [ str(i) for i in args ]
 
@@ -808,12 +825,24 @@ class Config(object):
         """
         # We override any modification that could have been made in
         # .advenerc. Rationale: if the .advenerc was really correct, it
-        # would have set the correct package path in the first place.
+        # would have set the correct paths in the first place.
         print "Overriding 'resources', 'locale', 'advene' and 'web' config paths"
         data.path['resources']=os.path.sep.join((maindir, 'share'))
         data.path['locale']=os.path.sep.join( (maindir, 'locale') )
         data.path['web']=os.path.sep.join((maindir, 'share', 'web'))
         data.path['advene']=maindir
+        if not os.path.exists(self.path['shotdetect']):
+            if self.os == 'win32':
+                sdname='shotdetect.exe'
+            else:
+                sdname='shotdetect'
+            sd=find_in_path(sdname)
+            if sd is not None:
+                self.path['shotdetect']=sd
+            else:
+                sd=self.advenefile(sdname, 'resources')
+                if os.path.exists(sd):
+                    self.path['shotdetect']=sd
         #config.data.path['plugins']=os.path.sep.join( (maindir, 'vlc') )
 
 data = Config ()

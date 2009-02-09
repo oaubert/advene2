@@ -63,6 +63,8 @@ class EditRuleSet(EditGeneric):
         self.widget=self.build_widget()
         for rule in self.model:
             self.add_rule(rule, append=False)
+        # Focus on the first rule
+        self.widget.set_current_page(0)
 
     def get_packed_widget(self):
         """Return an enriched widget (with rules add and remove buttons)."""
@@ -156,7 +158,7 @@ class EditRuleSet(EditGeneric):
 
         eb.connect('drag-data-get', self.drag_sent)
         eb.drag_source_set(gtk.gdk.BUTTON1_MASK,
-                           config.data.drag_type['rule'], 
+                           config.data.drag_type['rule'],
                            gtk.gdk.ACTION_COPY )
         eb.show_all()
 
@@ -485,7 +487,7 @@ class EditRule(EditGeneric):
     def update_name(self, entry):
         if self.namelabel:
             self.namelabel.set_label(entry.get_text())
-        self.framelabel.set_markup(_("Rule <b>%s</b>") % entry.get_text())
+        self.framelabel.set_markup(_("Rule <b>%s</b>") % entry.get_text().replace('<', '&lt;'))
         return True
 
     def remove_condition(self, widget, conditionwidget, hbox):
@@ -555,7 +557,7 @@ class EditRule(EditGeneric):
     def build_widget(self):
         frame=gtk.Frame()
         self.framelabel=gtk.Label()
-        self.framelabel.set_markup(_("Rule <b>%s</b>") % self.model.name)
+        self.framelabel.set_markup(_("Rule <b>%s</b>") % self.model.name.replace('<', '&lt;'))
         self.framelabel.show()
         frame.set_label_widget(self.framelabel)
 
@@ -966,9 +968,19 @@ class EditAction(EditGeneric):
                 return self.catalog.action_categories[element]
 
         c=self.catalog
+        def expert_filter(l, attr=None):
+            if config.data.preferences['expert-mode']:
+                return l
+            else:
+                if attr is None:
+                    # No attribute, directly test value
+                    return [ e for e in l if e != 'expert' ]
+                else:
+                    return [ e for e in l if getattr(e, attr) != 'expert' ]
+
         self.selector=dialog.CategorizedSelector(title=_("Select an action"),
-                                                 elements=c.actions.values(),
-                                                 categories=c.action_categories.keys(),
+                                                 elements=expert_filter(c.actions.values(), 'category'),
+                                                 categories=expert_filter(c.action_categories.keys()),
                                                  current=c.actions[self.current_name],
                                                  description_getter=description_getter,
                                                  category_getter=lambda e: e.category,

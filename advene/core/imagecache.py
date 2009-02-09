@@ -34,7 +34,10 @@ class CachedString:
 
     def __str__(self):
         try:
-            return open(self._filename).read()
+            f=open(self._filename, 'rb')
+            data=f.read()
+            f.close()
+            return data
         except (IOError, OSError):
             return ''
 
@@ -67,8 +70,9 @@ class ImageCache(dict):
     """
     # The content of the not_yet_available_file file. We could use
     # CachedString but as it is frequently used, let us keep it in memory.
-    not_yet_available_image = TypedString(open(config.data.advenefile( ( 'pixmaps', 
-                                                                         'notavailable.png' ) ), 'rb').read())
+    f=open(config.data.advenefile( ( 'pixmaps', 'notavailable.png' ) ), 'rb')
+    not_yet_available_image = TypedString(f.read())
+    f.close()
     not_yet_available_image.contenttype='image/png'
 
     def __init__ (self, name=None, epsilon=20):
@@ -84,7 +88,6 @@ class ImageCache(dict):
         # value = self.not_yet_available_image if the image has
         # not yet been updated.
         dict.__init__ (self)
-
 
         self._modified=False
 
@@ -158,7 +161,6 @@ class ImageCache(dict):
         """
         if key is None:
             return value
-        key = self.approximate(key)
         if value != self.not_yet_available_image:
             self._modified=True
             if self.autosync and self.name is not None:
@@ -182,22 +184,23 @@ class ImageCache(dict):
         if key is None:
             return None
         key=long(key)
-        if dict.has_key(self, key):
+        if dict.has_key(self, key) and dict.__getitem__(self, key) != self.not_yet_available_image:
             return key
 
         if epsilon is None:
             epsilon=self.epsilon
         valids = [ (pos, abs(pos-key))
                    for pos in self.keys()
-                   if abs(pos - key) <= epsilon ]
+                   if abs(pos - key) <= epsilon
+                   and dict.__getitem__(self, pos) != self.not_yet_available_image ]
         valids.sort(key=operator.itemgetter(1))
 
         if valids:
             key = valids[0][0]
 #            print "Approximate key: %d (%d)" % valids[0]
-##             if len(valids) > 1:
-##                 print "Imagecache: more than 1 valid snapshot for %d: %s" % (key,
-##                                                                              valids)
+#            if len(valids) > 1:
+#                print "Imagecache: more than 1 valid snapshot for %d: %s" % (key,
+#                                                                              valids)
         else:
             self.init_value (key)
 
@@ -216,7 +219,7 @@ class ImageCache(dict):
         key = self.approximate(key, epsilon)
         if dict.__getitem__(self, key) != self.not_yet_available_image:
             dict.__setitem__(self, key, self.not_yet_available_image)
-        return
+        return key
 
     def missing_snapshots (self):
         """Return a list of positions of missing snapshots.

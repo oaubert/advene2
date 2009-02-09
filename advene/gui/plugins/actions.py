@@ -205,6 +205,17 @@ def register(controller=None):
             category='popup',
             ))
 
+    controller.register_action(RegisteredAction(
+            name="CreateBookmark",
+            method=ac.action_create_bookmark,
+            description=_("Create a bookmark"),
+            parameters={'position': _("Bookmark position (in ms)"),
+                        'message': _("Bookmark content."), },
+            defaults={'message': 'string:'+_("Bookmark"),
+                      'position': 'options/controller/player/current_position_value'},
+            category='gui',
+            ))
+
 class DefaultGUIActions:
     def __init__(self, controller=None):
         self.controller=controller
@@ -259,7 +270,7 @@ class DefaultGUIActions:
         dest=self.parse_parameter(context, parameters, 'destination', 'popup')
         if view is None:
             return True
-        if view in controller.gui.registered_adhoc_views:
+        if self.controller.gui is not None and view in self.controller.gui.registered_adhoc_views:
             self.gui.open_adhoc_view(view, destination=dest)
         else:
             self.gui.log(_("Error: undefined GUI view %s") % view)
@@ -267,7 +278,7 @@ class DefaultGUIActions:
 
     def action_open_interface_predefined(self, controller):
         d={
-            'guiview': [ 
+            'guiview': [
                 ( 'string:' + ident, view.view_name)
                 for (ident, view) in controller.gui.registered_adhoc_views.iteritems()
                 ],
@@ -280,7 +291,7 @@ class DefaultGUIActions:
                 )
             }
         return d
-        
+
     def action_open_view (self, context, parameters):
         """Event Handler for the OpenView action.
 
@@ -309,18 +320,18 @@ class DefaultGUIActions:
             self.controller.gui.open_adhoc_view(v, 'south')
         else:
             self.log(_("Element %s does not look like a view") % view)
-         
+
         return True
 
     def action_open_view_predefined(self, controller):
         get_title=self.controller.get_title
         return {
-            'id': [ 
+            'id': [
                 ( 'string:' + v.id, get_title(v) )
                 for v in controller.package.views
                 ],
             }
-        
+
     def action_popup (self, context, parameters):
         """Popup action.
 
@@ -507,8 +518,10 @@ class DefaultGUIActions:
 
     def action_popup_goto_predefined(self, controller):
         p=self.related_annotation_expressions(controller)
-        p.append( ('annotation/begin', _('The beginning of the annotation')) )
-        p.append( ('annotation/end', _('The end of the annotation')) )
+        p.extend( [ ('annotation/begin', _('The beginning of the annotation')),
+                    ('annotation/end', _('The end of the annotation')),
+                    ('annotation/query/q_next/first/begin', _('The next annotation of the same type')),
+                    ('annotation/query/q_prev/first/begin', _('The previous annotation of the same type')) ] )
         return {
             'description': (
                 ('annotation/content/data', _("The annotation content")),
@@ -563,8 +576,20 @@ class DefaultGUIActions:
                 'annotation_content': self.controller.get_title(a) }
             b.add(self.gui.get_illustrated_text(c, a.begin))
             vbox.pack_start(b, expand=False)
-            b.connect('clicked', handle_response, a.begin, vbox)
+            b.connect('clicked', handle_response, a.fragment.begin, vbox)
 
-        self.gui.popupwidget.display(widget=vbox, timeout=annotation.duration, title=_("Relation navigation"))
+        self.gui.popupwidget.display(widget=vbox, timeout=annotation.fragment.duration, title=_("Relation navigation"))
+        return True
+
+
+    def action_create_bookmark(self, context, parameters):
+        """CreateBookmark action.
+
+        Create a boomark.
+        """
+        position=self.parse_parameter(context, parameters, 'position', self.controller.player.current_position_value)
+        message=self.parse_parameter(context, parameters, 'message', _("New bookmark"))
+
+        self.controller.gui.create_bookmark(position, comment=message)
         return True
 

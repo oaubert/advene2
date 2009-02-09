@@ -22,7 +22,10 @@ import advene.core.config as config
 import time
 import StringIO
 import inspect
-import md5
+try:
+    from hashlib import md5
+except ImportError:
+    from md5 import md5
 import os
 import sys
 import re
@@ -167,7 +170,7 @@ def mediafile2id (mediafile):
     @return: an id
     @rtype: string
     """
-    m=md5.new(mediafile)
+    m=md5(mediafile)
     return m.hexdigest()
 
 def package2id (p):
@@ -354,6 +357,7 @@ def get_valid_members (el):
     """
     # FIXME: try to sort items in a meaningful way
 
+    # FIXME: return only simple items if not in expert mode
     l = []
     try:
         l.extend(sorted(el.ids()))

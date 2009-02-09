@@ -31,16 +31,13 @@ from advene.gui.util import image_from_position, dialog, decode_drop_parameters
 
 from advene.gui.edit.rules import EditRuleSet, EditQuery
 from advene.rules.elements import RuleSet, SimpleQuery
-from advene.gui.edit.htmleditor import HTMLEditor, ContextDisplay
 import xml.etree.ElementTree as ET
-import advene.util.helper as helper
 
 name="Default content handlers"
 
 def register(controller=None):
     for c in (ZoneContentHandler, SVGContentHandler,
-              RuleSetContentHandler, SimpleQueryContentHandler,
-              HTMLContentHandler):
+              RuleSetContentHandler, SimpleQueryContentHandler):
         controller.register_content_handler(c)
 
 class ZoneContentHandler (ContentHandler):
@@ -160,11 +157,18 @@ class SVGContentHandler (ContentHandler):
         self.controller=controller
         self.parent=parent
         self.editable = True
+        # Internal rules defined by the plugin
+        self.rules=[]
         self.fname=None
         self.view = None
         self.sourceview=None
         self.editing_source=False
         self.tooltips=gtk.Tooltips()
+
+    def close(self):
+        for r in self.rules:
+            self.controller.event_handler.remove_rule(r, 'internal')
+        return True
 
     def set_editable (self, boolean):
         self.editable = boolean
@@ -261,15 +265,37 @@ class SVGContentHandler (ContentHandler):
         s.link_label=title
         return False
 
+    def set_begin(self, t):
+        i=image_from_position(self.controller, t, height=160)
+        self.view.set_background(i)
+        return True
+
     def get_view (self, compact=False):
         """Generate a view widget for editing SVG."""
         vbox=gtk.VBox()
 
         if self.parent is not None and hasattr(self.parent, 'begin'):
             i=image_from_position(self.controller, self.parent.begin, height=160)
-            self.view = ShapeEditor(background=i)
+            self.view = ShapeEditor(background=i, pixmap_dir=config.data.advenefile('pixmaps'))
+
+            def snapshot_update_cb(context, target):
+                if context.globals['position'] == self.parent.begin:
+                    # Refresh image
+                    i=image_from_position(self.controller, self.parent.begin, height=160)
+                    self.view.set_background(i)
+                return True
+            self.rules.append(self.controller.event_handler.internal_rule (event='SnapshotUpdate',
+                                                                           method=snapshot_update_cb))
+
+            def annotation_update_cb(context, target):
+                i=image_from_position(self.controller, self.parent.begin, height=160)
+                self.view.set_background(i)
+                return True
+            self.rules.append(self.controller.event_handler.internal_rule (event='AnnotationEditEnd',
+                                                                           method=annotation_update_cb))
+
         else:
-            self.view = ShapeEditor()
+            self.view = ShapeEditor(pixmap_dir=config.data.advenefile('pixmaps'))
 
         self.parse_svg()
 
@@ -431,245 +457,3 @@ class SimpleQueryContentHandler (ContentHandler):
         scroll_win.add_with_viewport(self.view)
 
         return scroll_win
-
-class HTMLContentHandler (ContentHandler):
-    """Create a HTML edit form for the given element."""
-    def can_handle(mimetype):
-        res=0
-        if mimetype == 'text/html':
-            res=90
-        return res
-    can_handle=staticmethod(can_handle)
-
-    def __init__ (self, element, controller=None, parent=None, **kw):
-        self.element = element
-        self.controller=controller
-        self.parent=parent
-        self.editable = True
-        self.fname=None
-        self.last_dndtime=None
-        # HTMLEditor component (gtk.Textview subclass)
-        self.editor = None
-
-        # Widgets holding editors (basic and html)
-        self.view = None
-        self.sourceview=None
-
-        self.editing_source=False
-        self.tooltips=gtk.Tooltips()
-
-    def set_editable (self, boolean):
-        self.editable = boolean
-        if self.sourceview:
-            self.sourceview.set_editable(boolean)
-
-    def update_element (self):
-        """Update the element fields according to the values in the view."""
-        if not self.editable:
-            return False
-
-        if self.editing_source:
-            self.sourceview.update_element()
-            # We applied our modifications to the HTML source, so
-            # parse the source again in the HTML editor
-            if self.editor is not None:
-                self.editor.set_text(self.element.data)
-            return True
-
-        if self.editor is None:
-            return True
-
-        self.element.data = self.editor.get_html()
-        # Update the HTML source representation
-        if self.sourceview is not None:
-            self.sourceview.content_set(self.element.data)
-        return True
-
-    def editor_drag_motion(self, widget, drag_context, x, y, timestamp):
-        #w=drag_context.get_source_widget()
-        (x, y) = widget.window_to_buffer_coords(gtk.TEXT_WINDOW_TEXT,
-                                                  int(x),
-                                                  int(y))
-        it=widget.get_iter_at_location(x, y)
-        if it is None:
-            print "Error in get_iter_at_location"
-            return False
-        # Set the cursor position
-        widget.get_buffer().place_cursor(it)
-        
-        # Dragging an annotation. Enforce only annotation target.
-        #if config.data.drag_type['annotation'][0][0] in drag_context.targets:
-        #    pass
-        return True
-
-    def insert_annotation_content(self, choice, annotation):
-        """
-        choice: list of one or more strings: 'snapshot', 'timestamp', 'content'
-        """
-        ctx=self.controller.build_context(annotation)
-        d={ 
-            'id': annotation.id,
-            'href': ctx.evaluate('here/player_url'),
-            'imgurl': ctx.evaluate('here/snapshot_url'),
-            'timestamp': helper.format_time(annotation.begin),
-            'content': self.controller.get_title(annotation),
-            }
-        data=[ """<a tal:define="a package/annotations/%(id)s" tal:attributes="href a/player_url" href=%(href)s>""" % d ]
-        if 'snapshot' in choice:
-        # FIXME: propose various choices (insert timestamp, insert snapshot, etc)
-            data.append("""<img width="160" height="100" tal:attributes="src a/snapshot_url" src="%(imgurl)s" ></img><br>""" % d)
-        if 'timestamp' in choice:
-            data.append("""<em tal:content="a/begin/formatted">%(timestamp)s</em><br>""" % d)
-        if 'content' in choice:
-            data.append("""<span tal:content="a/representation">%(content)s</span>""" % d)
-        
-        data.append('</a><br>')
-
-        self.editor.feed("\n".join(data))
-        return True
-        
-    def editor_drag_received(self, widget, context, x, y, selection, targetType, time):
-        """Handle the drop from an annotation to the editor.
-        """
-        # FIXME: Upon DND, TextView receives the event twice. Some
-        # posts from 2004 signal the same problem, some hacks can be
-        # found in existing code :
-        #   widget.emit_stop_by_name ("drag-data-received")
-        #   context.finish(False, False, time)
-        #   widget.stop_emission("drag-data-received")
-        # but none of them seems to work here. Just use a basic approach,
-        # imagining that nobody is fast enough to really do two DNDs
-        # at the same time.
-        if time == self.last_dndtime:
-            return True
-        self.last_dndtime=time
-
-        if targetType == config.data.target_type['annotation']:
-            for uri in unicode(selection.data, 'utf8').splitlines():
-                source=self.controller.package.get(uri)
-                if source is None:
-                    return True
-                m=gtk.Menu()
-                for (title, choice) in (
-                    (_("Snapshot only"), ('snapshot', )),
-                    (_("Content only"), ('content', )),
-                    (_("Timestamp only"), ('timestamp', )),
-                    (_("Snapshot+timestamp"), ('snapshot', 'timestamp')),
-                    (_("Snapshot+content"), ('snapshot', 'content')),
-                    (_("Snapshot+timestamp+content"), ('snapshot', 'timestamp', 'content')),
-                    ):
-                    i=gtk.MenuItem(title)
-                    i.connect('activate', (lambda it, ann, data: self.insert_annotation_content(data, ann)), source, choice)
-                    m.append(i)
-                m.show_all()
-                m.popup(None, None, None, 0, gtk.get_current_event_time())
-            return True
-        elif targetType == config.data.target_type['annotation-type']:
-            source=self.controller.package.get(unicode(selection.data, 'utf8'))
-            # FIXME
-            self.editor.get_buffer().insert_at_cursor(source.title)
-            return True
-        elif targetType == config.data.target_type['timestamp']:
-            data=decode_drop_parameters(selection.data)
-            t=long(data['timestamp'])
-            # FIXME: propose various choices (insert timestamp, insert snapshot, etc)
-            self.editor.get_buffer().insert_at_cursor(helper.format_time(t))
-            return True
-        else:
-            print "Unknown target type for drop: %d" % targetType
-        return False
-
-    def get_view (self, compact=False):
-        """Generate a view widget for editing HTML."""
-        vbox=gtk.VBox()
-
-        self.editor=HTMLEditor()
-        # For debug:
-        self.controller.gui.ht=self.editor
-        self.editor.set_text(self.element.data)
-
-        self.editor.connect('drag-data-received', self.editor_drag_received)
-        self.editor.drag_dest_set(gtk.DEST_DEFAULT_MOTION |
-                                  gtk.DEST_DEFAULT_HIGHLIGHT |
-                                  gtk.DEST_DEFAULT_ALL,
-                                  config.data.drag_type['annotation']
-                                  + config.data.drag_type['annotation-type']
-                                  + config.data.drag_type['timestamp'],
-                                  gtk.gdk.ACTION_COPY | gtk.gdk.ACTION_LINK | gtk.gdk.ACTION_ASK )
-        self.editor.connect('drag-motion', self.editor_drag_motion)
-
-        self.view = gtk.VBox()
-
-        tb=gtk.Toolbar()
-        tb.set_style(gtk.TOOLBAR_ICONS)
-        for (icon, tooltip, action) in (
-            (gtk.STOCK_BOLD, _("Bold"), lambda i: self.editor.apply_html_tag('b')),
-            (gtk.STOCK_ITALIC, _("Italic"), lambda i: self.editor.apply_html_tag('i')),
-            (gtk.STOCK_UNDERLINE, _("Header"), lambda i: self.editor.apply_html_tag('h2')),
-            ):
-            b=gtk.ToolButton(icon)
-            b.connect('clicked', action)
-            b.set_tooltip(self.tooltips, tooltip)
-            tb.insert(b, -1)
-            b.show()
-
-        if self.editor.can_undo():
-            b=gtk.ToolButton(gtk.STOCK_UNDO)
-            b.connect('clicked', lambda i: self.editor.undo())
-            tb.insert(b, -1)
-            b.show()
-
-        self.view.pack_start(tb, expand=False)
-        sw=gtk.ScrolledWindow()
-        sw.set_policy (gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-        sw.add(self.editor)
-
-        context_data=ContextDisplay()
-        def cursor_moved(buf, it, mark):
-            if mark.get_name() == 'insert':
-                context_data.set_context(self.editor.get_current_context(it))
-            return True
-        self.editor.get_buffer().connect('mark-set', cursor_moved)
-
-        p=gtk.HPaned()
-        p.add1(context_data)
-        p.add2(sw)
-        p.set_position(100)
-        p.show_all()
-        self.view.add(p)
-
-        def edit_wysiwyg(*p):
-            vbox.foreach(vbox.remove)
-            vbox.add(self.view)
-
-            b=gtk.Button(_("Edit source"))
-            b.connect('clicked', edit_source)
-            vbox.pack_start(b, expand=False)
-            self.editing_source=False
-            vbox.show_all()
-            return True
-
-        def edit_source(*p):
-            if self.sourceview is None:
-                self.sourceview=TextContentHandler(element=self.element,
-                                                   controller=self.controller,
-                                                   parent=self.parent)
-                self.sourceview.widget=self.sourceview.get_view()
-
-            vbox.foreach(vbox.remove)
-            vbox.add(self.sourceview.widget)
-
-            b=gtk.Button(_("WYSIWYG editor"))
-            b.connect('clicked', edit_wysiwyg)
-            vbox.pack_start(b, expand=False)
-            self.editing_source=True
-            vbox.show_all()
-            return True
-
-        # FIXME: this test should be activated for the release
-        #if config.data.preferences['expert-mode']:
-        #    edit_source()
-        #else:
-        #    edit_wysiwyg()
-        edit_wysiwyg()
-        return vbox

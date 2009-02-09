@@ -32,7 +32,7 @@ from advene.rules.elements import SimpleQuery, Condition, Quicksearch
 from advene.model.cam.annotation import Annotation
 from advene.model.cam.query import Query
 from advene.model.tales import AdveneTalesException
-from advene.gui.util import dialog, get_small_stock_button
+from advene.gui.util import dialog, get_small_stock_button, get_pixmap_toolbutton
 
 from advene.gui.views import AdhocView
 import advene.gui.evaluator
@@ -140,7 +140,7 @@ class InteractiveQuery(AdhocView):
                 self.log(_("%s exists and is not a query") % i)
                 return True
             create=False
-            self.controller.notify('ElementEditBegin', element=q, immediate=True)
+            self.controller.notify('EditSessionStart', element=q, immediate=True)
         else:
             create=True
             # Create the query
@@ -154,7 +154,7 @@ class InteractiveQuery(AdhocView):
             self.controller.notify('QueryCreate', query=q)
         else:
             self.controller.notify('QueryEditEnd', query=q)
-            self.controller.notify('ElementEditCancel', element=q)
+            self.controller.notify('EditSessionEnd', element=q)
         return q
 
     def validate(self, button=None):
@@ -299,7 +299,7 @@ class InteractiveResult(AdhocView):
                 self.log(_("%s exists and is not a query") % i)
                 return True
             create=False
-            self.controller.notify('ElementEditBegin', element=q, immediate=True)
+            self.controller.notify('EditSessionStart', element=q)
         else:
             create=True
             # Create the query
@@ -314,14 +314,25 @@ class InteractiveResult(AdhocView):
             self.controller.notify('QueryCreate', query=q)
         else:
             self.controller.notify('QueryEditEnd', query=q)
-            self.controller.notify('ElementEditCancel', element=q)
+            self.controller.notify('EditSessionEnd', element=q)
         return q
+
+    def create_comment(self, *p):
+        if hasattr(self, 'table'):
+            # There are annotations
+            l=self.table.get_elements()
+            v=self.controller.create_static_view(elements=l)
+            if isinstance(self.query, Quicksearch):
+                v.title=_("Comment annotations containing %s") % self.query.searched
+                self.controller.notify('ViewEditEnd', view=v)
+            self.controller.gui.open_adhoc_view('edit', element=v, destination=self._destination)
+        return True
 
     def create_montage(self, *p):
         if hasattr(self, 'table'):
             # There are annotations
             l=self.table.get_elements()
-        self.controller.gui.open_adhoc_view('montage', elements=l, destination=self._destination)
+            self.controller.gui.open_adhoc_view('montage', elements=l, destination=self._destination)
         return True
 
     def create_annotations(self, *p):
@@ -380,10 +391,10 @@ class InteractiveResult(AdhocView):
             batch_id=object()
             for a in l:
                 if search in a.content.data:
-                    self.controller.notify('ElementEditBegin', element=a, immediate=True)
+                    self.controller.notify('EditSessionStart', element=a, immediate=True)
                     a.content.data = a.content.data.replace(search, replace)
                     self.controller.notify('AnnotationEditEnd', annotation=a, batch=batch_id)
-                    self.controller.notify('ElementEditCancel', element=a)
+                    self.controller.notify('EditSessionEnd', element=a)
                     count += 1
             self.log(_('%(search)s has been replaced by %(replace)s in %(count)d annotation(s).') % locals())
         d.destroy()
@@ -500,12 +511,11 @@ class InteractiveResult(AdhocView):
                     (gtk.STOCK_CONVERT, _("Export table"), lambda b: table.csv_export()),
                     (gtk.STOCK_NEW, _("Create annotations from the result"), self.create_annotations),
                     ('montage.png', _("Define a montage with the result"), self.create_montage),
+                    ('comment.png', _("Create a comment view with the result"), self.create_comment),
                     (gtk.STOCK_FIND_AND_REPLACE, _("Search and replace strings in the annotations content"), self.search_replace),
                     ):
                     if icon.endswith('.png'):
-                        i=gtk.Image()
-                        i.set_from_file(config.data.advenefile( ( 'pixmaps', icon) ))
-                        ti=gtk.ToolButton(icon_widget=i)
+                        ti=get_pixmap_toolbutton(icon)
                     else:
                         ti=gtk.ToolButton(stock_id=icon)
                     ti.connect('clicked', action)
@@ -518,25 +528,21 @@ class InteractiveResult(AdhocView):
                 gtable=GenericTable(controller=self.controller, elements=self.result)
                 v.add(gtable.widget)
 
-                ti=gtk.ToolButton(stock_id=gtk.STOCK_CONVERT)
+                ti=gtk.ToolButton(gtk.STOCK_CONVERT)
                 ti.connect('clicked', lambda b: gtable.csv_export())
                 ti.set_tooltip(self.controller.gui.tooltips, _("Export table"))
                 tb.insert(ti, -1)
                 self.table=gtable
 
 
-            i=gtk.Image()
-            i.set_from_file(config.data.advenefile( ( 'pixmaps', 'editaccumulator.png') ))
-            ti=gtk.ToolButton(icon_widget=i)
-            ti.connect('clicked', lambda b: self.open_in_edit_accumulator(self.table.get_elements()))
+            ti=get_pixmap_toolbutton('editaccumulator.png',
+                                     lambda b: self.open_in_edit_accumulator(self.table.get_elements()))
             ti.set_tooltip(self.controller.gui.tooltips, _("Edit elements"))
             tb.insert(ti, -1)
 
             if config.data.preferences['expert-mode']:
-                i=gtk.Image()
-                i.set_from_file(config.data.advenefile( ( 'pixmaps', 'python.png') ))
-                ti=gtk.ToolButton(icon_widget=i)
-                ti.connect('clicked', lambda b: self.open_in_evaluator(self.table.get_elements()))
+                ti=get_pixmap_toolbutton('python.png',
+                                         lambda b: self.open_in_evaluator(self.table.get_elements()))
                 ti.set_tooltip(self.controller.gui.tooltips, _("Open in python evaluator"))
                 tb.insert(ti, -1)
         else:
@@ -578,17 +584,7 @@ class InteractiveResult(AdhocView):
                                                 'pp': pprint.pformat },
                                        historyfile=config.data.advenefile('evaluator.log', 'settings')
                                        )
-        w=ev.popup()
-        b=gtk.Button(stock=gtk.STOCK_CLOSE)
-
-        def close_evaluator(*p):
-            ev.save_history()
-            w.destroy()
-            return True
-
-        b.connect('clicked', close_evaluator)
-        b.show()
-        ev.hbox.add(b)
+        w=ev.popup(embedded=True)
 
         self.controller.gui.init_window_size(w, 'evaluator')
 

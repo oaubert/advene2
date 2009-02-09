@@ -87,11 +87,9 @@ class Player:
     # Status
     PlayingStatus=0
     PauseStatus=1
-    ForwardStatus=2
-    BackwardStatus=3
-    InitStatus=4
-    EndStatus=5
-    UndefinedStatus=6
+    InitStatus=2
+    EndStatus=3
+    UndefinedStatus=4
 
     # # Exceptions
     PositionKeyNotSupported = XineException
@@ -266,10 +264,10 @@ class Player:
 
     def playlist_get_list(self):
         l=self.get_multiline_command('playlist show')
-        re=re.compile('\s+\d+\s+(.+)$')
+        reg=re.compile('\s+\d+\s+(.+)$')
         pl=[]
         for i in l:
-            m=re.search(i)
+            m=reg.search(i)
             if m is not None:
                 pl.append(m.group(1))
         return pl

@@ -28,8 +28,7 @@ import urllib
 from gettext import gettext as _
 
 from advene.model.core.content import Content
-from advene.model.cam.view import View
-from advene.gui.util import dialog
+from advene.gui.util import dialog, get_pixmap_button
 import advene.util.helper as helper
 
 import xml.etree.ElementTree as ET
@@ -306,14 +305,14 @@ class AdhocView(object):
                     dialog.message_dialog(_("Error: the view %s is not an adhoc view.") % ident)
                     return True
                 create=False
-                self.controller.notify('ElementEditBegin', element=v, immediate=True)
+                self.controller.notify('EditSessionStart', element=v, immediate=True)
             v.title=title
             self.save_parameters(v.content, options, arguments)
             if create:
                 self.controller.notify("ViewCreate", view=v)
             else:
                 self.controller.notify("ViewEditEnd", view=v)
-                self.controller.notify('ElementEditCancel', element=v)
+                self.controller.notify('EditSessionEnd', element=v)
         return True
 
     def export_as_static_view(self, ident=None):
@@ -402,10 +401,10 @@ class AdhocView(object):
             window.buttonbox = self.widget.buttonbox
         else:
             vbox = gtk.VBox()
-            window.add (vbox)
-            vbox.add (self.widget)
-            window.buttonbox = gtk.HButtonBox()
+            window.add(vbox)
+            window.buttonbox = gtk.HBox()
             vbox.pack_start(window.buttonbox, expand=False)
+            vbox.add (self.widget)
 
         # Insert contextual_actions in buttonbox
         if hasattr(self, 'contextual_actions') and self.contextual_actions:
@@ -432,8 +431,8 @@ class AdhocView(object):
                 return True
             return False
 
-        b = gtk.Button(_("Reattach"))
-        b.connect('clicked', self.attach_view, window)
+        b=get_pixmap_button('small_attach.png', self.attach_view, window)
+        self.controller.gui.tooltips.set_tip(b, _("Click or drag-and-drop to reattach view"))
         b.connect('drag-data-get', drag_sent)
         # The widget can generate drags
         b.drag_source_set(gtk.gdk.BUTTON1_MASK,
@@ -443,8 +442,7 @@ class AdhocView(object):
         window.own_buttons.append(b)
         window.buttonbox.pack_start(b, expand=False)
 
-        b = gtk.Button(stock=gtk.STOCK_CLOSE)
-
+        b=get_pixmap_button('small_close.png')
         if self.controller and self.controller.gui:
             b.connect('clicked', self.controller.gui.close_view_cb, window, self)
         else:

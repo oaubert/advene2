@@ -39,14 +39,25 @@ class Evaluator:
             locals_ = {}
         self.globals_ = globals_
         self.locals_ = locals_
-        self.historyfile=historyfile
+
+        # History and bookmark handling
         self.history = []
+        self.bookmarks = []
+
+        self.historyfile=historyfile
+        if historyfile:
+            self.bookmarkfile=historyfile + '-bookmarks'
+        else:
+            self.bookmarkfile=None
+        self.load_history()
+
         self.current_entry=None
         self.history_index = None
-        if self.historyfile:
-            self.load_history ()
+
         self.control_shortcuts = {
             gtk.keysyms.w: self.close,
+            gtk.keysyms.b: self.add_bookmark,
+            gtk.keysyms.space: self.display_bookmarks,
             gtk.keysyms.l: self.clear_expression,
             gtk.keysyms.f: lambda: self.fill_method_parameters(),
             gtk.keysyms.d: lambda: self.display_completion(completeprefix=False),
@@ -63,41 +74,54 @@ class Evaluator:
         self.widget=self.build_widget()
 
     def true_cb(self, *p):
-        print "true_cb", str(p)
+        self.status_message("true_cb", str(p))
         return True
 
     def false_cb(self, *p):
-        print "false_cb", str(p)
+        self.status_message("false_cb", str(p))
         return False
 
     def load_history(self, name=None):
-        """Load the command history.
+        """Load a command history and return the data.
         """
         if name is None:
             name=self.historyfile
-        if name is None:
-            return
-        try:
-            f=open(name, 'r')
-        except IOError:
-            return
-        for l in f:
-            self.history.append(l.rstrip())
-        f.close()
+            bname=self.bookmarkfile
+        else:
+            bname=name + '-bookmarks'
+        self.history=self.load_data(name)
+        self.bookmarks=self.load_data(bname)
         return
 
     def save_history(self, name=None):
-        """Save the command history.
-        """
         if name is None:
             name=self.historyfile
-        if name is None:
-            return
+            bname=self.bookmarkfile
+        else:
+            bname=name + '-bookmarks'
+        self.save_data(self.history, self.historyfile)
+        self.save_data(self.bookmarks, self.bookmarkfile)
+        return
+
+    def load_data(self, name):
+        res=[]
+        try:
+            f=open(name, 'r')
+        except IOError:
+            return []
+        for l in f:
+            res.append(l.rstrip())
+        f.close()
+        return res
+
+    def save_data(self, data, name):
+        """Save a command history.
+        """
         try:
             f=open(name, 'w')
         except IOError:
-            return
-        for l in self.history:
+            return []
+        for l in data:
             f.write(l + "\n")
         f.close()
         return
@@ -109,6 +133,7 @@ class Evaluator:
         was specified.
         """
         self.save_history()
+
         if isinstance(self.widget.parent, gtk.Window):
             # Embedded in a toplevel window
             self.widget.parent.destroy()
@@ -159,7 +184,7 @@ class Evaluator:
         f=open(filename, "w")
         f.write(out)
         f.close()
-        print "output saved to %s" % filename
+        self.status_message("Output saved to %s" % filename)
         return True
 
     def get_expression(self):
@@ -212,6 +237,8 @@ class Evaluator:
         Control-S: save the expression buffer
         Control-n: next item in history
         Control-p: previous item in history
+        Control-b: store the expression as a bookmark
+        Control-space: display bookmarks
 
         Control-PageUp/PageDown: scroll the output window
         Control-s: save the output
@@ -481,6 +508,7 @@ class Evaluator:
                                      if a.startswith(attr) ]
                     except Exception, e:
                         print "Exception when trying to complete attribute for %s starting with %s:\n%s" % (expr, attr, e)
+                        self.status_message("Completion exception for %s starting with %s" % (expr, attr))
                     if completion and attr == '':
                         # Do not display private elements by default.
                         # Display them when completion is invoked
@@ -499,6 +527,7 @@ class Evaluator:
                                          if k.startswith(key) ]
                         except Exception, e:
                             print "Exception when trying to complete dict key for %s starting with %s:\n%s" % (expr, attr, e)
+                            self.status_message("Completion exception for %s starting with %s" % (expr, attr))
 
         self.clear_output()
         if completion is None:
@@ -567,9 +596,11 @@ class Evaluator:
                 args.append("*" + varargs)
             if varkw:
                 args.append("**" + varkw)
-        elif inspect.isbuiltin(res) and res.__doc__:
+        #elif inspect.isbuiltin(res) and res.__doc__:
+        # isbuiltin does not work
+        elif callable(res) and res.__doc__:
             # Extract parameters from docstring
-            args=re.findall('\((.*)\)', res.__doc__.splitlines()[0])
+            args=re.findall('\((.*?)\)', res.__doc__.splitlines()[0])
 
         if args is not None:
             beginmark=b.create_mark(None, cursor, True)
@@ -623,6 +654,11 @@ class Evaluator:
         window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         window.connect('key-press-event', self.key_pressed_cb)
         window.set_title ("Python evaluation")
+        
+        b=gtk.SeparatorToolItem()
+        b.set_expand(True)
+        b.set_draw(False)
+        self.toolbar.insert(b, -1)
 
         if embedded:
             # Add the Close button to the toolbar
@@ -644,7 +680,7 @@ class Evaluator:
         self.help()
         self.source.grab_focus()
         return window
-    
+
     def status_message(self, m):
         cid=self.statusbar.get_context_id('info')
         message_id=self.statusbar.push(cid, unicode(m))
@@ -672,6 +708,43 @@ class Evaluator:
 
         return False
 
+    def add_bookmark(self, *p):
+        """Add the current expression as a bookmark.
+        """
+        ex=self.get_expression()
+        if not re.match('^\s*$', ex) and not ex in self.bookmarks:
+            self.bookmarks.append(ex)
+            self.save_data(self.bookmarks, self.bookmarkfile)
+            self.status_message("Bookmark saved")
+        return True
+
+    def remove_bookmark(self, *p):
+        """Remove the current expression from bookmarks.
+        """
+        ex=self.get_expression()
+        if ex in self.bookmarks:
+            self.bookmarks.remove(ex)
+            self.save_data(self.bookmarks, self.bookmarkfile)
+            self.status_message("Bookmark removed")
+        return True
+
+    def display_bookmarks(self, widget=None, *p):
+        """Display bookmarks as a popup menu.
+        """
+        def set_expression(i, b):
+            self.set_expression(b)
+            return True
+        if not self.bookmarks:
+            return True
+        m=gtk.Menu()
+        for b in self.bookmarks:
+            i=gtk.MenuItem(b)
+            i.connect('activate', set_expression, b)
+            m.append(i)
+        m.show_all()
+        m.popup(None, widget, None, 0, gtk.get_current_event_time())
+        return True
+
     def build_widget(self):
         """Build the evaluator widget.
         """
@@ -687,6 +760,9 @@ class Evaluator:
             (gtk.STOCK_CLEAR, self.clear_output),
             (gtk.STOCK_DELETE, self.clear_expression),
             (gtk.STOCK_EXECUTE, self.evaluate_expression),
+            (gtk.STOCK_ADD, self.add_bookmark),
+            (gtk.STOCK_REMOVE, self.remove_bookmark),
+            (gtk.STOCK_INDEX, self.display_bookmarks),
             ):
             b=gtk.ToolButton(icon)
             b.connect('clicked', action)
@@ -743,4 +819,6 @@ if __name__ == "__main__":
     window.connect('destroy', lambda e: gtk.main_quit())
 
     gtk.main ()
-    ev.save_history(ev.historyfile)
+    # Will not do anything here since ev.historyfile was not
+    # initialized
+    ev.save_history()

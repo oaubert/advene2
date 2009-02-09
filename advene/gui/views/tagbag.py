@@ -51,6 +51,7 @@ def register(controller):
 class TagBag(AdhocView):
     view_name = _("Tag Bag")
     view_id = 'tagbag'
+    tooltip = _("Bag of tags")
     def __init__(self, controller=None, parameters=None, tags=None, vertical=True):
         super(TagBag, self).__init__(controller=controller)
         self.close_on_package_load = False
@@ -73,6 +74,8 @@ class TagBag(AdhocView):
         if l:
             tags=l
         self.tags=tags
+        if self.tags is None:
+            self.tags=[]
 
         self.button_height=24
         self.mainbox=None
@@ -117,8 +120,44 @@ class TagBag(AdhocView):
     def new_tag(self, *p):
         """Enter a new tag.
         """
-        tag=dialog.entry_dialog(title=_("New tag name"),
-                                         text=_("Enter a new tag name"))
+        d = gtk.Dialog(title=_("New tag name"),
+                       parent=None,
+                       flags=gtk.DIALOG_DESTROY_WITH_PARENT,
+                       buttons=( gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL,
+                                 gtk.STOCK_OK, gtk.RESPONSE_OK,
+                                 ))
+        l=gtk.Label(_("Enter a new tag name and select its color."))
+        d.vbox.pack_start(l, expand=False)
+
+        hb=gtk.HBox()
+        hb.pack_start(gtk.Label(_("Name")), expand=False)
+        tagname=gtk.Entry()
+        hb.pack_start(tagname, expand=False)
+        d.vbox.pack_start(hb, expand=False)
+
+        hb=gtk.HBox()
+        hb.pack_start(gtk.Label(_("Color")), expand=False)
+        colorbutton=gtk.ColorButton()
+        colorbutton.set_color(gtk.gdk.color_parse('red'))
+        hb.pack_start(colorbutton, expand=False)
+        d.vbox.pack_start(hb, expand=False)
+
+        d.connect('key-press-event', dialog.dialog_keypressed_cb)
+        d.show_all()
+        dialog.center_on_mouse(d)
+
+        res=d.run()
+        ret=None
+        if res == gtk.RESPONSE_OK:
+            try:
+                tag=tagname.get_text()
+            except ValueError:
+                tag=None
+            color=colorbutton.get_color()
+        else:
+            tag=None
+        d.destroy()
+
         if tag and not tag in self.tags:
             if not re.match('^[\w\d_]+$', tag):
                 dialog.message_dialog(_("The tag contains invalid characters"),
@@ -271,11 +310,9 @@ class TagBag(AdhocView):
                 self.log("Unknown target type for remove drop: %d" % targetType)
             return True
 
-        v.add(sw)
 
         hb=gtk.HBox()
         hb.set_homogeneous(False)
-        v.pack_start(hb, expand=False)
 
         b=get_small_stock_button(gtk.STOCK_DELETE)
 
@@ -292,4 +329,8 @@ class TagBag(AdhocView):
         hb.pack_start(b, expand=False)
 
         v.buttonbox=hb
+
+        v.pack_start(hb, expand=False)
+        v.add(sw)
+
         return v

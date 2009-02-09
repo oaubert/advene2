@@ -29,6 +29,7 @@ import sched
 import threading
 import copy
 import StringIO
+import urllib
 
 from advene.util.session import session
 from advene.rules.elements import Action, ActionList, Rule, RuleSet, ECACatalog
@@ -75,7 +76,7 @@ class ECAEngine:
         self.catalog=ECACatalog()
         self.scheduler=sched.scheduler(time.time, time.sleep)
         self.schedulerthread=threading.Thread(target=self.scheduler.run)
-
+        self.views_to_notify=[]
     def get_state(self):
         """Return a state of the current rulesets.
 
@@ -262,6 +263,13 @@ class ECAEngine:
         """
         self.catalog.register_action(registered_action)
 
+    def register_view(self, view):
+        self.views_to_notify.append(view)
+
+    def unregister_view(self, view):
+        self.views_to_notify.remove(view)
+
+
     def internal_rule(self, event=None, condition=None, method=None):
         """Declare an internal rule used by the application.
 
@@ -318,6 +326,12 @@ class ECAEngine:
             print "Trying to remove non-existant rule %s from %s ruleset" % (str(rule.name), type_)
             pass
 
+    def dump(self):
+        res=[]
+        for k in sorted(self.ruledict.keys()):
+            res.append("%s: %s" % (k, len(self.ruledict[k])))
+        return res
+            
     def notify (self, event_name, *param, **kw):
         """Invoked by the application on the occurence of an event.
 
@@ -336,6 +350,17 @@ class ECAEngine:
         A special named parameter is delay, which will be given in ms.
         It contains the delay to apply to the rule execution.
         """
+        #print "notify %s for %s" % (event_name, str(kw))
+
+        if config.data.preferences['record-actions']:
+            # FIXME: we should not store the whole element, it is too costly
+            d=dict(kw)
+            d['event_name'] = event_name
+            d['parameters'] = param
+            self.event_history.append(d)
+            for v in self.views_to_notify:
+                # should only be TraceBuilder plugin or other trace building system
+                v.receive(d)
         immediate=False
         if 'immediate' in kw:
             immediate=True

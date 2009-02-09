@@ -58,6 +58,7 @@ class TimeAdjustment:
         def invalidate_snapshot(item, value):
             # Invalidate the image
             self.controller.package.imagecache.invalidate(value)
+            self.controller.notify('SnapshotUpdate', position=value)
             self.update_display()
             return True
 
@@ -179,7 +180,7 @@ class TimeAdjustment:
                 i='second-scroll-increment'
             else:
                 i='scroll-increment'
-            
+
             if event.direction == gtk.gdk.SCROLL_DOWN:
                 incr=-config.data.preferences[i]
             elif event.direction == gtk.gdk.SCROLL_UP:
@@ -202,7 +203,7 @@ class TimeAdjustment:
                                config.data.drag_type['annotation']
                                + config.data.drag_type['timestamp'],
                                gtk.gdk.ACTION_LINK)
-            
+
             vbox.connect('scroll-event', handle_scroll_event)
 
         vbox.show_all()

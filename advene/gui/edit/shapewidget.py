@@ -32,22 +32,28 @@ FIXME: find a way to pass the background path
 """
 
 import os
+import sys
 import gtk
 import cairo
 import urllib
+import re
+from math import atan2, cos, sin
 
 try:
-    import xml.etree.ElementTree as ET
+    import advene.util.ElementTree as ET
 except ImportError:
     try:
         import elementtree.ElementTree as ET
     except ImportError:
-        import advene.util.ElementTree as ET
+        import xml.etree.ElementTree as ET # python 2.5
 
 from gettext import gettext as _
 
 COLORS = [ 'red', 'green', 'blue', 'black', 'white', 'gray', 'yellow' ]
 SVGNS = 'http://www.w3.org/2000/svg'
+
+stroke_width_re=re.compile(r'stroke-width:\s*(\d+)')
+arrow_width_re=re.compile(r'#arrow(\d+)')
 
 defined_shape_classes=[]
 
@@ -165,8 +171,9 @@ class Shape(object):
         s.filled=( element.attrib.get('fill', 'none') != 'none' )
         s.color=element.attrib['stroke']
         style=element.attrib['style']
-        if style.startswith('stroke-width:'):
-            s.linewidth=int(style.replace('stroke-width:', ''))
+        m=stroke_width_re.search(style)
+        if m:
+            s.linewidth=int(m.group(1))
         c=cls.xml2coords(cls.coords, element.attrib, context.dimensions())
         for n, v in c.iteritems():
             setattr(s, n, v)
@@ -200,9 +207,9 @@ class Shape(object):
             a=ET.Element('a', attrib={ 'xlink:href': self.link,
                                        'title': self.link_label or _("Link to %s") % self.link })
             a.append(e)
-            return a
+            yield a
         else:
-            return e
+            yield e
 
     def copy_from(self, shape, style=False):
         """Copy data from another shape.
@@ -376,10 +383,12 @@ class Shape(object):
                 if n in edit.widgets:
                     setattr(self, n, edit.widgets[n].get_text())
             self.color = COLORS[edit.widgets['color'].get_active()]
-            for n in ('linewidth', 'textsize'):
+            for n in ('linewidth', 'textsize', 'arrowwidth'):
                 if n in edit.widgets:
                     setattr(self, n, int(edit.widgets[n].get_value()))
-            self.filled = edit.widgets['filled'].get_active()
+            for n in ('filled', 'arrow'):
+                if n in edit.widgets:
+                    setattr(self, n, edit.widgets[n].get_active())
             return True
 
         return False
@@ -479,24 +488,33 @@ class Text(Rectangle):
 
     def __init__(self, name=SHAPENAME, color="green"):
         super(Text, self).__init__(name, color)
+        self.linewidth=1
+        self.filled=True
         self.text='Some text'
         self.textsize=20
 
     def render(self, pixmap, invert=False):
         width, height=pixmap.get_size()
         context=pixmap.cairo_create()
-        context.move_to(self.x, self.y)
+
         context.select_font_face("Helvetica", cairo.FONT_SLANT_NORMAL,
                                  cairo.FONT_WEIGHT_NORMAL)
         context.set_font_size(self.textsize)
 
+        extents=context.text_extents(self.text)
+
+        # Fix width, height attributes
+        self.width = extents[2]
+        self.height = extents[3]
+
         # FIXME: does not work correctly...
         if invert:
-            context.set_operator(cairo.OPERATOR_XOR)
+            context.set_operator(cairo.OPERATOR_ADD)
         color=gtk.gdk.color_parse(self.color)
         rgba=(color.red / 65536.0, color.green / 65536.0, color.blue / 65536.0, 1.0)
         context.set_source_rgba(*rgba)
 
+        context.move_to(self.x, self.y)
         try:
             context.show_text(self.text)
             self.width, self.height = context.text_extents(self.text)[2:4]
@@ -522,8 +540,9 @@ class Text(Rectangle):
         s.color=element.attrib['stroke']
         s.text=element.text
         style=element.attrib['style']
-        if style.startswith('stroke-width:'):
-            s.linewidth=int(style.replace('stroke-width:', ''))
+        m=stroke_width_re.search(style)
+        if m:
+            s.linewidth=int(m.group(1))
         c=cls.xml2coords(cls.coords, element.attrib, context.dimensions())
         for n, v in c.iteritems():
             setattr(s, n, v)
@@ -540,16 +559,20 @@ class Text(Rectangle):
         attrib.update(self.coords2xml(relative, size))
         attrib['name']=self.name
         attrib['stroke']=self.color
-        attrib['style']="stroke-width:%d" % self.linewidth
+        if self.filled:
+            attrib['fill']=self.color
+        else:
+            attrib['fill']='none'
+        attrib['style']="stroke-width:%d; font-family: sans-serif; font-size: %d" % (self.linewidth, self.textsize)
         e=ET.Element('text', attrib=attrib)
         e.text=self.text
         if self.link:
             a=ET.Element('a', attrib={ 'xlink:href': self.link,
                                        'title': self.link_label })
             a.append(e)
-            return a
+            yield a
         else:
-            return e
+            yield e
 
     def __contains__(self, point):
         # We cannot use the inherited method, since text is draw *above* x,y
@@ -570,10 +593,13 @@ class Text(Rectangle):
             hb.pack_start(widget, expand=False)
             return hb
 
-        # URI
+        # Text
         textsel = gtk.Entry()
         textsel.set_text(self.text)
-        vbox.pack_start(label_widget(_("Text"), textsel), expand=False)
+        l=label_widget(_("Text"), textsel)
+        vbox.pack_start(l, expand=False)
+        # Put the text at the beginning
+        vbox.reorder_child(l, 0)
         vbox.widgets['text']=textsel
 
         # Text size
@@ -581,7 +607,9 @@ class Text(Rectangle):
         textsizesel.set_range(4, 80)
         textsizesel.set_increments(1, 4)
         textsizesel.set_value(self.textsize)
-        vbox.pack_start(label_widget(_("Textsize"), textsizesel), expand=False)
+        l=label_widget(_("Textsize"), textsizesel)
+        vbox.pack_start(l, expand=False)
+        vbox.reorder_child(l, 1)
         vbox.widgets['textsize']=textsizesel
 
         return vbox
@@ -604,9 +632,9 @@ class Image(Rectangle):
              ('width', 0),
              ('height', 1) )
 
-    def __init__(self, name=SHAPENAME, color="green"):
+    def __init__(self, name=SHAPENAME, color="green", uri=''):
         super(Image, self).__init__(name, color)
-        self.uri=''
+        self.uri=uri
 
     def render(self, pixmap, invert=False):
         # FIXME
@@ -646,6 +674,10 @@ class Image(Rectangle):
         @return: the SVG representation
         @rtype: elementtree.Element
         """
+        self.x=0
+        self.y=0
+        self.width=size[0]
+        self.height=size[1]
         attrib=dict(self.svg_attrib)
         attrib.update(self.coords2xml(relative, size))
         attrib['name']=self.name
@@ -655,9 +687,9 @@ class Image(Rectangle):
             a=ET.Element('a', attrib={ 'xlink:href': self.link,
                                        'title': self.link_label or _("Link to %s") % self.link })
             a.append(e)
-            return a
+            yield a
         else:
-            return e
+            yield e
 
     def edit_properties_widget(self):
         """Build a widget to edit the shape properties.
@@ -691,10 +723,14 @@ class Line(Rectangle):
              ('x2', 0),
              ('y2', 1) )
 
+    def __init__(self, name=SHAPENAME, color="green", arrow=False):
+        super(Line, self).__init__(name, color)
+        self.arrow=arrow
+        self.arrowwidth=10
+
     def set_bounds(self, bounds):
         self.x1, self.y1 = bounds[0]
         self.x2, self.y2 = bounds[1]
-
         self.width = int(self.x2 - self.x1)
         self.height = int(self.y2 - self.y1)
 
@@ -711,6 +747,19 @@ class Line(Rectangle):
                   self.y1,
                   self.x2,
                   self.y2)
+        if self.arrow:
+            theta=atan2( self.width, self.height )
+            ox=self.arrowwidth / 2 + 1
+            oy=self.arrowwidth
+            pixmap.draw_polygon(gc,
+                                True,
+                                ( (self.x2, self.y2),
+                                  (int(self.x2 - ox * cos(theta) - oy * sin(theta)),
+                                   int(self.y2 + ox * sin(theta) - oy * cos(theta)) ),
+                                  (int(self.x2 + ox * cos(theta) - oy * sin(theta)),
+                                   int(self.y2 - ox * sin(theta) - oy * cos(theta)) ),
+                                  )
+                                )
         return
 
     def translate(self, vector):
@@ -765,6 +814,76 @@ class Line(Rectangle):
                  and y > min(self.y1, self.y2)
                  and y < max(self.y1, self.y2)
                  and abs(y - (a * x + b)) < self.tolerance )
+
+    def edit_properties_widget(self):
+        """Build a widget to edit the shape properties.
+        """
+        vbox=super(Line, self).edit_properties_widget()
+
+        def label_widget(label, widget):
+            hb=gtk.HBox()
+            hb.add(gtk.Label(label))
+            hb.pack_start(widget, expand=False)
+            return hb
+
+        draw_arrow = gtk.CheckButton(_("Draw an arrow"))
+        draw_arrow.set_active(self.arrow)
+        vbox.pack_start(draw_arrow)
+        vbox.reorder_child(draw_arrow, 0)
+        vbox.widgets['arrow']=draw_arrow
+
+        # Arrow size
+        arrowsize = gtk.SpinButton()
+        arrowsize.set_range(1, 40)
+        arrowsize.set_increments(1, 4)
+        arrowsize.set_value(self.arrowwidth)
+        l=label_widget(_("Arrow size"), arrowsize)
+        vbox.pack_start(l, expand=False)
+        vbox.reorder_child(l, 1)
+        vbox.widgets['arrowwidth']=arrowsize
+        return vbox
+
+    def post_parse(self):
+        """Handle arrow markers.
+        """
+        if 'marker-end' in self.svg_attrib:
+            self.arrow=True
+            self.arrowwidth=int(arrow_width_re.findall(self.svg_attrib['marker-end'])[0])
+
+    def get_svg(self, relative=False, size=None):
+        """
+        <defs><marker id="myMarker" viewBox="0 0 10 10" refX="1" refY="5"
+        markerUnits="strokeWidth" orient="auto"
+        markerWidth="4" markerHeight="3">
+        <polyline points="0,0 10,5 0,10 1,5" fill="darkblue" />
+        </marker></defs>
+        """
+        e=super(Line, self).get_svg(relative, size).next()
+        if self.arrow:
+            if e.tag == 'a' or e.tag == ET.QName(SVGNS, 'a'):
+                # It is a link. Use the child.
+                el=e[0]
+            else:
+                el=e
+            defs=ET.Element('defs')
+            marker=ET.Element('marker', {
+                    'id': "arrow%d" % self.arrowwidth,
+                    'viewBox': "0 0 10 10",
+                    'refX': '5',
+                    'refY': '5',
+                    'orient': 'auto',
+                    'markerWidth': str(self.arrowwidth / 2 + 1),
+                    'markerHeight': str(self.arrowwidth) })
+            defs.append(marker)
+            marker.append(ET.Element('polyline', {
+                        'points': "0,0 10,5 0,10 1,5",
+                        'fill': self.color }))
+            el.attrib['marker-end']='url(#arrow%d)' % self.arrowwidth
+            yield defs
+            yield e
+        else:
+            yield e
+
 
 class Circle(Rectangle):
     """A Circle shape.
@@ -876,10 +995,14 @@ class Link(Shape):
         @rtype: elementtree.Element
         """
         print "Should not happen..."
-        return None
+        yield None
 
 class ShapeDrawer:
     """Widget allowing to draw and edit shapes.
+
+    Note: the specified background image is not saved in the generated
+    SVG. If it should be present in the output, it must be added
+    (through add_object) as an Image object with the name 'background'.
 
     @ivar callback: method called when the button is released.
     @type callback: method taking a rectangle as parameter
@@ -1191,6 +1314,8 @@ class ShapeDrawer:
         """Return a SVG representation.
         """
         size=self.dimensions()
+        ET._namespace_map['http://www.w3.org/1999/xlink']='xlink'
+        ET._namespace_map['http://www.w3.org/2000/svg']='svg'
         root=ET.Element(ET.QName(SVGNS, 'svg'), {
                 'version': '1',
                 'preserveAspectRatio': "xMinYMin meet" ,
@@ -1204,7 +1329,7 @@ class ShapeDrawer:
                 })
         bg=[ o[0] for o in self.objects if isinstance(o, Image) and o.name == 'background' ]
         if bg:
-            # There is background. Put it first.
+            # There is a background. Put it first.
             bg=bg[0]
             # Force the background image dimension
             bg.x=0
@@ -1214,14 +1339,16 @@ class ShapeDrawer:
             if hasattr(bg, '_pixbuf'):
                 bg.width=bg._pixbuf.get_width()
                 bg.height=bg._pixbuf.get_height()
-            root.append(bg.get_svg(relative=relative, size=size))
+            for e in bg.get_svg(relative=relative, size=size):
+                root.append(e)
         else:
             bg=None
         for o in self.objects:
             if o == bg:
                 # The background already has been added
                 continue
-            root.append(o[0].get_svg(relative=relative, size=size))
+            for e in o[0].get_svg(relative=relative, size=size):
+                root.append(e)
         ET_indent(root)
         return root
 
@@ -1275,6 +1402,7 @@ class ShapeDrawer:
                         o.y=0
                         o.width=self.canvaswidth=p.get_width()
                         o.height=self.canvasheight=p.get_height()
+                        self.widget.set_size_request(self.canvaswidth, self.canvasheight)
                     else:
                         self.objects.append( (o, o.name) )
                     break
@@ -1286,7 +1414,7 @@ class ShapeEditor:
 
     This component provides an example of using ShapeWidget.
     """
-    def __init__(self, background=None):
+    def __init__(self, background=None, pixmap_dir=None):
         self.background=None
         self.drawer=ShapeDrawer(callback=self.callback,
                                 background=background)
@@ -1294,7 +1422,41 @@ class ShapeEditor:
 
         self.colors = COLORS
         self.defaultcolor = self.colors[0]
-        self.widget=self.build_widget()
+
+        self.key_mapping={
+            gtk.keysyms.l: Line,
+            gtk.keysyms.r: Rectangle,
+            gtk.keysyms.t: Text,
+            gtk.keysyms.c: Circle,
+            #gtk.keysyms.i: Image,
+            }
+
+        self.pixmap_name={
+            Rectangle: 'shape_rectangle.png',
+            Line: 'shape_arrow.png',
+            Text: 'shape_text.png',
+            Circle: 'shape_ellipse.png',
+            Image: 'shape_image.png',
+            }
+
+        self.tooltips=gtk.Tooltips()
+        self.widget=self.build_widget(pixmap_dir)
+        self.widget.connect('key-press-event', self.key_press_event)
+
+    def key_press_event(self, widget, event):
+        cl=self.key_mapping.get(event.keyval, None)
+        if cl is not None:
+            try:
+                # Select the appropriate shape
+                i=self.shapes.index(cl)
+                self.shapeselector.set_active(i)
+                return True
+            except ValueError:
+                # Maybe a method
+                if callable(cl):
+                    cl(widget, event)
+                    return True
+        return False
 
     def callback(self, l):
         if l[0][0] is None or l[1][0] is None:
@@ -1366,13 +1528,22 @@ class ShapeEditor:
                     retval = True
         return retval
 
-    def build_widget(self):
+    def set_background(self, image):
+        self.drawer.background=image
+        # FIXME: check that dimensions are compatible with old one ?
+        self.drawer.plot()
+
+    def build_widget(self, pixmap_dir):
         vbox=gtk.VBox()
 
+        tb=gtk.Toolbar()
+        tb.set_style(gtk.TOOLBAR_ICONS)
+
+        vbox.pack_start(tb, expand=False)
 
         hbox=gtk.HBox()
-        vbox.add(hbox)
 
+        vbox.add(hbox)
 
         hbox.pack_start(self.drawer.widget, True, True, 0)
 
@@ -1386,26 +1557,119 @@ class ShapeEditor:
         self.treeview.connect('row-activated', self.remove_item)
         self.treeview.connect('button-press-event', self.tree_view_button_cb)
 
-        control = gtk.VBox()
-
-        # FIXME: toolbar at the top
-        def changeshape(combobox):
-            self.drawer.shape_class = self.shapes[combobox.get_active()]
+        def set_shape(tb, shape):
+            """Update the toolbutton with the appropriate shape information.
+            """
+            if pixmap_dir is not None and self.pixmap_name.get(shape, None):
+                i=gtk.Image()
+                i.set_from_file( os.path.join( pixmap_dir, self.pixmap_name.get(shape, None)) )
+                i.show()
+                tb.set_icon_widget(i)
+            else:
+                tb.set_text(shape.SHAPENAME)
+            tb.set_tooltip(self.tooltips, shape.SHAPENAME)
+            tb._shape=shape
             return True
 
-        shapeselector = self.build_selector( [ s.SHAPENAME for s in self.shapes ],
-                                            changeshape )
-        control.pack_start(shapeselector, expand=False)
-
-        def changecolor(combobox):
-            self.defaultcolor = self.colors[combobox.get_active()]
+        def select_shape(button, shape):
+            self.shape_icon.set_shape(shape)
+            self.drawer.shape_class=shape
+            button.get_toplevel().destroy()
             return True
 
-        colorselector = self.build_selector( self.colors,
-                                             changecolor )
-        control.pack_start(colorselector, expand=False)
+        def display_shape_menu(tb):
+            bar=gtk.Toolbar()
+            bar.set_orientation(gtk.ORIENTATION_VERTICAL)
+            bar.set_style(gtk.TOOLBAR_ICONS)
 
-        control.pack_start(self.treeview, expand=False)
+            for shape in self.shapes:
+                i=gtk.ToolButton()
+                i.set_visible_horizontal(True)
+                i.set_visible_vertical(True)
+                set_shape(i, shape)
+                i.connect('clicked', select_shape, shape)
+                bar.insert(i, -1)
+
+            w=gtk.Window(type=gtk.WINDOW_POPUP)
+            w.add(bar)
+            w.set_transient_for(tb.get_toplevel())
+            w.set_type_hint(gtk.gdk.WINDOW_TYPE_HINT_TOOLBAR)
+            w.set_modal(True)
+            w.resize(20, 150)
+            alloc = tb.get_allocation()
+            if sys.platform in ('darwin', 'win32'):
+                p=tb.get_toplevel().get_position()
+                w.move(alloc.x+p[0], alloc.y+p[1])
+            else:
+                w.move(alloc.x, alloc.y)
+            w.show_all()
+            def button_press_event(wid, event):
+                wid.destroy()
+                return False
+            w.connect('button-press-event', button_press_event)
+
+            return True
+
+        self.shape_icon=gtk.ToolButton()
+        self.shape_icon.set_shape=set_shape.__get__(self.shape_icon)
+        self.shape_icon.set_shape(Rectangle)
+        self.shape_icon.connect('clicked', display_shape_menu)
+        tb.insert(self.shape_icon, -1)
+
+
+        def set_color(tb, color):
+            """Update the toolbutton with the appropriate color information.
+            """
+            tb.get_icon_widget().set_markup('<span background="%s">    </span>' % color)
+            tb.set_tooltip(self.tooltips, color)
+            tb._color=color
+            return True
+
+        def select_color(button, color):
+            self.color_icon.set_color(color)
+            self.defaultcolor=color
+            button.get_toplevel().destroy()
+            return True
+
+        def display_color_menu(tb):
+            bar=gtk.Toolbar()
+            bar.set_orientation(gtk.ORIENTATION_VERTICAL)
+            bar.set_style(gtk.TOOLBAR_ICONS)
+
+            for color in self.colors:
+                i=gtk.ToolButton(icon_widget=gtk.Label())
+                i.set_visible_horizontal(True)
+                i.set_visible_vertical(True)
+                set_color(i, color)
+                i.connect('clicked', select_color, color)
+                bar.insert(i, -1)
+
+            w=gtk.Window(type=gtk.WINDOW_POPUP)
+            w.add(bar)
+            w.set_transient_for(tb.get_toplevel())
+            w.set_type_hint(gtk.gdk.WINDOW_TYPE_HINT_TOOLBAR)
+            w.set_modal(True)
+            bar.show_all()
+            w.resize(20, 200)
+            alloc = tb.get_allocation()
+            if sys.platform in ('darwin', 'win32'):
+                p=tb.get_toplevel().get_position()
+                w.move(alloc.x+p[0], alloc.y+p[1])
+            else:
+                w.move(alloc.x, alloc.y)
+            w.show_all()
+            def button_press_event(wid, event):
+                wid.destroy()
+                return False
+            w.connect('button-press-event', button_press_event)
+
+            return True
+
+        self.color_icon=gtk.ToolButton(icon_widget=gtk.Label())
+        self.color_icon.set_color=set_color.__get__(self.color_icon)
+        self.color_icon.set_color('red')
+        self.color_icon.connect('clicked', display_color_menu)
+        tb.insert(self.color_icon, -1)
 
         def dump_svg(b):
             s=self.drawer.get_svg(relative=False)
@@ -1422,21 +1686,40 @@ class ShapeEditor:
             fs.destroy()
             return True
 
-        b=gtk.Button(_("Dump SVG"))
+        def save_svg(b):
+            tree=ET.ElementTree(self.drawer.get_svg(relative=False))
+            f=open('/tmp/shapewidget.svg', 'w')
+            tree.write(f, encoding='utf-8')
+            f.close()
+            return True
+
+        tb.insert(gtk.SeparatorToolItem(), -1)
+
+        b=gtk.ToolButton(gtk.STOCK_CONVERT)
+        b.set_tooltip(self.tooltips, _("Dump SVG"))
         b.connect('clicked', dump_svg)
-        control.pack_start(b, expand=False)
+        tb.insert(b, -1)
 
-        b=gtk.Button(_("Load SVG"))
+        b=gtk.ToolButton(gtk.STOCK_OPEN)
+        b.set_tooltip(self.tooltips, _("Load SVG"))
         b.connect('clicked', load_svg)
-        control.pack_start(b, expand=False)
+        tb.insert(b, -1)
 
+        if True:
+            b=gtk.ToolButton(gtk.STOCK_SAVE)
+            b.set_tooltip(self.tooltips, _("Save SVG"))
+            b.connect('clicked', save_svg)
+            tb.insert(b, -1)
+
+        control = gtk.VBox()
+        control.pack_start(self.treeview, expand=False)
         hbox.pack_start(control, expand=False)
+
         vbox.show_all()
+
         return vbox
 
 def main():
-    import sys
-
     if len(sys.argv) > 1:
         bg = sys.argv[1]
     else:
@@ -1454,9 +1737,10 @@ def main():
     else:
         i=gtk.Image()
         i.set_from_file(bg)
-
         ed=ShapeEditor(background=i)
+        ed.drawer.add_object(Image(name='background', uri=os.path.basename(bg)))
     win.add(ed.widget)
+    ed.key_mapping[gtk.keysyms.q]=lambda w, e: gtk.main_quit()
 
     win.show_all()
 

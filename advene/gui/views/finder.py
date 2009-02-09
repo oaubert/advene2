@@ -39,6 +39,7 @@ from advene.model.cam.media import Media
 import advene.rules.elements
 import advene.gui.popup
 import advene.util.helper as helper
+from advene.gui.util import drag_data_get_cb, get_target_types, enable_drag_source, contextual_drag_begin, name2color
 
 name="Package finder view plugin"
 
@@ -113,7 +114,8 @@ class FinderColumn(object):
         self.callback=callback
         self.previous=parent
         self.next=None
-        self.widget=self.build_widget()
+        self.widget=gtk.Frame()
+        self.widget.add(self.build_widget())
         self.widget.connect('key-press-event', self.key_pressed_cb)
 
     def key_pressed_cb(self, col, event):
@@ -136,13 +138,15 @@ class FinderColumn(object):
         ViewColumn, we want to use the second button.
         """
         b=self.get_child_buttons(self.widget)
-        if len(b) >= 2:
-            b[1].grab_focus()
+        if len(b) >= 1:
+            b[0].grab_focus()
         return True
 
     def get_child_buttons(self, w):
         """Return the buttons contained in the widget.
         """
+        if isinstance(w, gtk.Frame):
+            w=w.get_children()[0]
         b=[]
         try:
             b=[ c for c in w.get_children() if isinstance(c, gtk.Button) ]
@@ -171,6 +175,14 @@ class FinderColumn(object):
         self.node=node
         return True
 
+    def on_column_activation(self, widget):
+        # Delete all next columns
+        cb=self.next
+        if cb:
+            cb.close()
+        self.next=None
+        return True
+
     def build_widget(self):
         return gtk.Label("Generic finder column")
 
@@ -185,9 +197,9 @@ class ModelColumn(FinderColumn):
         def title(c):
             el=c.element
             if isinstance(el, AnnotationType):
-                return "(%d) %s" % (len(el.annotations), c.title or self.controller.get_title(el))
+                return "%s (%d)" % (c.title or self.controller.get_title(el), len(el.annotations))
             elif isinstance(el, RelationType):
-                return "(%d) %s" % (len(el.relations), c.title or self.controller.get_title(el))
+                return "%s (%d)" % (c.title or self.controller.get_title(el), len(el.relations))
             else:
                 return c.title or self.controller.get_title(c.element)
 
@@ -212,15 +224,6 @@ class ModelColumn(FinderColumn):
         self.liststore.clear()
         if self.node is None:
             return True
-        self.label.set_label(self.name or self.node.title)
-        col=self.controller.get_element_color(self.node.element)
-        if col:
-            try:
-                color=gtk.gdk.color_parse(col)
-                style = self.label.modify_bg(gtk.STATE_NORMAL, color)
-            except ValueError:
-                pass
-
         for row in self.get_valid_members():
             self.liststore.append(row)
 
@@ -232,14 +235,6 @@ class ModelColumn(FinderColumn):
                 # The next node is no more in the current elements.
                 self.next.close()
                 self.next=None
-        return True
-
-    def on_column_activation(self, widget):
-        # Delete all next columns
-        cb=self.next
-        if cb:
-            cb.close()
-        self.next=None
         return True
 
     def on_button_press(self, widget, event):
@@ -273,25 +268,47 @@ class ModelColumn(FinderColumn):
         if selection is not None:
             store, it = selection.get_selected()
             if it is not None:
-                att = model.get_value(it, self.COLUMN_NODE)
+                att = model.get_value (it, self.COLUMN_NODE)
         if att and self.callback:
             self.callback(self, att)
             return True
         return False
 
+    def on_treeview_button_press_event(self, treeview, event):
+        if event.button == 1:
+            x, y = treeview.get_pointer()
+            row = treeview.get_dest_row_at_pos(int(x), int(y))
+            if row is None:
+                element=None
+            else:
+                element = treeview.get_model()[row[0]][self.COLUMN_NODE].element
+            self.drag_data=(int(x), int(y), event, element)
+
+    def on_treeview_button_release_event(self, treeview, event):
+        self.drag_data=None
+        self.drag_context=None
+
+    def on_treeview_motion_notify_event(self, treeview, event):
+        if (event.state == gtk.gdk.BUTTON1_MASK
+            and self.drag_context is None
+            and self.drag_data is not None
+            and self.drag_data[3] is not None):
+            x, y = treeview.get_pointer()
+            threshold = treeview.drag_check_threshold(
+                    self.drag_data[0], self.drag_data[1],
+                    int(x), int(y))
+            if threshold:
+                # A drag was started. Setup the appropriate target.
+                element=self.drag_data[3]
+                targets=get_target_types(element)
+                actions = gtk.gdk.ACTION_MOVE | gtk.gdk.ACTION_LINK | gtk.gdk.ACTION_COPY
+                button = 1
+                self.drag_context = treeview.drag_begin(targets, actions, button, self.drag_data[2])
+                contextual_drag_begin(treeview, self.drag_context, element, self.controller)
+                self.drag_context._element=element
+
     def build_widget(self):
         vbox=gtk.VBox()
-
-        self.label=gtk.Button(self.name, use_underline=False)
-        col=self.controller.get_element_color(self.node.element)
-        if col:
-            try:
-                color=gtk.gdk.color_parse(col)
-                style = self.label.modify_bg(gtk.STATE_NORMAL, color)
-            except ValueError:
-                pass
-        self.label.connect('clicked', self.on_column_activation)
-        vbox.pack_start(self.label, expand=False)
 
         sw = gtk.ScrolledWindow()
         sw.set_policy(gtk.POLICY_ALWAYS, gtk.POLICY_AUTOMATIC)
@@ -312,6 +329,13 @@ class ModelColumn(FinderColumn):
         self.listview.connect('button-press-event', self.on_button_press)
         self.listview.connect('key-press-event', self.key_pressed_cb)
 
+        self.drag_data=None
+        self.drag_context=None
+        self.listview.connect('button-press-event', self.on_treeview_button_press_event)
+        self.listview.connect('button-release-event', self.on_treeview_button_release_event)
+        self.listview.connect('motion-notify-event', self.on_treeview_motion_notify_event)
+        self.listview.connect('drag-data-get', drag_data_get_cb, self.controller)
+
         sw.add(self.listview)
 
         vbox.show_all()
@@ -327,8 +351,6 @@ class AnnotationColumn(FinderColumn):
     def build_widget(self):
         vbox=gtk.VBox()
 
-        l=gtk.Button(_("Annotation"), use_underline=False)
-        vbox.pack_start(l, expand=False)
         self.view=AnnotationDisplay(controller=self.controller, annotation=self.node.element)
         vbox.add(self.view.widget)
         vbox.show_all()
@@ -341,18 +363,10 @@ class RelationColumn(FinderColumn):
         self.view.set_relation(node.element)
         return True
 
-    
     def build_widget(self):
         vbox=gtk.VBox()
 
-        def annotation_callback(button):
-            node=Node(button.annotation, self.controller.get_title(button.annotation))
-            self.callback(self, node)
-            return True
-
-        l=gtk.Button(_("Relation"), use_underline=False)
-        vbox.pack_start(l, expand=False)
-        self.view=RelationDisplay(controller=self.controller, relation=self.node.element, annotation_callback=annotation_callback)
+        self.view=RelationDisplay(controller=self.controller, relation=self.node.element)
         vbox.add(self.view.widget)
         vbox.show_all()
         return vbox
@@ -360,8 +374,8 @@ CLASS2COLUMN[Relation]=RelationColumn
 
 class ViewColumn(FinderColumn):
     def __init__(self, controller=None, node=None, callback=None, parent=None):
-        FinderColumn.__init__(self, controller, node, callback, parent)
         self.element=self.node.element
+        FinderColumn.__init__(self, controller, node, callback, parent)
         self.update(node)
 
     def update(self, node=None):
@@ -369,7 +383,7 @@ class ViewColumn(FinderColumn):
         self.element=self.node.element
 
         self.label['title'].set_markup(_("View <b>%(title)s</b>\nId: %(id)s") % {
-                'title': self.controller.get_title(self.element),
+                'title': self.controller.get_title(self.element).replace('<', '&lt;'),
                 'id': self.element.id })
 
         t=helper.get_view_type(self.element)
@@ -404,12 +418,16 @@ class ViewColumn(FinderColumn):
 
     def build_widget(self):
         vbox=gtk.VBox()
-        vbox.pack_start(gtk.Button(_("View")), expand=False)
         self.label={}
         self.label['title']=gtk.Label()
         vbox.pack_start(self.label['title'], expand=False)
         b=self.label['edit']=gtk.Button(_("Edit view"))
         b.connect('clicked', lambda w: self.controller.gui.edit_element(self.element))
+        # Enable DND
+        def get_element():
+            return self.element
+        enable_drag_source(b, get_element, self.controller)
+
         vbox.pack_start(b, expand=False)
 
         b=self.label['activate']=gtk.Button(_("Open view"))
@@ -444,8 +462,8 @@ CLASS2COLUMN[View]=ViewColumn
 
 class QueryColumn(FinderColumn):
     def __init__(self, controller=None, node=None, callback=None, parent=None):
-        FinderColumn.__init__(self, controller, node, callback, parent)
         self.element=self.node.element
+        FinderColumn.__init__(self, controller, node, callback, parent)
         self.update(node)
 
     def update(self, node=None):
@@ -454,7 +472,7 @@ class QueryColumn(FinderColumn):
 
         self.label['title'].set_markup(_("%(type)s <b>%(title)s</b>\nId: %(id)s") % {
                 'type': helper.get_type(self.element),
-                'title': self.controller.get_title(self.element),
+                'title': self.controller.get_title(self.element).replace('<', '&lt;'),
                 'id': self.element.id })
         # Reset the sensitive state on apply buttons
         for b in self.apply_buttons:
@@ -463,12 +481,15 @@ class QueryColumn(FinderColumn):
 
     def build_widget(self):
         vbox=gtk.VBox()
-        vbox.pack_start(gtk.Button(_("Query")), expand=False)
         self.label={}
         self.label['title']=gtk.Label()
         vbox.pack_start(self.label['title'], expand=False)
 
         b=self.label['edit']=gtk.Button(_("Edit query"))
+        # Enable DND
+        def get_element():
+            return self.element
+        enable_drag_source(b, get_element, self.controller)
         b.connect('clicked', lambda w: self.controller.gui.edit_element(self.element))
         vbox.pack_start(b, expand=False)
 
@@ -508,8 +529,8 @@ CLASS2COLUMN[Query]=QueryColumn
 
 class ResourceColumn(FinderColumn):
     def __init__(self, controller=None, node=None, callback=None, parent=None):
-        FinderColumn.__init__(self, controller, node, callback, parent)
         self.element=self.node.element
+        FinderColumn.__init__(self, controller, node, callback, parent)
         self.update(node)
 
     def update(self, node=None):
@@ -517,7 +538,7 @@ class ResourceColumn(FinderColumn):
         self.element=self.node.element
         self.label['title'].set_markup(_("%(type)s <b>%(title)s</b>\nId: %(id)s") % {
                 'type': helper.get_type(self.element),
-                'title': self.controller.get_title(self.element),
+                'title': self.controller.get_title(self.element).replace('<', '&lt;'),
                 'id': self.element.id })
         self.update_preview()
         return True
@@ -538,6 +559,10 @@ class ResourceColumn(FinderColumn):
         self.label['title']=gtk.Label()
         vbox.pack_start(self.label['title'], expand=False)
         b=self.label['edit']=gtk.Button(_("Edit resource"))
+        # Enable DND
+        def get_element():
+            return self.element
+        enable_drag_source(b, get_element, self.controller)
         b.connect('clicked', lambda w: self.controller.gui.edit_element(self.element))
         vbox.pack_start(b, expand=False)
         self.preview=gtk.VBox()
@@ -556,13 +581,11 @@ class MediaColumn(FinderColumn):
     def build_widget(self):
         vbox=gtk.VBox()
 
-        l=gtk.Button(_("Media"), use_underline=False)
-        vbox.pack_start(l, expand=False)
         self.id_label=gtk.Label(self.node.element.id)
         self.url_label=gtk.Label(self.node.element.url)
 
         hb=gtk.HBox()
-        hb.pack_start(gtk.Label(_('Id')), expand=False)
+        hb.pack_start(gtk.Label(_('Media id')), expand=False)
         hb.pack_start(self.id_label)
         vbox.pack_start(hb, expand=False)
 
@@ -711,6 +734,7 @@ class Finder(AdhocView):
                       parent=columnbrowser)
             col.widget.set_property("width-request", self.column_width)
             self.hbox.pack_start(col.widget, expand=False)
+            col.widget.show_all()
             columnbrowser.next=col
         else:
             # Delete all next+1 columns (we reuse the next one)

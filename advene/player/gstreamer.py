@@ -55,9 +55,9 @@ Videomixer:
 
 videotestsrc pattern=1 ! video/x-raw-yuv,width=100,height=100 ! videobox border-alpha=0 alpha=0.5 top=-70 bottom=-70 right=-220 ! videomixer name=mix ! ffmpegcolorspace ! xvimagesink videotestsrc ! video/x-raw-yuv,width=320, height=240 ! alpha alpha=0.7 ! mix.
 
-This should show a 320x240 pixels video test source with some transparency showing the background checker pattern. Another video test source with just the snow pattern of 100x100 pixels is overlayed on top of the first one on the left vertically centered with a small transparency showing the first video test source behind and the checker pattern under it. 
+This should show a 320x240 pixels video test source with some transparency showing the background checker pattern. Another video test source with just the snow pattern of 100x100 pixels is overlayed on top of the first one on the left vertically centered with a small transparency showing the first video test source behind and the checker pattern under it.
 
-videotestsrc ! video/x-raw-yuv,width=320, height=240 ! videomixer name=mix ! ffmpegcolorspace ! xvimagesink filesrc location=/tmp/a.svg  ! gdkpixbufdec ! videoscale ! video/x-raw-rgb,width=320,height=240 ! ffmpegcolorspace ! alpha alpha=0.5 ! mix. 
+videotestsrc ! video/x-raw-yuv,width=320, height=240 ! videomixer name=mix ! ffmpegcolorspace ! xvimagesink filesrc location=/tmp/a.svg  ! gdkpixbufdec ! videoscale ! video/x-raw-rgb,width=320,height=240 ! ffmpegcolorspace ! alpha alpha=0.5 ! mix.
 
 Working pipeline (but it does not correctly handle transparency):
 filesrc location=/tmp/a.svg ! gdkpixbufdec ! ffmpegcolorspace ! videomixer name=mix ! ffmpegcolorspace ! xvimagesink videotestsrc ! mix.
@@ -70,10 +70,14 @@ puis
 pads=list(mix.pads())
 pads[0].props.xpos=-320
 pads[1].props.xpos=320
+
+Use appsink to get data out of a pipeline:
+https://thomas.apestaart.org/thomas/trac/browser/tests/gst/crc/crc.py
 """
 
 import advene.core.config as config
 import tempfile
+import time
 
 import gobject
 gobject.threads_init()
@@ -158,11 +162,9 @@ class Player:
     # Status
     PlayingStatus=0
     PauseStatus=1
-    ForwardStatus=2
-    BackwardStatus=3
-    InitStatus=4
-    EndStatus=5
-    UndefinedStatus=6
+    InitStatus=2
+    EndStatus=3
+    UndefinedStatus=4
 
     PositionKeyNotSupported=Exception("Position key not supported")
     PositionOriginNotSupported=Exception("Position origin not supported")
@@ -265,32 +267,30 @@ class Player:
         #control.set("ypos", 0, 0)
         #control.set("ypos", 5 * gst.SECOND, 200)
 
-
-
-        if sink == 'ximagesink':
-            print "Using ximagesink."
-            filter = gst.element_factory_make("capsfilter", "filter")
-            filter.set_property("caps", gst.Caps("video/x-raw-yuv, width=%d, height=%s" % config.data.player['snapshot-dimensions']))
-            self.filter=filter
-
-            csp=gst.element_factory_make('ffmpegcolorspace')
-            # Do not try to hard to solve the resize problem, before
-            # the gstreamer bug
-            # http://bugzilla.gnome.org/show_bug.cgi?id=339201 is
-            # solved...
-            #self.scale=gst.element_factory_make('videoscale')
-            self.video_sink.add(self.captioner, filter, csp, self.imagesink)
-            gst.element_link_many(self.captioner, filter, csp, self.imagesink)
-        elif self.captioner is not None:
-            if self.imageoverlay is not None:
-                self.video_sink.add(self.captioner, self.imageoverlay, self.imagesink)
-                self.captioner.link(self.imageoverlay)
-                self.imageoverlay.link(self.imagesink)
-            else:
-                self.video_sink.add(self.captioner, self.imagesink)
-                self.captioner.link(self.imagesink)
+        elements=[]
+        if self.captioner is not None:
+            elements.append(self.captioner)
+        if self.imageoverlay is not None:
+            elements.append(self.imageoverlay)
+        if sink == 'xvimagesink':
+            # Imagesink accepts both rgb/yuv and is able to do scaling itself.
+            elements.append( self.imagesink )
         else:
-            self.video_sink.add(self.imagesink)
+            filter = gst.element_factory_make("capsfilter", "filter")
+            # Strangely, we have to force different dimensions so that
+            # resizing the ximagesink works later.
+            filter.set_property("caps", gst.Caps("video/x-raw-yuv,width=%d,height=%s" % config.data.player['snapshot-dimensions']))
+            csp=gst.element_factory_make('ffmpegcolorspace')
+            # The scaling did not work before 2008-10-11, cf
+            # http://bugzilla.gnome.org/show_bug.cgi?id=339201
+            scale=gst.element_factory_make('videoscale')
+            self.videoscale=scale
+            elements.extend( (filter, csp, scale, self.imagesink) )
+
+        self.video_sink.add(*elements)
+        gst.element_link_many(*elements)
+
+        print "gstreamer: using", sink
 
         if self.captioner:
             self.video_sink.add_pad(gst.GhostPad('sink', self.captioner.get_pad('video_sink')))
@@ -349,10 +349,11 @@ class Player:
         return "dvd://%s" % str(title)
 
     def check_uri(self):
-        if gst.uri_is_valid(self.player.get_property('uri')):
+        uri=self.player.get_property('uri')
+        if uri and gst.uri_is_valid(uri):
             return True
         else:
-            print "Invalid URI", self.player.get_property('uri')
+            print "Invalid URI", str(uri)
             return False
 
     def log(self, *p):
@@ -439,7 +440,9 @@ class Player:
 
         try:
             b=self.player.props.frame.copy()
-        except SystemError:
+        except (SystemError, AttributeError):
+            # AttributeError: in some cases, props.frame is None, so
+            # copy() is not available.
             return None
 
         f=self.convert_snapshot(b)
@@ -468,10 +471,12 @@ class Player:
             self.overlay.begin=self.position2value(begin)
             self.overlay.end=self.position2value(end)
             self.overlay.filename=tempfile.mktemp('.svg', 'adv')
-            open(self.overlay.filename, 'w').write(message)
+            f=open(self.overlay.filename, 'w')
+            f.write(message)
+            f.close()
             self.imageoverlay.props.image_name=self.overlay.filename
             return True
-        
+
         if not self.captioner:
             print "Cannot caption ", message.encode('utf8')
             return
@@ -559,11 +564,12 @@ class Player:
 
         if status == "start" or status == "set":
             self.position_update()
-            if status == 'start':
+            if status == "start":
                 if self.status == self.PauseStatus:
                     self.resume (position)
                 elif self.status != self.PlayingStatus:
                     self.start(position)
+                    time.sleep(0.005)
             self.set_media_position(position)
         else:
             if status == "pause":
@@ -599,7 +605,7 @@ class Player:
             self.display_text('', -1, -1)
         if self.overlay.filename and (s.position < self.overlay.begin
                                       or s.position > self.overlay.end):
-            self.imageoverlay.props.image_name=''
+            self.imageoverlay.props.pixbuf=None
             self.overlay.begin=-1
             self.overlay.end=-1
             os.unlink(self.overlay.filename)
