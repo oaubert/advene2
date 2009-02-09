@@ -860,7 +860,7 @@ class EditSchemaPopup (EditElementPopup):
                                                'modified': _('Modified'),
                                                'description': _('Description'),
                                                'color': _('Couleur'),
-                                               'element_color': _('Couleur des éléments'),
+                                               'element_color': _("Element's color"),
                                                }
                                        )
 
@@ -913,8 +913,8 @@ class EditAnnotationTypePopup (EditElementPopup):
                                                'created':   _('Created'),
                                                'modified': _('Modified'),
                                                'description': _('Description'),
-                                               'color': _('Couleur'),
-                                               'element_color': _('Couleur des éléments'),
+                                               'color': _('Color'),
+                                               'element_color': _("Element's color"),
                                                }
                                        )
         vbox.add(f.get_view())
@@ -971,8 +971,8 @@ class EditRelationTypePopup (EditElementPopup):
                                                'created':   _('Created'),
                                                'modified': _('Modified'),
                                                'description': _('Description'),
-                                               'color': _('Couleur'),
-                                               'element_color': _('Couleur des éléments'),
+                                               'color': _('Color'),
+                                               'element_color': _("Element's color"),
                                                }
                                        )
         vbox.add(f.get_view ())
