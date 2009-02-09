@@ -961,8 +961,7 @@ class TimeLine(AdhocView):
             begin=position,
             end=position+duration,
             type=type,
-            mimetype='text/plain', # FIXME
-            )
+            mimetype=type.mimetype)
         if content is not None:
             el.content.data=content
         elif el.owner._fieldnames.get(type.id):
@@ -1108,7 +1107,6 @@ class TimeLine(AdhocView):
         source=sources[0]
 
         def move_annotation(i, an, typ, position=None):
-            # FIXME: how to check an.relations?
             if an.relations and an.type != typ:
                 dialog.message_dialog(_("Cannot delete the annotation : it has relations."),
                                       icon=gtk.MESSAGE_WARNING)
@@ -1671,8 +1669,7 @@ class TimeLine(AdhocView):
             self.set_annotation(button.annotation)
             if self.options['display-relations']:
                 a=button.annotation
-                # FIXME: how to get annotation.relations ?
-                for r in []: # FIXMEbutton.annotation.relations:
+                for r in a.relations:
                     # FIXME: handle more-than-binary relations
                     if r[0] != a:
                         b=self.get_widget_for_annotation(r[0])
@@ -2605,7 +2602,11 @@ class TimeLine(AdhocView):
 
         for t in self.annotationtypes:
             b=AnnotationTypeWidget(annotationtype=t, container=self)
-            self.tooltips.set_tip(b, _("From schema %s") % self.controller.get_title(t.schema))
+            if t.schemas:
+                tip=_("In schemas %s") % ",".join( self.controller.get_title(s) for s in t.schemas )
+            else:
+                tip=_("Not in any schema")
+            self.tooltips.set_tip(b, tip)
             layout.put (b, 20, self.layer_position[t])
             b.update_widget()
             b.show_all()
