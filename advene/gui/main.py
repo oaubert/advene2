@@ -83,6 +83,7 @@ import advene.model.consts
 import advene.model.tales
 
 import advene.core.mediacontrol
+from advene.core.imagecache import ImageCache
 import advene.util.helper as helper
 import xml.etree.ElementTree as ET
 
@@ -865,7 +866,7 @@ class AdveneGUI(object):
         """Return the imagecache for the current media, or None.
         """
         if self.controller.current_media:
-            return self.controller.package.imagecache[self.controller.current_media.id]
+            return self.controller.imagecache[self.controller.current_media.url]
         else:
             return 
 
@@ -2785,28 +2786,28 @@ class AdveneGUI(object):
                 elif response == gtk.RESPONSE_NO:
                     p._modified=False
 
-            ic=self.imagecache
-            if ic and ic._modified and config.data.preferences['imagecache-save-on-exit'] != 'never':
+            l=[ (url, ic) for (url, ic) in self.controller.imagecache.iteritems() if ic._modified ]
+            if l and config.data.preferences['imagecache-save-on-exit'] != 'never':
                 if config.data.preferences['imagecache-save-on-exit'] == 'ask':
-                    media=self.controller.get_current_mediafile(package=p)
-                    response=dialog.yes_no_cancel_popup(title=_("%s snapshots") % media,
-                                                             text=_("Do you want to save the snapshots for media %s?") % media)
+                    response=dialog.yes_no_cancel_popup(title=_("Snapshots"),
+                                                             text=_("Do you want to save the snapshots for the following media(s)?\n%s") % "\n".join( t[0] for t in l ))
                     if response == gtk.RESPONSE_CANCEL:
                         return True
                     elif response == gtk.RESPONSE_YES:
-                        try:
-                            ic.save (helper.mediafile2id (media))
-                        except OSError, e:
-                            self.log(_("Cannot save imagecache for %(media)s: %(e)s") % locals())
+                        for (url, ic) in l:
+                            try:
+                                ic.save(helper.mediafile2id(url))
+                            except OSError, e:
+                                self.log(_("Cannot save imagecache for %(url)s: %(e)s") % locals())
                     elif response == gtk.RESPONSE_NO:
-                        ic._modified=False
-                        pass
+                        for (url, ic) in l:
+                            ic._modified=False
                 elif config.data.preferences['imagecache-save-on-exit'] == 'always':
-                    media=self.controller.get_current_mediafile(package=p)
-                    try:
-                        ic.save (helper.mediafile2id (media))
-                    except OSError, e:
-                        self.log(_("Cannot save imagecache for %(media)s: %(e)s") % locals())
+                    for (url, ic) in l:
+                        try:
+                            ic.save(helper.mediafile2id(url))
+                        except OSError, e:
+                            self.log(_("Cannot save imagecache for %(url)s: %(e)s") % locals())
 
         if self.controller.on_exit():
             # Memorize application window size/position
@@ -3625,13 +3626,12 @@ class AdveneGUI(object):
         return True
 
     def on_save_imagecache1_activate (self, button=None, data=None):
-
-        media = self.controller.current_media
-        try:
-            d=self.controller.package.imagecache[media].save (helper.mediafile2id(media.id))
-            self.log(_("Imagecache saved to %s") % d)
-        except OSError, e:
-            self.log(_("Cannot save imagecache for %(media)s: %(e)s") % locals())
+        for (url, ic) in self.controller.imagecache.iteritems():
+            try:
+                ic.save(helper.mediafile2id(url))
+                self.log(_("Imagecache for %s saved.") % url)
+            except OSError, e:
+                self.log(_("Cannot save imagecache for %(url)s: %(e)s") % locals())
         return True
 
     def on_restart_player1_activate (self, button=None, data=None):
@@ -3958,10 +3958,9 @@ class AdveneGUI(object):
 
         c=self.controller
         p=c.player
-        ic=self.imagecache
+        ic=self.controller.imagecache.get(movie)
         if ic is None:
-            self.log("No media defined")
-            return True
+            self.controller.imagecache[movie]=ImageCache()
 
         def do_cancel(b, pb):
             if pb.event_source_generate is not None:

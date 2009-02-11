@@ -60,17 +60,22 @@ def png_to_pixbuf (png_data, width=None, height=None):
     else:
         return pixbuf
 
-def image_from_position(controller, position=None, width=None, height=None):
-    # FIXME: should use media id
-    i=gtk.Image()
+def pixbuf_from_position(controller, position=None, media_url=None, epsilon=None, width=None, height=None):
     if position is None:
         position=controller.player.current_position_value
-    ic=controller.gui.imagecache
+    if media_url is None and controller.current_media is not None:
+        media_url=controller.current_media.url
+    ic=controller.imagecache.get(media_url)
     if ic is None:
         png=ImageCache.not_yet_available_image
     else:
-        png=ic[position]
-    i.set_from_pixbuf(png_to_pixbuf(png, width=width, height=height))
+        png=ic.get(position, epsilon)
+    png_to_pixbuf(png, width=width, height=height)
+    return pixbuf
+
+def image_from_position(controller, position=None, media_url=None, epsilon=None, width=None, height=None):
+    i=gtk.Image()
+    i.set_from_pixbuf(pixbuf_from_position(controller, position=None, media_url=None, epsilon=None, width=None, height=None))
     return i
 
 def overlay_svg_as_pixbuf(png_data, svg_data, width=None, height=None):
@@ -380,7 +385,7 @@ def contextual_drag_begin(widget, context, element, controller):
         return l
     
     # FIXME: not multi-media compatible
-    cache=controller.package.gui.imagecache
+    cache=controller.gui.imagecache
 
     if isinstance(element, (long, int)):
         begin=gtk.image_new_from_pixbuf(png_to_pixbuf (cache.get(element, epsilon=config.data.preferences['bookmark-snapshot-precision']), width=config.data.preferences['drag-snapshot-width']))

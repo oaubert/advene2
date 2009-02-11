@@ -129,7 +129,7 @@ class AnnotationDisplay(AdhocView):
                 data=self.annotation.content.parsed()
                 svg_data='''<svg xmlns='http://www.w3.org/2000/svg' version='1' viewBox="0 0 320 300" x='0' y='0' width='320' height='200'><%(shape)s style="fill:none;stroke:green;stroke-width:2;" width="%(width)s%%" height="%(height)s%%" x="%(x)s%%" y="%(y)s%%"></rect></svg>''' % data
             if svg_data:
-                pixbuf=overlay_svg_as_pixbuf(self.controller.package.imagecache[self.annotation.media.id][self.annotation.begin],
+                pixbuf=overlay_svg_as_pixbuf(self.controller.imagecache[self.annotation.media.url][self.annotation.begin],
                                              self.annotation.content.data)
                 d['contents']=''
                 d['imagecontents']=pixbuf
@@ -163,9 +163,11 @@ class AnnotationDisplay(AdhocView):
         else:
             if isinstance(self.annotation, int) or isinstance(self.annotation, long):
                 b=self.annotation
+                cache=self.controller.gui.imagecache
             elif isinstance(self.annotation, Annotation):
                 b=self.annotation.begin
-            cache=self.controller.gui.imagecache
+                cache=self.controller.imagecache[self.annotation.media.url]
+
             if cache.is_initialized(b, epsilon=config.data.preferences['bookmark-snapshot-precision']):
                 self.label['image'].set_from_pixbuf(png_to_pixbuf (cache.get(b, epsilon=config.data.preferences['bookmark-snapshot-precision']), width=config.data.preferences['drag-snapshot-width']))
             elif self.label['image'].get_pixbuf() != self.no_image_pixbuf:

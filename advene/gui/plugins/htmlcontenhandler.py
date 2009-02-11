@@ -159,16 +159,16 @@ class AnnotationPlaceholder:
             pixbuf=png_to_pixbuf(ImageCache.not_yet_available_image,
                                  width=self.width)
         elif 'overlay' in self.presentation:
-            pixbuf=overlay_svg_as_pixbuf(self.controller.package.imagecache[self.annotation.media.id][self.annotation.begin],
+            pixbuf=overlay_svg_as_pixbuf(self.controller.imagecache[self.annotation.media.url][self.annotation.begin],
                                          self.annotation.content.data,
                                          width=self.width)
         elif 'snapshot' in self.presentation:
             if 'timestamp' in self.presentation:
-                pixbuf=overlay_svg_as_pixbuf(self.controller.package.imagecache[self.annotation.media.id][self.annotation.begin],
+                pixbuf=overlay_svg_as_pixbuf(self.controller.imagecache[self.annotation.media.url][self.annotation.begin],
                                              helper.format_time(self.annotation.begin),
                                              width=self.width)
             else:
-                pixbuf=png_to_pixbuf(self.controller.package.imagecache[self.annotation.media.id][self.annotation.begin],
+                pixbuf=png_to_pixbuf(self.controller.imagecache[self.annotation.media.url][self.annotation.begin],
                                      width=self.width)
         elif 'timestamp' in self.presentation:
             # Generate only a timestamp 
@@ -382,7 +382,7 @@ class HTMLContentHandler (ContentHandler):
                 # Overlay annotation title
                 svg_data=self.controller.get_title(a)
 
-            png_data=str(p.imagecache[a.media.id][a.begin])
+            png_data=str(p.imagecache[a.media.url][a.begin])
             return self.controller.gui.overlay(png_data, svg_data)
 
         # FIXME: not multi-media compatible

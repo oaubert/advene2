@@ -57,7 +57,8 @@ class TimeAdjustment:
 
         def invalidate_snapshot(item, value):
             # Invalidate the image
-            self.controller.package.imagecache.invalidate(value)
+            # FIXME: how to determine the appropriate imagecache ?
+            self.controller.imagecache[self.controller.current_media].invalidate(value)
             self.controller.notify('SnapshotUpdate', position=value)
             self.update_display()
             return True

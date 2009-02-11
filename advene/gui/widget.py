@@ -302,11 +302,12 @@ class AnnotationWidget(GenericColorButtonWidget):
         def set_cursor(wid, t=None):
             if t is None:
                 t=self.annotation
-            cache=self.controller.package.imagecache
             if self.no_image_pixbuf is None:
                 self.no_image_pixbuf=png_to_pixbuf(ImageCache.not_yet_available_image, width=config.data.preferences['drag-snapshot-width'])
             if not t == w._current:
-                if isinstance(t, long) or isinstance(t, int):
+                if isinstance(t, (long, int)):
+                    # FIXME: find out the appropriate media.
+                    cache=self.controller.gui.imagecache
                     if cache.is_initialized(t, epsilon=config.data.preferences['bookmark-snapshot-precision']):
                         begin.set_from_pixbuf(png_to_pixbuf (cache.get(t, epsilon=config.data.preferences['bookmark-snapshot-precision']), width=config.data.preferences['drag-snapshot-width']))
                     elif begin.get_pixbuf() != self.no_image_pixbuf:
@@ -315,6 +316,7 @@ class AnnotationWidget(GenericColorButtonWidget):
                     padding.hide()
                     l.set_text(helper.format_time(t))
                 elif isinstance(t, Annotation):
+                    cache=self.controller.imagecache[t.media.url]
                     # It can be an annotation
                     begin.set_from_pixbuf(png_to_pixbuf (cache.get(t.begin), width=config.data.preferences['drag-snapshot-width']))
                     end.set_from_pixbuf(png_to_pixbuf (cache.get(t.end), width=config.data.preferences['drag-snapshot-width']))

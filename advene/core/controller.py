@@ -84,6 +84,23 @@ if config.data.webserver['mode']:
 import threading
 gobject.threads_init()
 
+class ImageCacheProxy(object):
+    def __init__(self, controller, package):
+        self.controller=controller
+        self.package=package
+
+    def keys(self):
+        return [ m.id for m in self.package.all.medias ]
+
+    def get(self, key, default=None):
+        return self.controller.imagecache.get(key, default)
+
+    def __getitem__(self, key):
+        m=self.package.get(key)
+        if m is None:
+            raise Exception("%s is not a valid media identifier") % key
+        return self.controller.imagecache.get(m.url)
+
 class AdveneController(object):
     """AdveneController class.
 
@@ -95,6 +112,7 @@ class AdveneController(object):
       - L{player} : the player (X{advene.core.mediacontrol.Player} instance)
       - L{event_handler} : the event handler
       - L{server} : the embedded web server
+      - L{imagecache} : imagecache dict, indexed by media.url
 
     Some entry points in the methods:
       - L{__init__} : controller initialization
@@ -102,9 +120,9 @@ class AdveneController(object):
       - L{update_status} : use this method to interact with the player
 
     On loading, we append the following attributes to package:
-      - L{imagecache} : the associated imagecache (dictionary indexed by Media id)
       - L{_idgenerator} : the associated idgenerator
       - L{_modified} : boolean
+      - L{imagecache} : a proxy for self.imagecache, which uses media ids as keys
 
     @ivar active_annotations: the currently active annotations.
     @type active_annotations: list
@@ -148,6 +166,8 @@ class AdveneController(object):
         # Reverse mapping indexed by package
         self.aliases = {}
         self.current_alias = None
+        # Imagecache dict indexed by media url
+        self.imagecache={}
 
         self.cleanup_done=False
         if args is None:
@@ -629,14 +649,9 @@ class AdveneController(object):
             baseurl=self.get_default_url(root=True, alias=alias)
         if here is None:
             here=self.package
-        if self.current_media:
-            ic=self.package.imagecache[self.current_media.id]
-        else:
-            ic=None
         c=AdveneContext(here,
                         options={
                 u'package_url': baseurl,
-                u'snapshot': ic,
                 u'namespace_prefix': config.data.namespace_prefix,
                 u'config': config.data.web,
                 u'aliases': self.aliases,
@@ -840,7 +855,7 @@ class AdveneController(object):
         @return: a boolean (~desactivation)
         """
         if self.current_media:
-            ic=self.package.imagecache[self.current_media.id]
+            ic=self.imagecache[self.current_media.url]
         else:
             ic=None
         if (config.data.player['snapshot']
@@ -1113,10 +1128,12 @@ class AdveneController(object):
         if m:
             uri=self.player.dvd_uri(title, chapter)
         self.set_mediafile(uri)
-        # Reset the imagecache
-        package.imagecache[media.id]=ImageCache()
-        if uri:
-            self.package.imagecache[media.id].load (helper.mediafile2id (uri))
+
+        if not uri in self.imagecache:
+            # Not yet present. Initialize an imagecache
+            ic=ImageCache()
+            self.imagecache[uri]=ic
+            ic.load(helper.mediafile2id(uri))
 
     def delete_element (self, el, immediate_notify=False, batch_id=None):
         """Delete an element from its package.
@@ -1442,10 +1459,7 @@ class AdveneController(object):
         # letting the user specify a valid alias.
         alias = re.sub('[^a-zA-Z0-9_]', '_', alias)
 
-        self.package.imagecache={}
-        # Instanciate imagecaches for all medias
-        for m in self.package.all.medias:
-            self.package.imagecache[m.id]=ImageCache()
+        self.package.imagecache=ImageCacheProxy(self, self.package)
 
         self.package._idgenerator = advene.core.idgenerator.Generator(self.package)
         self.package._modified = False
@@ -1635,18 +1649,13 @@ class AdveneController(object):
             else:
                 p._fieldnames[at.id]=set()
 
+        # Instanciate imagecaches for all medias
         for m in p.all.medias:
-            ic=self.package.imagecache[m.id]
-            ic.clear()
-
-            # Load the imagecache
-            ic.load (helper.mediafile2id (m.url))
-
-            # Populate the missing keys
-            for a in p.all.iter_annotations(media=m):
-                ic.init_value (a.begin)
-                ic.init_value (a.end)
-
+            if not m.url in self.imagecache:
+                ic=ImageCache()
+                self.imagecache[m.url]=ic
+                # Load the imagecache
+                ic.load(helper.mediafile2id(m.url))
         return True
 
     @property

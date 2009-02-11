@@ -97,7 +97,7 @@ class AnnotationTable(AdhocView):
                            a.duration,
                            helper.format_time(a.begin),
                            helper.format_time(a.end),
-                           png_to_pixbuf(self.controller.gui.imagecache[a.begin],
+                           png_to_pixbuf(self.controller.imagecache[a.media.url][a.begin],
                                          height=32),
                            self.controller.get_element_color(a),
                            ) )
