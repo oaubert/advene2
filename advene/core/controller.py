@@ -1176,6 +1176,7 @@ class AdveneController(object):
                 # Do not just duplicate the annotation
                 return None
             elif delete:
+                self.notify('EditSessionStart', element=annotation, immediate=True)
                 # If delete, then we can simply move the annotation
                 d=annotation.duration
                 annotation.begin=position
@@ -1184,7 +1185,10 @@ class AdveneController(object):
                     self.notify("AnnotationEditEnd", annotation=annotation, comment="Transmute annotation")
                     self.notify('EditSessionEnd', element=annotation)
                 return annotation
+
         if delete:
+            # Moving the annotation
+            self.notify('EditSessionStart', element=annotation, immediate=True)
             an = annotation
             an.type = annotationType
         else:
@@ -1207,18 +1211,15 @@ class AdveneController(object):
         # FIXME: we need a generic type conversion framework here
         an.content.data=annotation.content.data
 
-        if delete and not annotation.relations:
-            if notify:
-                self.notify('EditSessionStart', element=annotation, immediate=True)
-            annotation.delete()
-            if notify:
-                self.notify('AnnotationMove', annotation=annotation, comment="Transmute annotation")
-                self.notify('AnnotationDelete', annotation=annotation, comment="Transmute annotation")
         if notify:
             if delete:
+                self.notify('AnnotationMove', annotation=an, comment="Transmute annotation")
                 self.notify('AnnotationEditEnd', annotation=an, comment="Transmute annotation")
+                self.notify('EditSessionEnd', element=an)
             else:
+                self.notify('EditSessionStart', element=an, immediate=True)
                 self.notify("AnnotationCreate", annotation=an, comment="Transmute annotation")
+                self.notify('EditSessionEnd', element=an)
         return an
 
     def duplicate_annotation(self, annotation):
