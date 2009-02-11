@@ -633,11 +633,11 @@ class Config(object):
             return self.options.settings
 
         if self.os == 'win32':
-            dirname = 'advene'
+            dirname = 'advene2'
         elif self.os == 'darwin':
-            dirname = os.path.join( 'Library', 'Preferences', 'Advene' )
+            dirname = os.path.join( 'Library', 'Preferences', 'Advene2' )
         else:
-            dirname = '.advene'
+            dirname = '.advene2'
 
         return os.path.join( self.get_homedir(), dirname )
 
