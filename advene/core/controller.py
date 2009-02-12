@@ -956,7 +956,7 @@ class AdveneController(object):
             return None
         if root:
             return unicode(url)
-        defaultview=self.package.meta.get( '/'.join( (config.data.namespace, 'default_utbv') ) )
+        defaultview=self.package.meta.get( config.data.namespace+'default_utbv' )
         if defaultview:
             url=u"%s/view/%s" % (url, defaultview)
         return url
@@ -1480,7 +1480,9 @@ class AdveneController(object):
             l=list(config.data.color_palette)
         self.package._color_palette=helper.CircularList(l)
 
-        duration = self.package.meta.get("/".join((config.data.namespace, "duration")))
+        # FIXME: this information should be derived from the available
+        # p.all.medias
+        duration = self.package.meta.get( config.data.namespace, "duration" )
         if duration is not None:
             try:
                 v=long(float(duration))
@@ -1572,7 +1574,7 @@ class AdveneController(object):
             self.set_mediafile(None)
 
         # Activate the default STBV
-        default_stbv = self.package.meta.get(ADVENE_NS_PREFIX + "default_stbv", None)
+        default_stbv = self.package.meta.get(ADVENE_NS_PREFIX + "default_stbv")
         if default_stbv:
             view=self.package.get_element(default_stbv)
             if view and helper.get_view_type(view) == 'dynamic':

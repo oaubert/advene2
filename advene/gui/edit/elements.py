@@ -1064,7 +1064,7 @@ class EditForm(object):
     def metadata_get_method(self, element, data, namespaceid='advenetool'):
         namespace = config.data.namespace_prefix[namespaceid]
         def get_method():
-            expr=element.meta.get("/".join( (namespace, data) ))
+            expr=element.meta.get(namespace+data)
             if expr is None:
                 expr=""
             if re.match('^\s+$', expr):
@@ -1090,7 +1090,7 @@ class EditForm(object):
                     i=str(element)
                 print "Messed up value for %s" % element.id
                 value=""
-            element.setMetaData(namespace, data, unicode(value))
+            element.meta[namespace+data]=unicode(value)
             return True
         return set_method
 

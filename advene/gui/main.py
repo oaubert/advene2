@@ -2203,7 +2203,7 @@ class AdveneGUI(object):
 
     def check_for_default_adhoc_view(self, package):
         # Open the default adhoc view (which is commonly the _default_workspace)
-        default_adhoc = package.meta.get( "/".join((config.data.namespace, "default_adhoc") ))
+        default_adhoc = package.meta.get(config.data.namespace+"default_adhoc")
         if default_adhoc is None:
             return False
         view=package.get(default_adhoc)
@@ -2957,7 +2957,7 @@ class AdveneGUI(object):
                                            icon=gtk.MESSAGE_QUESTION)
             if save:
                 self.workspace_save('_default_workspace')
-                default = package.meta.get( "/".join( (config.data.namespace, "default_adhoc") ) )
+                default = package.meta.get(config.data.namespace+"default_adhoc")
                 if not default:
                     self.controller.package.setMetaData (config.data.namespace, "default_adhoc", '_default_workspace')
             alias=self.controller.aliases[package]
@@ -3004,9 +3004,9 @@ class AdveneGUI(object):
                                            icon=gtk.MESSAGE_QUESTION)
             if save:
                 self.workspace_save('_default_workspace')
-                default = package.meta.get( "/".join((config.data.namespace, "default_adhoc") ))
+                default = package.meta.get(config.data.namespace+"default_adhoc")
                 if not default:
-                    self.controller.package.meta.set("/".join((config.data.namespace, "default_adhoc")), '_default_workspace')
+                    self.controller.package.meta[config.data.namespace+"default_adhoc"]='_default_workspace'
             alias=self.controller.aliases[package]
             try:
                 self.controller.save_package(name=filename, alias=alias)
@@ -3786,7 +3786,7 @@ class AdveneGUI(object):
         stream.close()
 
         if default:
-            self.controller.package.meta.set( config.data.namespace+"default_adhoc", v.id)
+            self.controller.package.meta[config.data.namespace+"default_adhoc"]=v.id
 
         if create:
             self.controller.notify("ViewCreate", view=v)
@@ -3911,7 +3911,7 @@ class AdveneGUI(object):
             # Add a pertinent extension
             if filter is None:
                 return filename
-            ext=filter.meta.get("/".join( (config.data.namespace, 'extension') ) )
+            ext=filter.meta.get(config.data.namespace+'extension')
             if not ext:
                 ext = helper.title2id(filter.id)
             return '.'.join( (filename, ext) )
