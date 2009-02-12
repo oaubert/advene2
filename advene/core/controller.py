@@ -1144,7 +1144,7 @@ class AdveneController(object):
         if isinstance(el, Annotation):
             # We iterate on a copy of relations, since it may be
             # modified during the loop
-            self.notify('ElementEditBegin', element=el, immediate=True)
+            self.notify('EditSessionStart', element=el, immediate=True)
             for r in el.relations[:]:
                 self.delete_element(r, immediate_notify=immediate_notify, batch_id=batch_id)
             # We have to notify before actually deleting, since the
@@ -1168,11 +1168,11 @@ class AdveneController(object):
             self.notify('SchemaDelete', schema=el, immediate=immediate_notify)
             el.delete()
         elif isinstance(el, View):
-            self.notify('ElementEditBegin', element=el, immediate=True)
+            self.notify('EditSessionStart', element=el, immediate=True)
             self.notify('ViewDelete', view=el, immediate=immediate_notify, batch=batch_id)
             el.delete()
         elif isinstance(el, Query):
-            self.notify('ElementEditBegin', element=el, immediate=True)            
+            self.notify('EditSessionStart', element=el, immediate=True)            
             self.notify('QueryDelete', query=el, immediate=immediate_notify, batch=batch_id)
             el.delete()
         elif isinstance(el, Resource):

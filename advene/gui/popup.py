@@ -189,28 +189,28 @@ class Menu:
             return True
 
         if isinstance(el, Annotation):
-            self.controller.notify('ElementEditBegin', element=el, immediate=True)
+            self.controller.notify('EditSessionStart', element=el, immediate=True)
             el.begin += offset
             el.end += offset
             self.controller.notify('AnnotationEditEnd', annotation=el)
-            self.controller.notify('ElementEditCancel', element=el)
+            self.controller.notify('EditSessionEnd', element=el)
         elif isinstance(el, AnnotationType) or isinstance(el, Package):
             batch_id=object()
             for a in el.annotations:
-                self.controller.notify('ElementEditBegin', element=a, immediate=True)
+                self.controller.notify('EditSessionStart', element=a, immediate=True)
                 a.begin += offset
                 a.end += offset
                 self.controller.notify('AnnotationEditEnd', annotation=a, batch=batch_id)
-                self.controller.notify('ElementEditCancel', element=a)
+                self.controller.notify('EditSessionEnd', element=a)
         elif isinstance(el, Schema):
             batch_id=object()
             for at in el.annotation_types:
                 for a in at.annotations:
-                    self.controller.notify('ElementEditBegin', element=a, immediate=True)
+                    self.controller.notify('EditSessionStart', element=a, immediate=True)
                     a.begin += offset
                     a.end += offset
                     self.controller.notify('AnnotationEditEnd', annotation=a, batch=batch_id)
-                    self.controller.notify('ElementEditCancel', element=a)
+                    self.controller.notify('EditSessionEnd', element=a)
         return True
     def copy_id (self, widget, el):
         clip=gtk.clipboard_get()
@@ -356,10 +356,10 @@ class Menu:
                 else:
                     data=None
                 if data is not None:
-                    self.controller.notify('ElementEditBegin', element=a, immediate=True)
+                    self.controller.notify('EditSessionStart', element=a, immediate=True)
                     a.content.data=data
                     self.controller.notify('AnnotationEditEnd', annotation=a, batch=batch_id)
-                    self.controller.notify('ElementEditCancel', element=a)
+                    self.controller.notify('EditSessionEnd', element=a)
         else:
             ret=None
 
