@@ -35,10 +35,14 @@ get_element_by_id -> *suppress*
 author->creator/contributor
 date->created/modified
 
-TODO: timestamp DND target should have a media-id attr
+TODO: timestamp DND target should have a media-id attr. Cf helper.MediaTime
 TODO: meta.get/set -> remove "/".join
 
 TODO: _fieldnames -> attr. of annotation type
-TODO: imagecache -> attr. of media
 TODO: ElementEditBegin->EditSessionStart
       ElementEditEnd -> EditSessionEnd
+
+TODO: imagecache -> attr. of media (grep -l imagecache)
+
+image_from_position : pass media_url param.
+use pixbuf_from_position when needed
