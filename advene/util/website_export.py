@@ -165,7 +165,7 @@ class WebsiteExporter(object):
         content=re.sub(r'/media/overlay/[^/]+/([\w\d]+)', r'imagecache/overlay_\1.png', content)
         for t in re.findall('imagecache/overlay_([\w\d]+).png', content):
             # FIXME: not robust wrt. multiple packages/videos
-            a=self.controller.package.get_element_by_id(t)
+            a=self.controller.package.get(t)
             if not a:
                 print "Cannot find annotation %s for overlaying"
                 continue
@@ -276,8 +276,8 @@ class WebsiteExporter(object):
 
         # Generate a default index.html
         f=open(os.path.join(self.destination, "index.html"), 'w')
-        defaultview=self.controller.package.getMetaData(config.data.namespace, 'default_utbv')
-        v=self.controller.package.views.get_by_id(defaultview)
+        defaultview=self.controller.package.meta(config.data.namespace+'default_utbv')
+        v=self.controller.package.get(defaultview)
         if defaultview and v:
             default=_("""<p><strong>You should probably begin at <a href="%(href)s">%(title)s</a>.</strong></p>""") % { 'href': v.id,
                                                                                                                         'title': self.controller.get_title(v) }
