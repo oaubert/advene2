@@ -682,3 +682,9 @@ def common_fieldnames(elements):
         if e.content.mimetype == 'application/x-advene-structured':
             res.update( (regexp.findall(l) or [ '_error' ])[0] for l in e.content.data.split('\n') )
     return res
+
+class MediaTime(object):
+    def __init__(self, t, media_url=None, comment=None):
+        self.value=t
+        self.url=media_url
+        self.comment=comment
