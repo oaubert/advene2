@@ -2602,8 +2602,8 @@ class TimeLine(AdhocView):
 
         for t in self.annotationtypes:
             b=AnnotationTypeWidget(annotationtype=t, container=self)
-            if t.schemas:
-                tip=_("In schemas %s") % ",".join( self.controller.get_title(s) for s in t.schemas )
+            if t.my_schemas:
+                tip=_("In schemas %s") % ",".join( self.controller.get_title(s) for s in t.my_schemas )
             else:
                 tip=_("Not in any schema")
             self.tooltips.set_tip(b, tip)
