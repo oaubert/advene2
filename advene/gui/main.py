@@ -2340,12 +2340,32 @@ class AdveneGUI(object):
             at=p.all.annotation_types[-1]
         except IndexError:
             at=None
+        try:
+            rt=p.all.relation_types[-1]
+        except IndexError:
+            rt=None
+        try:
+            s=p.all.schemas[-1]
+        except IndexError:
+            s=None
+        try:
+            r=p.all.relations[-1]
+        except IndexError:
+            r=None
+        try:
+            q=p.all.queries[-1]
+        except IndexError:
+            q=None
 
         ev=Evaluator(globals_=globals(),
                      locals_={'package': p,
                               'p': p,
                               'a': a,
+                              'r': r,
                               'at': at,
+                              'rt': rt,
+                              'q': q,
+                              's': s,
                               'c': self.controller,
                               'g': self,
                               'pp': pprint.pformat },
