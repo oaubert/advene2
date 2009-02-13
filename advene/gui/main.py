@@ -109,7 +109,7 @@ from advene.gui.edit.dvdselect import DVDSelect
 from advene.gui.edit.elements import get_edit_popup
 from advene.gui.edit.create import CreateElementPopup
 #from advene.gui.edit.merge import Merger
-#from advene.gui.edit.importer import ExternalImporter
+from advene.gui.edit.importer import ExternalImporter
 from advene.gui.evaluator import Evaluator
 from advene.gui.views.accumulatorpopup import AccumulatorPopup
 from advene.gui.views.logwindow import LogWindow
@@ -3084,11 +3084,9 @@ class AdveneGUI(object):
         return True
 
     def on_import_file1_activate (self, button=None, data=None):
-        # FIXME
-        self.log("FIXME: importer not available yet")
-        #v=ExternalImporter(controller=self.controller)
-        #w=v.popup()
-        #dialog.center_on_mouse(w)
+        v=ExternalImporter(controller=self.controller)
+        w=v.popup()
+        dialog.center_on_mouse(w)
         return False
 
     def on_undo1_activate (self, button=None, data=None):
