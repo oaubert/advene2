@@ -2603,7 +2603,7 @@ class TimeLine(AdhocView):
         for t in self.annotationtypes:
             b=AnnotationTypeWidget(annotationtype=t, container=self)
             if t.my_schemas:
-                tip=_("In schemas %s") % ",".join( self.controller.get_title(s) for s in t.my_schemas )
+                tip=_("In schema(s) %s") % ",".join( self.controller.get_title(s) for s in t.my_schemas )
             else:
                 tip=_("Not in any schema")
             self.tooltips.set_tip(b, tip)
@@ -2614,9 +2614,9 @@ class TimeLine(AdhocView):
             b.connect('button-press-event', annotationtype_buttonpress_handler, t)
 
             def focus_in(button, event):
-                #for w in layout.get_children():
-                #    if isinstance(w, AnnotationTypeWidget) and w.annotationtype.schema == button.annotationtype.schema:
-                #        w.set_highlight(True)
+                for w in layout.get_children():
+                    if isinstance(w, AnnotationTypeWidget) and set(w.annotationtype.my_schemas).intersection(button.annotationtype.my_schemas):
+                        w.set_highlight(True)
                 self.set_annotation(button.annotationtype)
 
                 a=self.legend.get_vadjustment()
@@ -2631,13 +2631,13 @@ class TimeLine(AdhocView):
                     a.set_value(pos)
                 return False
             
-            #def focus_out(button, event):
-            #    for w in layout.get_children():
-            #        if isinstance(w, AnnotationTypeWidget) and w.highlight:
-            #            w.set_highlight(False)
-            #    return False
+            def focus_out(button, event):
+                for w in layout.get_children():
+                    if isinstance(w, AnnotationTypeWidget) and w.highlight:
+                        w.set_highlight(False)
+                return False
             b.connect('focus-in-event', focus_in)
-            #b.connect('focus-out-event', focus_out)
+            b.connect('focus-out-event', focus_out)
 
             # The button can receive drops (to transmute annotations)
             b.connect('drag-data-received', self.annotation_type_drag_received_cb)
