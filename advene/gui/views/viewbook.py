@@ -351,7 +351,7 @@ class ViewBook(AdhocView):
                 self.controller.gui.open_adhoc_view('edit', element=v, destination=self.location)
             return True
         elif targetType == config.data.target_type['schema']:
-            v=self.controller.package.schemas.get(unicode(selection.data, 'utf8'))
+            v=self.controller.package.get(unicode(selection.data, 'utf8'))
             if v is not None:
                 self.controller.gui.open_adhoc_view('edit', element=v, destination=self.location)
             return True
