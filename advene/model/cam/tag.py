@@ -119,8 +119,7 @@ class CamTypeMixin(object):
             g = package.all
         else:
             g = package.own
-        u = self._get_uriref()
-        return g.count_schemas(item=u)
+        return g.count_schemas(item=self)
 
     @autoproperty
     def _get_my_schemas(type_, package=None):
