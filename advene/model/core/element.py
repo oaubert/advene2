@@ -636,7 +636,7 @@ class ElementCollection(object):
         """
         Default implementation relying on __iter__.
         """
-        if isinstance(key, int):
+        if isinstance(key, (int, long)):
             if key >= 0:
                 for i,j in enumerate(self):
                     if i == key:

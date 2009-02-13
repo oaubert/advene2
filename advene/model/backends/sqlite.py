@@ -500,8 +500,8 @@ class _SqliteBackend(object):
 
         Raise a ModelException if the identifier already exists in the package.
         """
-        assert _DF or (isinstance(begin, int) and begin >= 0), `begin`
-        assert _DF or (isinstance(end, int) and end >= begin), (begin, end)
+        assert _DF or (isinstance(begin, (int, long)) and begin >= 0), `begin`
+        assert _DF or (isinstance(end, (int, long)) and end >= begin), (begin, end)
         mp,ms = _split_id_ref(media) # also assert that media has depth < 2
         assert _DF or mp == "" or self.has_element(package_id, mp, IMPORT), mp
         assert _DF or mp != "" or self.has_element(package_id, ms, MEDIA), ms
@@ -1333,8 +1333,8 @@ class _SqliteBackend(object):
         ``media`` is the id-ref of an own or directly imported media.
         """
         assert _DF or self.has_element(package_id, id, ANNOTATION)
-        assert _DF or isinstance(begin, int) and begin >= 0, begin
-        assert _DF or isinstance(  end, int) and   end >= begin, (begin, end)
+        assert _DF or isinstance(begin, (int, long)) and begin >= 0, begin
+        assert _DF or isinstance(  end, (int, long)) and   end >= begin, (begin, end)
 
         p,s = _split_id_ref(media) # also assert that media has depth < 2
         assert _DF or p == "" or self.has_element(package_id, p, IMPORT), p
