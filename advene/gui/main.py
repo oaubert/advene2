@@ -108,7 +108,7 @@ from advene.gui.edit.rules import EditRuleSet
 from advene.gui.edit.dvdselect import DVDSelect
 from advene.gui.edit.elements import get_edit_popup
 from advene.gui.edit.create import CreateElementPopup
-#from advene.gui.edit.merge import Merger
+from advene.gui.edit.merge import Merger
 from advene.gui.edit.importer import ExternalImporter
 from advene.gui.evaluator import Evaluator
 from advene.gui.views.accumulatorpopup import AccumulatorPopup
@@ -3728,8 +3728,6 @@ class AdveneGUI(object):
         return True
 
     def on_merge_package_activate(self, button=None, data=None):
-        self.log("FIXME: package merging not available yet")
-        return True
         if config.data.path['data']:
             d=config.data.path['data']
         else:
@@ -3742,12 +3740,12 @@ class AdveneGUI(object):
         if not filename:
             return True
         try:
-            source=Package(uri=filename)
+            source=Package(url=filename)
         except Exception, e:
             self.log("Cannot load %s file: %s" % (filename, unicode(e)))
             return True
-        #m=Merger(self.controller, sourcepackage=source, destpackage=self.controller.package)
-        #m.popup()
+        m=Merger(self.controller, sourcepackage=source, destpackage=self.controller.package)
+        m.popup()
         return True
 
     def on_save_workspace_as_package_view1_activate (self, button=None, data=None):
