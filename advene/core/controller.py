@@ -1000,7 +1000,9 @@ class AdveneController(object):
                     r=c.evaluate(representation)
                 except (AdveneTalesException, KeyError, AttributeError), e:
                     print "Exception in get_title for ", element.id, '(', representation, '):', unicode(e).encode('utf-8')
-                    r=element.content.data.splitlines()[0]
+                    data=element.content.data
+                    if data:
+                        r=data.splitlines()[0]
                 if not r:
                     r=element.id
                 return cleanup(r)
