@@ -357,17 +357,49 @@ class AnnotationColumn(FinderColumn):
         return vbox
 CLASS2COLUMN[Annotation]=AnnotationColumn
 
-class RelationColumn(FinderColumn):
-    def update(self, node=None):
-        self.node=node
-        self.view.set_relation(node.element)
-        return True
+class RelationColumn(ModelColumn):
+    def update(self, node):
+        super(RelationColumn, self).update(node)
 
+        col=self.controller.get_element_color(node.element)
+        if col:
+            title='<span background="%s">Relation <b>%s</b></span>' % (col, self.controller.get_title(node.element))
+        else:
+            title='Relation <b>%s</b>' % self.controller.get_title(node.element)
+
+        self.title.set_markup(title)
+        if node.element.content.data:
+            label=_("Content")
+        else:
+            label=_("No content")
+        self.content_expander.set_label(label)
+        self.content_data.set_text(node.element.content.data)
+        
     def build_widget(self):
         vbox=gtk.VBox()
 
-        self.view=RelationDisplay(controller=self.controller, relation=self.node.element)
-        vbox.add(self.view.widget)
+        members=super(RelationColumn, self).build_widget()
+
+        self.title=gtk.Label()
+        self.title.set_alignment(0.0, 0.0)
+        vbox.pack_start(self.title, expand=False)
+        
+        exp=self.content_expander=gtk.Expander()
+        exp.set_expanded(False)
+        c=self.content_data=gtk.Label()
+        c.set_line_wrap(True)
+        c.set_selectable(True)
+        c.set_single_line_mode(False)
+        c.set_alignment(0.0, 0.0)
+        exp.add(c)
+        
+        vbox.pack_start(exp, expand=False)
+
+        f=gtk.Frame(_("Annotations"))
+        f.add(members)
+        vbox.add(f)
+
+        self.update(self.node)
         vbox.show_all()
         return vbox
 CLASS2COLUMN[Relation]=RelationColumn
