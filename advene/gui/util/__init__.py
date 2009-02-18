@@ -70,7 +70,7 @@ def pixbuf_from_position(controller, position=None, media_url=None, epsilon=None
         png=ImageCache.not_yet_available_image
     else:
         png=ic.get(position, epsilon)
-    png_to_pixbuf(png, width=width, height=height)
+    pixbuf=png_to_pixbuf(png, width=width, height=height)
     return pixbuf
 
 def image_from_position(controller, position=None, media_url=None, epsilon=None, width=None, height=None):
