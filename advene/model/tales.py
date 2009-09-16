@@ -277,6 +277,7 @@ class WithAbsoluteUrlMixin(object):
     the presence of two TALES variables:
      * options/packages (mandatory) contains a dict whose keys are package
        names, and whose values are package instances
+     * options/aliases (mandatory) contains the inverse dict of packages.
      * options/base_url (optional) contains the reference URL
 
     The returned value will be of the form::

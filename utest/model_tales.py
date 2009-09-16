@@ -142,10 +142,10 @@ class TestTalesWithCore(TestCase, WithCheckPathMixin):
         p.create_import("i1", p1)
         p1.create_import("i2", p2)
         options = { "packages": {"p": p, "p1": p1},
+                    "aliases": {p: "p", p1: "p1"},
                     "p": p, "p1": p1, "p2": p2, "p3": p3,
                   }
         c.addGlobal("options", options)
-
         # check on package
         self.check_path("options/p/absolute_url", "/p")
         self.check_path("options/p1/absolute_url", "/p1")
@@ -155,10 +155,10 @@ class TestTalesWithCore(TestCase, WithCheckPathMixin):
         except AssertionError:
             self.check_path("options/p2/absolute_url", "/p1/i2/package")
         self.check_path("options/p/absolute_url/a/b/c", "/p/a/b/c")
-        base = options["base_url"] = "http://localhost:1234/packages"
+        base = options["package_url"] = "http://localhost:1234/packages"
         self.check_path("options/p/absolute_url/a/b/c", base+"/p/a/b/c")
         self.check_path("options/p3/absolute_url|nothing", None)
-        del options["base_url"]
+        del options["package_url"]
 
         # check on element
         self.check_path("options/p/t/absolute_url", "/p/t")
@@ -167,9 +167,9 @@ class TestTalesWithCore(TestCase, WithCheckPathMixin):
             self.check_path("options/p2/t2/absolute_url", "/p/i1:i2:t2")
             # it is either one or the other, we can't predict
         except AssertionError:
-            self.check_path("options/p2/t2", "/p1/i2:t2")
+            self.check_path("options/p2/t2/absolute_url", "/p1/i2:t2")
         self.check_path("options/p/t/absolute_url/a/b/c", "/p/t/a/b/c")
-        base = options["base_url"] = "http://localhost:1234/packages"
+        base = options["package_url"] = "http://localhost:1234/packages"
         self.check_path("options/p/t/absolute_url/a/b/c", base+"/p/t/a/b/c")
         self.check_path("options/p3/t3/absolute_url|nothing", None)
 
