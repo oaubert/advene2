@@ -1,4 +1,5 @@
-from pysqlite2 import dbapi2 as sqlite
+from sqlite3 import dbapi2 as sqlite
+#from pysqlite2 import dbapi2 as sqlite
 from os        import path, rmdir, unlink
 from os.path   import exists, join
 from tempfile  import mkdtemp

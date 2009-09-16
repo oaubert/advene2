@@ -99,7 +99,7 @@ CREATE TABLE RelationMembers (
   member_p TEXT NOT NULL,
   member_i TEXT NOT NULL,
   PRIMARY KEY (package, relation, ord),
-  FOREIGN KEY (package, relation) REFERENCES Relations (package, id),
+  FOREIGN KEY (package, relation) REFERENCES Elements (package, id),
   -- the following foreign key may be violated by empty strings in member_p
   FOREIGN KEY (package, member_p) REFERENCES Imports   (package, id)
   -- typ of the referenced element must me 'r'

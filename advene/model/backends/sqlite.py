@@ -1947,9 +1947,22 @@ class _SqliteBackend(object):
             execute("DELETE FROM RelationMembers "
                      "WHERE package = ? AND relation = ? AND ord = ?",
                     (package_id, id, pos))
-            execute("UPDATE RelationMembers SET ord=ord-1 "
-                     "WHERE package = ? AND relation = ? AND ord > ?",
+            # We must now decrease all 'ord' above the one we just deleted.
+            # This could be done by:
+            #   execute("UPDATE RelationMembers SET ord=ord-1 "
+            #           "WHERE package = ? AND relation = ? AND ord > ?",
+            #           (package_id, id, pos))
+            # but this may lead to temporary inconsistency (duplicate PK).
+            # Since sqlite chokes on it, and does not allow 'ORDER BY' in
+            # an UPDATE query, we first set the to-be-modified 'ord' to a
+            # negative value (which is not formally forbidden by the schema)
+            # and then convert it back to a modified positive value.
+            execute("UPDATE RelationMembers SET ord=-ord "
+                    "WHERE package = ? AND relation = ? AND ord > ?",
                     (package_id, id, pos))
+            execute("UPDATE RelationMembers SET ord=-ord-1 "
+                    "WHERE package = ? AND relation = ? AND ord < 0",
+                    (package_id, id))
         except sqlite.Error, e:
             execute("ROLLBACK")
             raise InternalError("could not delete or update", e)
@@ -2079,9 +2092,22 @@ class _SqliteBackend(object):
             execute("DELETE FROM ListItems "
                      "WHERE package = ? AND list = ? AND ord = ?",
                     (package_id, id, pos))
-            execute("UPDATE ListItems SET ord=ord-1 "
+            # We must now decrease all 'ord' above the one we just deleted.
+            # This could be done by:
+            #   execute("UPDATE ListItems SET ord=ord-1 "
+            #            "WHERE package = ? AND list = ? AND ord > ?",
+            #           (package_id, id, pos))
+            # but this may lead to temporary inconsistency (duplicate PK).
+            # Since sqlite chokes on it, and does not allow 'ORDER BY' in
+            # an UPDATE query, we first set the to-be-modified 'ord' to a
+            # negative value (which is not formally forbidden by the schema)
+            # and then convert it back to a modified positive value.
+            execute("UPDATE ListItems SET ord=-ord "
                      "WHERE package = ? AND list = ? AND ord > ?",
                     (package_id, id, pos))
+            execute("UPDATE ListItems SET ord=-ord-1 "
+                     "WHERE package = ? AND list = ? AND ord < 0",
+                    (package_id, id))
         except sqlite.Error, e:
             execute("ROLLBACK")
             self._conn.rollback()
