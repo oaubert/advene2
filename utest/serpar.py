@@ -6,23 +6,23 @@ from unittest import TestCase, main
 from urllib import pathname2url
 import warnings
 
-import advene.model.backends.sqlite as backend_sqlite
-from advene.model.cam.exceptions import UnsafeUseWarning
-from advene.model.cam.package import Package as CamPackage
-from advene.model.consts import PACKAGED_ROOT, DC_NS_PREFIX, \
+import libadvene.model.backends.sqlite as backend_sqlite
+from libadvene.model.cam.exceptions import UnsafeUseWarning
+from libadvene.model.cam.package import Package as CamPackage
+from libadvene.model.consts import PACKAGED_ROOT, DC_NS_PREFIX, \
                                 RDFS_NS_PREFIX, PARSER_META_PREFIX
-from advene.model.core.diff import diff_packages
-from advene.model.core.package import Package
-from advene.model.parsers.exceptions import ParserError
-import advene.model.serializers.advene_xml as xml
-import advene.model.serializers.advene_zip as zip
-import advene.model.serializers.cinelab_xml as cxml
-import advene.model.serializers.cinelab_zip as czip
+from libadvene.model.core.diff import diff_packages
+from libadvene.model.core.package import Package
+from libadvene.model.parsers.exceptions import ParserError
+import libadvene.model.serializers.advene_xml as xml
+import libadvene.model.serializers.advene_zip as zip
+import libadvene.model.serializers.cinelab_xml as cxml
+import libadvene.model.serializers.cinelab_zip as czip
 
 from core_diff import fill_package_step_by_step
 
 warnings.filterwarnings("ignore", category=UnsafeUseWarning,
-                        module="advene.model.core.diff")
+                        module="libadvene.model.core.diff")
 #warnings.filterwarnings("ignore", category=UnsafeUseWarning,
 #                        module="core_diff")
 warnings.filterwarnings("ignore", category=UnsafeUseWarning, module=__name__)

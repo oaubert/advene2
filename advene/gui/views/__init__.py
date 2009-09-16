@@ -27,7 +27,7 @@ import urllib
 
 from gettext import gettext as _
 
-from advene.model.core.content import Content
+from libadvene.model.core.content import Content
 from advene.gui.util import dialog, get_pixmap_button
 import advene.util.helper as helper
 
@@ -477,7 +477,7 @@ class AdhocView(object):
 class AdhocViewParametersParser:
     """Parse an AdhocView parameters content.
 
-    It can be a advene.model.Content or a elementtree.Element
+    It can be a libadvene.model.Content or a elementtree.Element
     """
     def __init__(self, source=None):
         self.view_id=None

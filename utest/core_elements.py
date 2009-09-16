@@ -5,15 +5,15 @@ from tempfile import mkdtemp
 from urllib import pathname2url, url2pathname
 from unittest import TestCase, main
 
-from advene.model.backends.sqlite import _set_module_debug
-from advene.model.consts import DC_NS_PREFIX
-from advene.model.core.content import PACKAGED_ROOT
-from advene.model.core.media import FOREF_PREFIX, DEFAULT_FOREF
-from advene.model.core.element import RELATION
-from advene.model.core.package import Package, UnreachableImportError, \
+from libadvene.model.backends.sqlite import _set_module_debug
+from libadvene.model.consts import DC_NS_PREFIX
+from libadvene.model.core.content import PACKAGED_ROOT
+from libadvene.model.core.media import FOREF_PREFIX, DEFAULT_FOREF
+from libadvene.model.core.element import RELATION
+from libadvene.model.core.package import Package, UnreachableImportError, \
                                       NoSuchElementError
-from advene.model.exceptions import ModelError
-from advene.util.session import session
+from libadvene.model.exceptions import ModelError
+from libadvene.util.session import session
 
 _set_module_debug(True) # enable all asserts in backend_sqlite
 

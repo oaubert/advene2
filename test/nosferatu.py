@@ -1,7 +1,7 @@
 from time import time
 
-from advene.model.cam.package import Package
-from advene.util.session import session
+from libadvene.model.cam.package import Package
+from libadvene.util.session import session
 
 import hotshot, os, sys
 

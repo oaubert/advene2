@@ -25,10 +25,10 @@ This code is inspired and adapted from the Scribes project
 import gtk
 import re
 
-from advene.model.cam.annotation import Annotation
-from advene.model.cam.tag import AnnotationType, RelationType
-from advene.model.cam.query import Query
-from advene.model.cam.view import View
+from libadvene.model.cam.annotation import Annotation
+from libadvene.model.cam.tag import AnnotationType, RelationType
+from libadvene.model.cam.query import Query
+from libadvene.model.cam.view import View
 
 class Completer:
     def __init__(self, textview=None, controller=None, element=None, indexer=None):

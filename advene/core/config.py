@@ -182,7 +182,7 @@ class Config(object):
 
         self.namespace="http://advene.org/ns/advene-application/2.0"
         self.transientns="http://advene.liris.cnrs.fr/ns/transient/"
-        #advene.model.serializers.unserialized.register_unzerialized_meta_prefix(ton_prefixe)
+        #libadvene.model.serializers.unserialized.register_unzerialized_meta_prefix(ton_prefixe)
 
         # These files are stored in the resources directory
         self.templatefilename = "template.azp"

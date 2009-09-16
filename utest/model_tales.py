@@ -1,8 +1,8 @@
 from unittest import TestCase, main
 
-from advene.model.core.package import Package as CorePackage
-from advene.model.cam.package import Package as CamPackage
-from advene.model.tales import AdveneContext, register_global_method, \
+from libadvene.model.core.package import Package as CorePackage
+from libadvene.model.cam.package import Package as CamPackage
+from libadvene.model.tales import AdveneContext, register_global_method, \
                                unregister_global_method, \
                                tales_full_path_function, tales_path1_function,\
                                tales_context_function, tales_property, \

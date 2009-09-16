@@ -29,13 +29,13 @@ import advene.core.config as config
 from advene.gui.views import AdhocView
 from advene.gui.views.annotationdisplay import AnnotationDisplay
 from advene.gui.views.relationdisplay import RelationDisplay
-from advene.model.cam.tag import AnnotationType, RelationType
-from advene.model.cam.annotation import Annotation
-from advene.model.cam.relation import Relation
-from advene.model.cam.view import View
-from advene.model.cam.resource import Resource
-from advene.model.cam.query import Query
-from advene.model.cam.media import Media
+from libadvene.model.cam.tag import AnnotationType, RelationType
+from libadvene.model.cam.annotation import Annotation
+from libadvene.model.cam.relation import Relation
+from libadvene.model.cam.view import View
+from libadvene.model.cam.resource import Resource
+from libadvene.model.cam.query import Query
+from libadvene.model.cam.media import Media
 import advene.rules.elements
 import advene.gui.popup
 import advene.util.helper as helper

@@ -4,9 +4,9 @@ from tempfile import mkdtemp
 from unittest import TestCase, main
 from urllib import pathname2url
 
-from advene.model.consts import DC_NS_PREFIX
-from advene.model.core.package import Package
-from advene.model.backends.sqlite import _set_module_debug
+from libadvene.model.consts import DC_NS_PREFIX
+from libadvene.model.core.package import Package
+from libadvene.model.backends.sqlite import _set_module_debug
 
 _set_module_debug(True) # enable all asserts in backend_sqlite
 

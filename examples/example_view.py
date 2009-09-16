@@ -1,4 +1,4 @@
-from advene.model.core.package import Package
+from libadvene.model.core.package import Package
 
 p = Package("file:new-package.bzp", create=True)
 

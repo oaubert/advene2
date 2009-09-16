@@ -26,13 +26,13 @@ import re
 
 import gtk
 
-from advene.model.cam.package import Package
-from advene.model.cam.annotation import Annotation
-from advene.model.cam.tag import AnnotationType, RelationType
-from advene.model.cam.list import Schema
-from advene.model.cam.resource import Resource
-from advene.model.cam.view import View
-from advene.model.cam.query import Query
+from libadvene.model.cam.package import Package
+from libadvene.model.cam.annotation import Annotation
+from libadvene.model.cam.tag import AnnotationType, RelationType
+from libadvene.model.cam.list import Schema
+from libadvene.model.cam.resource import Resource
+from libadvene.model.cam.view import View
+from libadvene.model.cam.query import Query
 from advene.rules.elements import RuleSet, Rule, Event, Action, SubviewList, SimpleQuery
 
 from advene.gui.util import dialog

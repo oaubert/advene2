@@ -30,8 +30,8 @@ import urllib
 import advene.core.config as config
 
 # Advene part
-from advene.model.cam.package import Package
-from advene.model.cam.tag import AnnotationType
+from libadvene.model.cam.package import Package
+from libadvene.model.cam.tag import AnnotationType
 
 import advene.util.importer
 

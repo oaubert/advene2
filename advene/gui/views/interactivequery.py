@@ -29,9 +29,9 @@ import pango
 import advene.core.config as config
 from advene.gui.edit.rules import EditQuery
 from advene.rules.elements import SimpleQuery, Condition, Quicksearch
-from advene.model.cam.annotation import Annotation
-from advene.model.cam.query import Query
-from advene.model.tales import AdveneTalesException
+from libadvene.model.cam.annotation import Annotation
+from libadvene.model.cam.query import Query
+from libadvene.model.tales import AdveneTalesException
 from advene.gui.util import dialog, get_small_stock_button, get_pixmap_toolbutton
 
 from advene.gui.views import AdhocView
@@ -233,7 +233,7 @@ class InteractiveResult(AdhocView):
     Either we give a SimpleQuery (whose .result attribute will
     possibly be set), or we give a Quicksearch result.  In both cases,
     if the query was loaded from a saved Query, then .container will
-    hold a reference to the advene.model.query.Query object, so that
+    hold a reference to the libadvene.model.query.Query object, so that
     we can know its id, title, etc...
     """
     view_name = _("Interactive result")

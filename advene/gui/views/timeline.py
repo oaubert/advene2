@@ -28,10 +28,10 @@ from gettext import gettext as _
 # Advene part
 import advene.core.config as config
 
-from advene.model.cam.tag import RelationType
-from advene.model.cam.annotation import Annotation
-from advene.model.cam.tag import AnnotationType
-from advene.model.cam.relation import Relation
+from libadvene.model.cam.tag import RelationType
+from libadvene.model.cam.annotation import Annotation
+from libadvene.model.cam.tag import AnnotationType
+from libadvene.model.cam.relation import Relation
 from advene.gui.views import AdhocView
 import advene.gui.edit.elements
 from advene.gui.edit.create import CreateElementPopup

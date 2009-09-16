@@ -1,10 +1,10 @@
 from time import time
 
-from advene.model.core.diff import diff_packages
-from advene.model.core.media import FOREF_PREFIX
-from advene.model.core.package import Package
-import advene.model.serializers.advene_xml as xml
-import advene.model.serializers.advene_zip as zip
+from libadvene.model.core.diff import diff_packages
+from libadvene.model.core.media import FOREF_PREFIX
+from libadvene.model.core.package import Package
+import libadvene.model.serializers.advene_xml as xml
+import libadvene.model.serializers.advene_zip as zip
 
 _t = 0
 

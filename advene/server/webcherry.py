@@ -51,10 +51,10 @@ if int(cherrypy.__version__.split('.')[0]) < 3:
     raise _("The webserver requires version 3.0 of CherryPy at least.")
 
 import advene.util.helper as helper
-from advene.model.cam.package import Package
-from advene.model.tales import AdveneContext
-from advene.model.exceptions import NoSuchElementError, UnreachableImportError
-import advene.util.session
+from libadvene.model.cam.package import Package
+from libadvene.model.tales import AdveneContext
+from libadvene.model.exceptions import NoSuchElementError, UnreachableImportError
+import libadvene.util.session
 
 from simpletal.simpleTALES import PathNotFoundException
 from simpletal.simpleTAL import TemplateParseException
@@ -493,7 +493,7 @@ class Packages(Common):
         expressions through the C{request/} root element.
 
         @param p: the package in which the expression should be evaluated
-        @type p: advene.model.Package
+        @type p: libadvene.model.Package
         @param tales: a TALES expression
         @type tales: string
         @param query: options used in TAL/TALES processing
@@ -513,7 +513,7 @@ class Packages(Common):
             expr = "here/%s" % tales
 
         # Define the package as root package for the model layer
-        advene.util.session.session.package=self.controller.package
+        libadvene.util.session.session.package=self.controller.package
 
         context = self.controller.build_context (here=p, alias=alias)
         context.pushLocals()
@@ -541,7 +541,7 @@ class Packages(Common):
         # FIXME:
         # Principe: si l'objet est un viewable, on appelle la
         # methode view pour en obtenir une vue par defaut.
-        #if isinstance(objet, advene.model.viewable.Viewable):
+        #if isinstance(objet, libadvene.model.viewable.Viewable):
         #    # It is a viewable, so display it using the default view
         #    objet.view(context=context)
 

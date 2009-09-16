@@ -1,8 +1,8 @@
 from os import unlink, getcwd
 from os.path import exists, join
 
-import advene.model.backends.sqlite as backend_sqlite
-from advene.model.cam.package import Package
+import libadvene.model.backends.sqlite as backend_sqlite
+from libadvene.model.cam.package import Package
 
 
 

@@ -1,9 +1,10 @@
 from unittest import TestCase, main
 from urllib import pathname2url
 
-from advene.model.consts import PARSER_META_PREFIX, DC_NS_PREFIX, RDFS_NS_PREFIX
-from advene.model.core.diff import diff_packages
-from advene.model.core.package import Package
+from libadvene.model.consts import PARSER_META_PREFIX, DC_NS_PREFIX, \
+    RDFS_NS_PREFIX
+from libadvene.model.core.diff import diff_packages
+from libadvene.model.core.package import Package
 
 dc_creator = DC_NS_PREFIX + "creator"
 dc_description = DC_NS_PREFIX + "description"

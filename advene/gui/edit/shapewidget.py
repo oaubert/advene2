@@ -40,7 +40,7 @@ import re
 from math import atan2, cos, sin
 
 try:
-    import advene.util.ElementTree as ET
+    import libadvene.util.ElementTree as ET
 except ImportError:
     try:
         import elementtree.ElementTree as ET

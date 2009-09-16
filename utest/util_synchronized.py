@@ -2,7 +2,7 @@ from unittest import TestCase, main
 from threading import Thread
 from time import sleep
 
-from advene.util.synchronized import enter_cs, exit_cs, synchronized
+from libadvene.util.synchronized import enter_cs, exit_cs, synchronized
 
 class Dummy(object):
     def hello(self, who="world"):

@@ -7,8 +7,8 @@ here.
 """
 from unittest import TestCase, main
 
-from advene.model.cam.package import Package
-from advene.model.core.package import Package as CorePackage
+from libadvene.model.cam.package import Package
+from libadvene.model.core.package import Package as CorePackage
 
 
 class TestInherit(TestCase):

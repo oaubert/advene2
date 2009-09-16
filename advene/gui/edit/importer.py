@@ -26,7 +26,7 @@ from gettext import gettext as _
 import advene.core.config as config
 import advene.gui.popup
 from advene.gui.util import dialog
-from advene.model.cam.package import Package
+from libadvene.model.cam.package import Package
 from advene.gui.edit.merge import Merger
 
 from advene.gui.views import AdhocView

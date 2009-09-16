@@ -26,7 +26,7 @@ If called on an invalid target, the method should return None.
 
 name="TALES global methods"
 
-from advene.model.tales import register_global_method
+from libadvene.model.tales import register_global_method
 import sys
 import inspect
 
@@ -46,7 +46,7 @@ def formatted (target, context):
     dictionary with begin, end and duration keys.
     """
     import time
-    from advene.model.core.annotation import Annotation
+    from libadvene.model.core.annotation import Annotation
 
     if isinstance(target, int) or isinstance(target, long):
         return u"%s.%03d" % (time.strftime("%H:%M:%S", time.gmtime(target / 1000)),

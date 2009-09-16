@@ -36,17 +36,17 @@ import types
 
 from gettext import gettext as _
 
-from advene.model.cam.package import Package
-from advene.model.cam.annotation import Annotation
-from advene.model.cam.relation import Relation
-from advene.model.cam.list import Schema
-from advene.model.cam.tag import Tag, AnnotationType, RelationType
-from advene.model.cam.resource import Resource
-from advene.model.cam.view import View
-from advene.model.cam.query import Query
-from advene.util.defaultdict import DefaultDict
-from advene.model.consts import DC_NS_PREFIX, ADVENE_NS_PREFIX
-from advene.model.tales import iter_global_methods
+from libadvene.model.cam.package import Package
+from libadvene.model.cam.annotation import Annotation
+from libadvene.model.cam.relation import Relation
+from libadvene.model.cam.list import Schema
+from libadvene.model.cam.tag import Tag, AnnotationType, RelationType
+from libadvene.model.cam.resource import Resource
+from libadvene.model.cam.view import View
+from libadvene.model.cam.query import Query
+from libadvene.util.defaultdict import DefaultDict
+from libadvene.model.consts import DC_NS_PREFIX, ADVENE_NS_PREFIX
+from libadvene.model.tales import iter_global_methods
 
 # Initialize ElementTree namespace map with our own prefixes
 import xml.etree.ElementTree as ET
@@ -425,7 +425,7 @@ def get_statistics(fname):
             typ = z.read('mimetype')
         except KeyError:
             raise Exception(_("File %s is not an Advene zip package.") % fname)
-        if typ != 'foo': # FIXME advene.model.zippackage.MIMETYPE:
+        if typ != 'foo': # FIXME libadvene.model.zippackage.MIMETYPE:
             raise Exception(_("File %s is not an Advene zip package.") % fname)
 
         try:
@@ -447,7 +447,7 @@ def get_statistics(fname):
 
     # We have the statistics in XML format. Render it.
     s=StringIO.StringIO(st)
-    #h=advene.model.package.StatisticsHandler()
+    #h=libadvene.model.package.StatisticsHandler()
     #data=h.parse_file(s)
     data={}
     s.close()

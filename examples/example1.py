@@ -1,5 +1,5 @@
-from advene.model.core.package import Package
-from advene.model.core.media import FOREF_PREFIX
+from libadvene.model.core.package import Package
+from libadvene.model.core.media import FOREF_PREFIX
 
 frame_of_reference = FOREF_PREFIX + "ms;o=0"
 

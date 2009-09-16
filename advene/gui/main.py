@@ -72,15 +72,15 @@ import advene.core.controller
 import advene.rules.elements
 import advene.rules.ecaengine
 
-from advene.model.cam.package import Package
-from advene.model.cam.annotation import Annotation
-from advene.model.cam.relation import Relation
-from advene.model.cam.view import View
-from advene.model.cam.list import Schema
-from advene.model.cam.tag import AnnotationType, RelationType
-from advene.model.cam.query import Query
-import advene.model.consts
-import advene.model.tales
+from libadvene.model.cam.package import Package
+from libadvene.model.cam.annotation import Annotation
+from libadvene.model.cam.relation import Relation
+from libadvene.model.cam.view import View
+from libadvene.model.cam.list import Schema
+from libadvene.model.cam.tag import AnnotationType, RelationType
+from libadvene.model.cam.query import Query
+import libadvene.model.consts
+import libadvene.model.tales
 
 import advene.core.mediacontrol
 from advene.core.imagecache import ImageCache
@@ -212,7 +212,7 @@ class AdveneGUI(object):
     @ivar oldstatus: a status cache to check whether a GUI update is necessary
 
     @ivar annotation: the currently edited annotation (or I{None})
-    @type annotation: advene.model.Annotation
+    @type annotation: libadvene.model.Annotation
 
     @ivar last_slow_position: a cache to check whether a GUI update is necessary
     @type last_slow_position: int

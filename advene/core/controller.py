@@ -55,21 +55,21 @@ from advene.rules.elements import RuleSet, RegisteredAction, SimpleQuery, Quicks
 import advene.rules.ecaengine
 import advene.rules.actions
 
-from advene.model.cam.package import Package
-from advene.model.cam.annotation import Annotation
-from advene.model.cam.relation import Relation
-from advene.model.cam.tag import AnnotationType, RelationType
-from advene.model.cam.list import Schema
-from advene.model.cam.resource import Resource
-from advene.model.consts import ADVENE_NS_PREFIX
-from advene.model.content.register import register_textual_mimetype
-import advene.util.session
-from advene.model.cam.view import View
-from advene.model.cam.query import Query
-from advene.util.defaultdict import DefaultDict
+from libadvene.model.cam.package import Package
+from libadvene.model.cam.annotation import Annotation
+from libadvene.model.cam.relation import Relation
+from libadvene.model.cam.tag import AnnotationType, RelationType
+from libadvene.model.cam.list import Schema
+from libadvene.model.cam.resource import Resource
+from libadvene.model.consts import ADVENE_NS_PREFIX
+from libadvene.model.content.register import register_textual_mimetype
+import libadvene.util.session
+from libadvene.model.cam.view import View
+from libadvene.model.cam.query import Query
+from libadvene.util.defaultdict import DefaultDict
 from advene.util.website_export import WebsiteExporter
 
-from advene.model.tales import AdveneContext, AdveneTalesException
+from libadvene.model.tales import AdveneContext, AdveneTalesException
 
 import advene.util.helper as helper
 #import advene.util.importer
@@ -135,7 +135,7 @@ class AdveneController(object):
     @type last_position: int
 
     @ivar package: the package currently loaded and active
-    @type package: advene.model.Package
+    @type package: libadvene.model.Package
 
     @ivar preferences: the current preferences
     @type preferences: dict
@@ -600,9 +600,9 @@ class AdveneController(object):
         will evaluate the query on all package's annotations.
 
         @param query: the query
-        @type query: advene.model.queries.Query (hence with a content)
+        @type query: libadvene.model.queries.Query (hence with a content)
         @param context: the query context
-        @type context: advene.model.tal.context.AdveneContext
+        @type context: libadvene.model.tal.context.AdveneContext
         @param expr: an expression used to build the context
         @type expr: a TALES expression (string)
         @return: a tuple (result, query_object)
@@ -1521,7 +1521,7 @@ class AdveneController(object):
         @param alias: the package's alias
         @type alias: string
         @param package: the package itself
-        @type package: advene.model.Package
+        @type package: libadvene.model.Package
         """
         # If we load a new file and only the template package was present,
         # then remove the template package
@@ -1563,8 +1563,8 @@ class AdveneController(object):
         self.packages['advene']=self.package
 
         # Define the package as root package for the model layer
-        advene.util.session.session.package=self.package
-        advene.util.session.session.user=config.data.userid
+        libadvene.util.session.session.package=self.package
+        libadvene.util.session.session.user=config.data.userid
 
         mediafile = self.get_current_mediafile()
         if mediafile:
@@ -1805,7 +1805,7 @@ class AdveneController(object):
             config.data.save_preferences()
 
             # Cleanup the temporary directories
-            advene.util.session.cleanup()
+            libadvene.util.session.cleanup()
 
             # Terminate the web server
             try:

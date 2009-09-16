@@ -1,7 +1,7 @@
 from unittest import TestCase, main
 from threading import Event, Thread
 
-from advene.util.session import session, get_session_defaults
+from libadvene.util.session import session, get_session_defaults
 
 class TestSession(TestCase):
     def setUp(self):

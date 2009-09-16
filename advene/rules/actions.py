@@ -22,7 +22,7 @@ import advene.core.config as config
 from gettext import gettext as _
 
 from advene.rules.elements import RegisteredAction, Condition
-from advene.model.tales import AdveneTalesException
+from libadvene.model.tales import AdveneTalesException
 import advene.util.helper as helper
 import subprocess
 import signal

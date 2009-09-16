@@ -50,7 +50,7 @@ from advene.core.imagecache import ImageCache
 from advene.gui.util import png_to_pixbuf, enable_drag_source, name2color
 from advene.gui.util import encode_drop_parameters, get_color_style
 import advene.util.helper as helper
-from advene.model.cam.annotation import Annotation
+from libadvene.model.cam.annotation import Annotation
 
 import advene.gui.popup
 

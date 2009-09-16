@@ -29,7 +29,7 @@ import itertools
 import xml.etree.ElementTree as ET
 
 import advene.core.config as config
-from advene.model.cam.annotation import Annotation
+from libadvene.model.cam.annotation import Annotation
 
 from gettext import gettext as _
 

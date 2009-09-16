@@ -27,8 +27,8 @@ from advene.core.imagecache import ImageCache
 from advene.gui.views import AdhocView
 import advene.util.helper as helper
 from advene.gui.util import png_to_pixbuf, overlay_svg_as_pixbuf
-from advene.model.cam.annotation import Annotation
-from advene.model.cam.tag import AnnotationType
+from libadvene.model.cam.annotation import Annotation
+from libadvene.model.cam.tag import AnnotationType
 
 name="Annotation display plugin"
 

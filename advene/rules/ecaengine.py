@@ -30,7 +30,7 @@ import threading
 import copy
 import StringIO
 
-from advene.util.session import session
+from libadvene.util.session import session
 from advene.rules.elements import Action, ActionList, Rule, RuleSet, ECACatalog
 
 class ECAEngine:

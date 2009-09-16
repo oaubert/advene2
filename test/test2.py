@@ -1,8 +1,9 @@
 from os import unlink
 from os.path import exists, join, split
 
-from advene.model.consts import DC_NS_PREFIX, RDFS_NS_PREFIX, PARSER_META_PREFIX
-from advene.model.core.package import Package
+from libadvene.model.consts import DC_NS_PREFIX, RDFS_NS_PREFIX, \
+    PARSER_META_PREFIX
+from libadvene.model.core.package import Package
 
 _indent = []
 def trace_wrapper (f):
@@ -121,7 +122,7 @@ if __name__ == "__main__":
 
     ################
 
-    from advene.model.serializers.advene_xml import make_serializer
+    from libadvene.model.serializers.advene_xml import make_serializer
     from sys import stdout
 
     p3.set_meta(PARSER_META_PREFIX + "namespaces", """\

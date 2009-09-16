@@ -6,10 +6,10 @@ from tempfile  import mkdtemp
 from unittest  import TestCase, main
 from urllib    import pathname2url
 
-from advene.model.backends.sqlite \
+from libadvene.model.backends.sqlite \
   import claims_for_create, create, claims_for_bind, bind, IN_MEMORY_URL, \
          PackageInUse, InternalError, _set_module_debug
-from advene.model.core.element \
+from libadvene.model.core.element \
   import MEDIA, ANNOTATION, RELATION, VIEW, RESOURCE, TAG, LIST, QUERY, IMPORT
 
 # the following may seem redundant, but we do not want the tests to be

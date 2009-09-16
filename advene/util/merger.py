@@ -25,9 +25,9 @@ import sys
 
 import advene.core.config as config
 
-from advene.model.cam.package import Package
-from advene.model.cam.annotation import Annotation
-from advene.model.cam.relation import Relation
+from libadvene.model.cam.package import Package
+from libadvene.model.cam.annotation import Annotation
+from libadvene.model.cam.relation import Relation
 
 class Differ:
     """Returns a structure diff of two packages.

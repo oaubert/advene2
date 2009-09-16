@@ -2,11 +2,11 @@ from os import unlink
 from os.path import exists, join, split
 from weakref import ref
 
-import advene.model.backends.sqlite as backend_sqlite
-from advene.model.consts import DC_NS_PREFIX
-from advene.model.core.content import PACKAGED_ROOT
-from advene.model.core.package import Package
-from advene.model.exceptions import ModelError
+import libadvene.model.backends.sqlite as backend_sqlite
+from libadvene.model.consts import DC_NS_PREFIX
+from libadvene.model.core.content import PACKAGED_ROOT
+from libadvene.model.core.package import Package
+from libadvene.model.exceptions import ModelError
 
 base = split(__file__)[0]
 

@@ -22,7 +22,7 @@ from gettext import gettext as _
 import advene.core.config as config
 from advene.rules.elements import RegisteredAction
 
-from advene.model.tales import AdveneTalesException
+from libadvene.model.tales import AdveneTalesException
 import advene.util.helper as helper
 import textwrap
 import gtk

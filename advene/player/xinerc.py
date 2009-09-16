@@ -24,7 +24,7 @@ import re
 import os
 import time
 
-import advene.util.spawn as spawn
+import libadvene.util.spawn as spawn
 
 class StreamInformation:
     def __init__(self):

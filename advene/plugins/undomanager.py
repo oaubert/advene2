@@ -21,9 +21,9 @@
 It provides a basic framework for simple undos.
 """
 
-from advene.model.cam.annotation import Annotation
-from advene.model.cam.view import View
-from advene.model.cam.query import Query
+from libadvene.model.cam.annotation import Annotation
+from libadvene.model.cam.view import View
+from libadvene.model.cam.query import Query
 
 name="Undo Manager"
 
