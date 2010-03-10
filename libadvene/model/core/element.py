@@ -72,7 +72,7 @@ class PackageElement(WithMetaMixin, WithEventsMixin, WithAbsUrlMixin, object):
     normally already do that).
     """
 
-    # the __setattr__ overridding requires that all attributs relying on the
+    # the __setattr__ overridding requires that all attributes relying on the
     # backend are always present:
     _id = None
     _owner = None
@@ -243,7 +243,7 @@ class PackageElement(WithMetaMixin, WithEventsMixin, WithAbsUrlMixin, object):
         If the element is known to be referenced by other elements,
         all remaining references are cut (but the referer elements are
         not deleted). Note that this does not guarantees that some
-        references the the deleted element will not continue to exist in
+        references to the deleted element will not continue to exist in
         packages that are not currently loaded.
         """
         self.emit("pre-deleted")
@@ -420,9 +420,8 @@ class PackageElement(WithMetaMixin, WithEventsMixin, WithAbsUrlMixin, object):
     def iter_taggers(self, tag, package=None):
         """Iter over all the packages associating this element to ``tag``.
 
-        ``package`` is the top-level package. If not provided, the ``package``
-        session variable is used. If the latter is unset, a TypeError is
-        raised.
+        If ``package`` is not set, the session variable ``package`` is used
+        instead. If the latter is not set, a TypeError is raised.
         """
         if package is None:
             package = session.package

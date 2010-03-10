@@ -32,6 +32,9 @@ class Tag(PackageElement, GroupMixin):
     def iter_elements(self, package=None, inherited=True):
         """Iter over the elements associated with this tag in ``package``.
 
+        If ``package`` is not provided, the ``package`` session variable is
+        used. If the latter is unset, a TypeError is raised.
+
         If ``inherited`` is set to False, the elements associated by imported
         packages of ``package`` will not be yielded.
 

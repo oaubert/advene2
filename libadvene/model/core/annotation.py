@@ -185,7 +185,8 @@ class Annotation(PackageElement, WithContentMixin):
         return self._end - self._begin.
 
         This property will also be modified by setting self.begin or self.end,
-        since each one of these properties leaves the other one unmodified when set.
+        since each one of these properties leaves the other one unmodified when
+        set.
         """
         return self._end - self._begin
 

@@ -63,7 +63,7 @@ class WithContentMixin:
     initialization. However, whenever an element is instantiated from backend
     data, its content information is available, so it would be a waste of
     CPU time (and possibly network traffic) to reload those info from the
-    backend from the sake of purity.
+    backend for the sake of purity.
 
     Hence, this class provides a method _instantiate_content, to be used as an
     optimizationin the instantiate class method of element classes.
@@ -198,7 +198,7 @@ class WithContentMixin:
         See also `content_model` and `content_model_id`.
         """
         # NB: if the default value is _RAISE and the model is unreachable,
-        # and exception will be raised.
+        # an exception will be raised.
 
         mid = self.__model_id
         if mid is None:
