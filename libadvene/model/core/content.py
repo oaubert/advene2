@@ -291,6 +291,8 @@ class WithContentMixin:
         t1,t2 = self._get_content_mimetype().split("/")
         if t1 == "text":
             return True
+        elif t2.endswith("+xml"):
+            return True
         for m1,m2 in iter_textual_mimetypes():
             if m1 == "*" or m1 == t1 and m2 == "*" or m2 == t2:
                 return True
