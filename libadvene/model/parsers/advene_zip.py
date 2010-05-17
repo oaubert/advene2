@@ -43,7 +43,7 @@ class Parser(object):
                         return 80
                     else:
                         return 0
-                elif "content.xml" in z.nameslit():
+                elif "content.xml" in z.namelist():
                     r = 20
                     # wait for other information to make up our mind
                 else:
