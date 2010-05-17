@@ -886,7 +886,7 @@ class AdveneWebServer:
     def start(self):
         """Start the webserver.
         """
-        self.controller.queue_action(cherrypy.engine.start, False)
+        self.controller.queue_action(cherrypy.engine.start)
         return True
 
     def stop(self):
@@ -897,6 +897,7 @@ class AdveneWebServer:
 
 class BasicController:
     def __init__(self):
+        self.package=None
         self.packages={}
         self.aliases={}
         self.server=None
@@ -905,6 +906,7 @@ class BasicController:
         p=Package(fname)
         self.packages['advene']=p
         self.aliases[p]='advene'
+        self.package=p
     
     def log(self, *p):
         print p
