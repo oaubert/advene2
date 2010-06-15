@@ -1,5 +1,8 @@
+from warnings import warn
+
 from libadvene.model.cam.consts import CAMSYS_TYPE, CAM_NS_PREFIX
 from libadvene.model.cam.element import CamElementMixin
+from libadvene.model.cam.exceptions import LikelyMistake
 from libadvene.model.cam.group import CamGroupMixin
 from libadvene.model.core.element import LIST, ElementCollection
 from libadvene.model.core.tag import Tag as CoreTag
@@ -143,6 +146,17 @@ class CamTypeMixin(object):
                    and s.get_meta(CAMSYS_TYPE, None) == "schema" \
                    and type_ in s
         return TypeSchemas(package)
+
+    def iter_schemas(self):
+        """
+        Raise a warning, as this is probably not what the user wants to do.
+
+        This method iter over all schemas *tagged* with self; with an
+        Annotation type / Relation type, it is more likely the user wanted to
+        call iter_my_schemas.
+        """
+        warn("you may actually mean .my_schemas", LikelyMistake)
+        return super(CamTypeMixin, self).iter_schemas()
 
     @tales_property
     @tales_use_as_context("package")

@@ -160,7 +160,7 @@ class Parser(XmlParserBase):
     def manage_package_subelements(self):
         """
         This method may be overridden by application model parsers having a
-        syntax simiar to the generic advene format - like the cinelab parser.
+        syntax similar to the generic advene format - like the cinelab parser.
         """
         self.optional_sequence("imports")
         self.optional_sequence("tags")

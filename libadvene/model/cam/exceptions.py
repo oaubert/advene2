@@ -18,6 +18,15 @@ class UnsafeUseWarning(Warning):
 filterwarnings("ignore", category=UnsafeUseWarning,
                module="libadvene.model.core")
 
+class LikelyMistake(Warning):
+    """
+    Issued whenever a method is likely mistaken for another one.
+
+    E.g. an_annotation_type.schemas is probably meant to be
+    an_annotation_type.my_schemas.
+    """
+    pass
+
 class SemanticError(Exception):
     """
     Raised whenever a CAM specific metadata is used in an inconsistent way.
