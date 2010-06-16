@@ -2,7 +2,7 @@
 Cinelab serializer implementation.
 """
 from bisect import insort
-from xml.etree.cElementTree import Element, ElementTree, SubElement
+from xml.etree.ElementTree import Element, ElementTree, SubElement
 
 from libadvene.model.cam.consts import CAM_XML, CAMSYS_NS_PREFIX
 from libadvene.model.serializers.advene_xml import _indent
@@ -42,10 +42,10 @@ class _Serializer(_AdveneSerializer):
 
     def serialize(self):
         """Perform the actual serialization."""
-        namespaces = self.namespaces = {}
         root = self.root = Element("package", xmlns=self.default_ns)
         package = self.package
         namespaces = package._get_namespaces_as_dict()
+        self.namespaces = namespaces
         for uri, prefix in namespaces.iteritems():
             root.set("xmlns:%s" % prefix, uri)
         if package.uri:

@@ -9,7 +9,7 @@ Forward references are nevetheless still possible in meta-data, tag associated t
 
 import base64
 from itertools import chain
-from xml.etree.cElementTree import Element, ElementTree, SubElement
+from xml.etree.ElementTree import Element, ElementTree, SubElement
 
 from libadvene.model.consts import ADVENE_XML
 from libadvene.model.serializers.unserialized import \
@@ -44,10 +44,11 @@ class _Serializer(object):
 
     def serialize(self):
         """Perform the actual serialization."""
-        namespaces = self.namespaces = {}
+
         root = self.root = Element("package", xmlns=self.default_ns)
         package = self.package
         namespaces = package._get_namespaces_as_dict()
+        self.namespaces = namespaces
         for uri, prefix in namespaces.iteritems():
             root.set("xmlns:%s" % prefix, uri)
         if package.uri:
