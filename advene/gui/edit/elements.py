@@ -36,9 +36,9 @@ import struct
 import itertools
 
 try:
-    import gtksourceview
+    import gtksourceview2
 except ImportError:
-    gtksourceview=None
+    gtksourceview2=None
 
 from libadvene.model.cam.package import Package
 from libadvene.model.cam.annotation import Annotation
@@ -50,8 +50,9 @@ from libadvene.model.cam.resource import Resource
 from libadvene.model.cam.query import Query
 
 from advene.gui.edit.timeadjustment import TimeAdjustment
+from advene.gui.views.browser import Browser
 from advene.gui.views.tagbag import TagBag
-from advene.gui.util import dialog, get_pixmap_toolbutton, name2color
+from advene.gui.util import dialog, get_pixmap_toolbutton, name2color, predefined_content_mimetypes
 from advene.gui.util.completer import Completer
 import advene.gui.popup
 from advene.gui.widget import AnnotationRepresentation, RelationRepresentation
@@ -60,21 +61,6 @@ from advene.gui.views import AdhocView
 import advene.util.helper as helper
 
 # FIXME: handle 'time' type, with hh:mm:ss.mmm display in attributes
-
-# Common content MIME-types
-common_content_mimetypes = [
-    'text/plain',
-    'application/x-advene-structured',
-    'application/x-advene-zone',
-    ]
-
-common_view_mimetypes = [
-    'text/html',
-    'text/plain',
-    'image/svg+xml',
-    ]
-
-
 _edit_popup_list = []
 
 def get_edit_popup (el, controller=None, editable=True):
@@ -116,6 +102,13 @@ class EditElementPopup (AdhocView):
         """Create an edit window for the given element."""
         super(EditElementPopup, self).__init__(controller=controller)
         self.element = el
+        # Override the class property with the element type, so that
+        # init_window_size can discriminate against different types
+        if isinstance(el, View):
+            t=helper.get_view_type(el)
+        else:
+            t=el.__class__.__name__
+        self.view_id="-".join( (EditElementPopup.view_id, t) )
         self.vbox = gtk.VBox ()
         self.vbox.connect('key-press-event', self.key_pressed_cb)
         self.editable=editable
@@ -141,12 +134,12 @@ class EditElementPopup (AdhocView):
 
             b=gtk.ToolButton(gtk.STOCK_OK)
             b.connect('clicked', self.validate_cb)
-            self.controller.gui.tooltips.set_tip(b, _("Apply changes and close the edit window"))
+            b.set_tooltip_text(_("Apply changes and close the edit window"))
             tb.insert(b, -1)
 
             b=gtk.ToolButton (gtk.STOCK_APPLY)
             b.connect('clicked', self.apply_cb)
-            self.controller.gui.tooltips.set_tip(b, _("Apply changes"))
+            b.set_tooltip_text(_("Apply changes"))
             tb.insert(b, -1)
 
             self.extend_toolbar(tb)
@@ -173,6 +166,14 @@ class EditElementPopup (AdhocView):
             self._widget=vbox
 
         return self._widget
+
+    def reparent_done(self):
+        if self._widget.get_toplevel() != self.controller.gui.gui.win:
+            # In a popup window. Define appropriate shortcuts.
+            #self.key_cb[gtk.keysyms.Return] = self.validate_cb
+            self.key_cb[gtk.keysyms.Escape] = self.close_cb
+            self._widget.get_toplevel().connect('key-press-event', self.key_pressed_cb)
+        return True
 
     def extend_toolbar(self, tb):
         """Extend the widget toolbar.
@@ -420,7 +421,7 @@ class EditAnnotationPopup (EditElementPopup):
         l.sort(key=lambda a: a.begin, reverse=(direction == -1))
         if l:
             a=l[0]
-            new=self.controller.gui.edit_element(a, destination=self._destination)
+            self.controller.gui.edit_element(a, destination=getattr(self, '_destination', 'default'))
             # Validate the current one
             self.validate_cb()
         return True
@@ -430,11 +431,11 @@ class EditAnnotationPopup (EditElementPopup):
             tb.insert(gtk.SeparatorToolItem(), -1)
 
         b=get_pixmap_toolbutton(gtk.STOCK_GO_BACK, self.goto, -1)
-        b.set_tooltip(self.controller.gui.tooltips, _("Apply changes and edit previous annotation of same type"))
+        b.set_tooltip_text(_("Apply changes and edit previous annotation of same type"))
         tb.insert(b, -1)
 
         b=get_pixmap_toolbutton(gtk.STOCK_GO_FORWARD, self.goto, +1)
-        b.set_tooltip(self.controller.gui.tooltips, _("Apply changes and edit next annotation of same type"))
+        b.set_tooltip_text(_("Apply changes and edit next annotation of same type"))
         tb.insert(b, -1)
 
         def toggle_highlight(b, ann):
@@ -446,7 +447,7 @@ class EditAnnotationPopup (EditElementPopup):
                 event="AnnotationDeactivate"
                 label=_("Highlight annotation")
                 b.highlight=True
-            self.controller.gui.tooltips.set_tip(b, label)
+                b.set_tooltip_text(label)
             self.controller.notify(event, annotation=ann)
             return True
 
@@ -604,11 +605,11 @@ class EditViewPopup (EditElementPopup):
         # FIXME: check toplevel metadata
         if t == 'static': #  and self.element.matchFilter['class'] in ('package', '*'):
             b = get_pixmap_toolbutton( 'web.png', self.apply_and_open)
-            self.controller.gui.tooltips.set_tip(b, _("Apply changes and visualise in web browser"))
+            b.set_tooltip_text(_("Apply changes and visualise in web browser"))
             tb.insert(b, -1)
         elif t == 'dynamic':
             b = get_pixmap_toolbutton( gtk.STOCK_MEDIA_PLAY, self.apply_and_activate)
-            self.controller.gui.tooltips.set_tip(b, _("Apply changes and activate the view"))
+            b.set_tooltip_text(_("Apply changes and activate the view"))
             tb.insert(b, -1)
         return True
 
@@ -773,7 +774,6 @@ class EditPackagePopup (EditElementPopup):
         self.register_form(f)
         vbox.pack_start(f.get_view(), expand=False)
 
-
         f = EditMetaForm(title=_("Default dynamic view"),
                          element=self.element, name='default_stbv',
                          namespaceid='advenetool', controller=self.controller,
@@ -847,7 +847,8 @@ class EditSchemaPopup (EditElementPopup):
                                        fields=('id', 'uriref',
                                                'creator', 'created',
                                                'contributor', 'modified',
-                                               'color', 'element_color', 'description'),
+                                               #'color', 'element_color', 
+                                               'description'),
                                        types={ 'color': 'tales',
                                                'element_color': 'tales' },
                                        editable=editable,
@@ -859,8 +860,8 @@ class EditSchemaPopup (EditElementPopup):
                                                'created':   _('Created'),
                                                'modified': _('Modified'),
                                                'description': _('Description'),
-                                               'color': _('Couleur'),
-                                               'element_color': _("Element's color"),
+#                                               'color': _('Couleur'),
+#                                               'element_color': _("Element's color"),
                                                }
                                        )
 
@@ -1069,10 +1070,10 @@ class EditForm(object):
                 expr=""
             if re.match('^\s+$', expr):
                 # The field can contain just a newline or whitespaces, which will be then ignored
-                try:
-                    i=element.id
-                except AttributeError:
-                    i=str(element)
+                #try:
+                #    i=element.id
+                #except AttributeError:
+                #    i=str(element)
                 #print "Messed up metadata for %s (%s)" % (i, expr)
                 expr=""
             return expr
@@ -1084,11 +1085,11 @@ class EditForm(object):
             if value is None or value == "":
                 value=""
             if re.match('^\s+', value):
-                try:
-                    i=element.id
-                except AttributeError:
-                    i=str(element)
-                print "Messed up value for %s" % element.id
+                #try:
+                #    i=element.id
+                #except AttributeError:
+                #    i=str(element)
+                #print "Messed up value for %s" % element.id
                 value=""
             element.meta[namespace+data]=unicode(value)
             return True
@@ -1168,13 +1169,13 @@ class EditContentForm(EditForm):
         if self.contentform is None:
             return True
         if self.mimetypeeditable and not hasattr(self, 'mimetype'):
-            self.element.mimetype = self.mimetype.child.get_text()
+            self.element.mimetype = self.mimetype.get_current_element()
         self.contentform.update_element()
         return True
 
     def refresh(self):
         if self.mimetype is not None:
-            self.mimetype.child.set_text(self.element.mimetype)
+            self.mimetype.set_current_element(self.element.mimetype)
         self.contentform.refresh()
 
     def get_view (self, compact=False):
@@ -1189,13 +1190,27 @@ class EditContentForm(EditForm):
             l=gtk.Label(_("MIME Type"))
             hbox.pack_start(l, expand=False)
 
-            self.mimetype=gtk.combo_box_entry_new_text()
-            if self.mimetypeeditable:
-                for c in common_view_mimetypes:
-                    self.mimetype.append_text(c)
+            mt=self.element.mimetype
+            # Is the current value in the predefined list?
+            data=[ tupl
+                   for tupl in predefined_content_mimetypes
+                   if tupl[0] == mt ]
+            if not data:
+                # Not yet predefined. Add its raw value.
+                current=(mt, mt)
+                predefined_content_mimetypes.append(current)
+            else:
+                current=data[0]
 
-            self.mimetype.child.set_text(self.element.mimetype)
-            self.mimetype.child.set_editable(self.mimetypeeditable)
+            if self.mimetypeeditable:
+                l=predefined_content_mimetypes
+            else:
+                l=[ current ]
+
+            self.mimetype=dialog.list_selector_widget(members=l,
+                                                      preselect=mt,
+                                                      entry=self.mimetypeeditable)
+            
             hbox.pack_start(self.mimetype)
 
             vbox.pack_start(hbox, expand=False)
@@ -1239,7 +1254,6 @@ class TextContentHandler (ContentHandler):
         self.editable = True
         self.fname=None
         self.view = None
-        self.tooltips=gtk.Tooltips()
 
     def get_focus(self):
         self.view.grab_focus()
@@ -1365,34 +1379,34 @@ class TextContentHandler (ContentHandler):
             tb.set_style(gtk.TOOLBAR_ICONS)
 
             b=gtk.ToolButton(gtk.STOCK_OPEN)
-            b.set_tooltip(self.tooltips, _("Open a file (C-o)"))
+            b.set_tooltip_text(_("Open a file (C-o)"))
             b.connect('clicked', self.content_open)
             tb.insert(b, -1)
 
             b=gtk.ToolButton(gtk.STOCK_SAVE)
-            b.set_tooltip(self.tooltips, _("Save to a file (C-s)"))
+            b.set_tooltip_text(_("Save to a file (C-s)"))
             b.connect('clicked', self.content_save)
             tb.insert(b, -1)
 
             b=gtk.ToolButton(gtk.STOCK_REFRESH)
-            b.set_tooltip(self.tooltips, _("Reload the file (C-r)"))
+            b.set_tooltip_text(_("Reload the file (C-r)"))
             b.connect('clicked', self.content_reload)
             tb.insert(b, -1)
 
             if config.data.preferences['expert-mode']:
                 b=get_pixmap_toolbutton('browser.png', self.browser_open)
-                b.set_tooltip(self.tooltips, _("Insert a value from the browser (C-i)"))
+                b.set_tooltip_text(_("Insert a value from the browser (C-i)"))
                 tb.insert(b, -1)
 
             vbox.pack_start(tb, expand=False)
 
-        if gtksourceview is not None:
-            textview=gtksourceview.SourceView(gtksourceview.SourceBuffer())
+        if gtksourceview2 is not None:
+            textview=gtksourceview2.View(gtksourceview2.Buffer())
             b=textview.get_buffer()
-            m=gtksourceview.SourceLanguagesManager()
+            m=gtksourceview2.language_manager_get_default()
             if m:
-                b.set_language(m.get_language_from_mime_type(self.element.mimetype))
-                b.set_highlight(True)
+                b.set_language(m.guess_language(content_type=self.element.mimetype))
+                b.set_highlight_syntax(True)
             textview.set_editable (self.editable)
             textview.set_wrap_mode (gtk.WRAP_CHAR)
             textview.set_auto_indent(True)
@@ -1466,7 +1480,6 @@ class GenericContentHandler (ContentHandler):
         self.view = None
         self.parent=None
         self.data=self.element.data
-        self.tooltips=gtk.Tooltips()
 
     def set_editable (self, boolean):
         self.editable = boolean
@@ -1562,6 +1575,8 @@ class GenericContentHandler (ContentHandler):
                 os.rename(fname, fname + '~')
             try:
                 f=open(fname, 'wb')
+                f.write(self.data)
+                f.close()
             except IOError, e:
                 dialog.message_dialog(
                     _("Cannot save the data:\n%s") % unicode(e),
@@ -1578,17 +1593,17 @@ class GenericContentHandler (ContentHandler):
         tb.set_style(gtk.TOOLBAR_ICONS)
 
         b=gtk.ToolButton(gtk.STOCK_OPEN)
-        b.set_tooltip(self.tooltips, _("Open a file (C-o)"))
+        b.set_tooltip_text(_("Open a file (C-o)"))
         b.connect('clicked', self.content_open)
         tb.insert(b, -1)
 
         b=gtk.ToolButton(gtk.STOCK_SAVE)
-        b.set_tooltip(self.tooltips, _('Save to a file (C-s)'))
+        b.set_tooltip_text(_('Save to a file (C-s)'))
         b.connect('clicked', self.content_save)
         tb.insert(b, -1)
 
         b=gtk.ToolButton(gtk.STOCK_REFRESH)
-        b.set_tooltip(self.tooltips, _('Reload the file (C-r)'))
+        b.set_tooltip_text(_('Reload the file (C-r)'))
         b.connect('clicked', self.content_reload)
         tb.insert(b, -1)
 
@@ -1666,7 +1681,8 @@ class EditFragmentForm(EditForm):
 
 class EditGenericForm(EditForm):
     def __init__(self, title=None, getter=None, setter=None,
-                 controller=None, editable=True, tooltip=None, type=None, focus=False, sizegroup=None):
+                 controller=None, editable=True, tooltip=None, type=None, elements=None, 
+                 focus=False, sizegroup=None):
         self.title=title
         self.getter=getter
         self.setter=setter
@@ -1677,6 +1693,8 @@ class EditGenericForm(EditForm):
         self.sizegroup=sizegroup
         self.tooltip=tooltip
         self.type=type
+        # List of (value, label) items
+        self.elements=elements
         self.focus=focus
 
     def get_focus(self):
@@ -1698,19 +1716,36 @@ class EditGenericForm(EditForm):
         if v is None:
             v=""
         if self.type == 'mimetype':
-            self.entry=gtk.combo_box_entry_new_text()
-            self.entry.append_text(v)
-            for t in itertools.chain(common_content_mimetypes, common_view_mimetypes):
-                self.entry.append_text(t)
-            self.entry.set_active(0)
-            self.entry.get_children()[0].set_editable(self.editable)
+            # Is the current value in the predefined list?
+            data=[ tupl
+                   for tupl in predefined_content_mimetypes
+                   if tupl[0] == v ]
+            if not data:
+                # Not yet predefined. Add its raw value.
+                current=(v, v)
+                predefined_content_mimetypes.append(current)
+            else:
+                current=data[0]
+
+            if self.editable:
+                l=predefined_content_mimetypes
+            else:
+                l=[ current ]
+            self.entry=dialog.list_selector_widget(members=l,
+                                                   preselect=v,
+                                                   entry=self.editable)
+        elif self.elements:
+            self.entry=dialog.list_selector_widget(members=self.elements,
+                                                   preselect=v,
+                                                   entry=self.editable)
         else:
             self.entry=gtk.Entry()
-            if self.tooltip:
-                tt=gtk.Tooltips()
-                tt.set_tip(self.entry, self.tooltip)
             self.entry.set_text(v)
             self.entry.set_editable(self.editable)
+
+        if self.tooltip:
+            self.entry.set_tooltip_text(self.tooltip)
+
         hbox.pack_start(self.entry)
 
         if self.type == 'color':
@@ -1763,17 +1798,16 @@ class EditGenericForm(EditForm):
         v=self.getter()
         if v is None:
             v=""
-        if self.type == 'mimetype':
-            self.entry.prepend_text(v)
-            self.entry.set_active(0)
+        if hasattr(self.entry, 'set_current_element'):
+            self.entry.set_current_element(v)
         else:
             self.entry.set_text(v)
 
     def update_element(self):
         if not self.editable:
             return False
-        if self.type == 'mimetype':
-            v=unicode(self.entry.get_active_text())
+        if hasattr(self.entry, 'get_current_element'):
+            v=unicode(self.entry.get_current_element())
         else:
             v=unicode(self.entry.get_text())
         self.setter(v)
@@ -1782,7 +1816,9 @@ class EditGenericForm(EditForm):
 class EditMetaForm(EditGenericForm):
     def __init__(self, title=None, element=None, name=None,
                  namespaceid='advenetool', controller=None,
-                 editable=True, tooltip=None, type=None, focus=False, sizegroup=None):
+                 editable=True, tooltip=None, type=None, 
+                 elements=None,
+                 focus=False, sizegroup=None):
         getter=self.metadata_get_method(element, name, namespaceid)
         setter=self.metadata_set_method(element, name, namespaceid)
         super(EditMetaForm, self).__init__(title=title,
@@ -1792,13 +1828,15 @@ class EditMetaForm(EditGenericForm):
                                            editable=editable,
                                            tooltip=tooltip,
                                            type=type,
+                                           elements=elements,
                                            focus=focus,
                                            sizegroup=sizegroup)
 
 class EditAttributeForm(EditGenericForm):
     def __init__(self, title=None, element=None, name=None,
                  controller=None,
-                 editable=True, tooltip=None, type=None, focus=False, sizegroup=None):
+                 editable=True, tooltip=None, type=None, elements=None,
+                 focus=False, sizegroup=None):
         getter=lambda: getattr(element, name)
         setter=lambda v: setattr(element, name, v)
         super(EditAttributeForm, self).__init__(title=title,
@@ -1808,6 +1846,7 @@ class EditAttributeForm(EditGenericForm):
                                                 editable=editable,
                                                 tooltip=tooltip,
                                                 type=type,
+                                                elements=elements,
                                                 focus=focus,
                                                 sizegroup=sizegroup)
 

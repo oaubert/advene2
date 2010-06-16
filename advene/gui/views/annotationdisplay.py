@@ -23,9 +23,9 @@ import gtk
 from gettext import gettext as _
 
 import advene.core.config as config
-from advene.core.imagecache import ImageCache
 from advene.gui.views import AdhocView
 import advene.util.helper as helper
+from advene.gui.widget import TimestampRepresentation
 from advene.gui.util import png_to_pixbuf, overlay_svg_as_pixbuf
 from libadvene.model.cam.annotation import Annotation
 from libadvene.model.cam.tag import AnnotationType
@@ -46,7 +46,6 @@ class AnnotationDisplay(AdhocView):
         self.contextual_actions = ()
         self.controller=controller
         self.annotation=annotation
-        self.no_image_pixbuf=png_to_pixbuf(ImageCache.not_yet_available_image, width=50)
         self.widget=self.build_widget()
         self.refresh()
 
@@ -103,10 +102,11 @@ class AnnotationDisplay(AdhocView):
             d={ 'title': title,
                 'begin': helper.format_time(b),
                 'end': helper.format_time(e),
-                'contents': _("%(total)s\nId: %(id)s\n\n%(description)s") % {
+                'contents': _("Schema %(schema)s\n%(description)s\n%(total)s\nId: %(id)s") % {
+                    'schema': ",".join(self.controller.get_title(s) for s in self.annotation.my_schemas),
+                    'description': self.annotation.description or "",
                     'total': helper.format_element_name('annotation', len(self.annotation.annotations)),
-                    'id': self.annotation.id,
-                    'description': self.annotation.description,
+                    'id': self.annotation.id
                     },
                 'imagecontents': None,
                 }
@@ -163,15 +163,9 @@ class AnnotationDisplay(AdhocView):
         else:
             if isinstance(self.annotation, int) or isinstance(self.annotation, long):
                 b=self.annotation
-                cache=self.controller.gui.imagecache
             elif isinstance(self.annotation, Annotation):
                 b=self.annotation.begin
-                cache=self.controller.imagecache[self.annotation.media.url]
-
-            if cache.is_initialized(b, epsilon=config.data.preferences['bookmark-snapshot-precision']):
-                self.label['image'].set_from_pixbuf(png_to_pixbuf (cache.get(b, epsilon=config.data.preferences['bookmark-snapshot-precision']), width=config.data.preferences['drag-snapshot-width']))
-            elif self.label['image'].get_pixbuf() != self.no_image_pixbuf:
-                self.label['image'].set_from_pixbuf(self.no_image_pixbuf)
+            self.label['image'].value = b
             self.label['image'].show()
         return False
 
@@ -197,20 +191,23 @@ class AnnotationDisplay(AdhocView):
 
         fr = gtk.Expander ()
         fr.set_label(_("Screenshot"))
-        self.label['image'] = gtk.Image()
+        self.label['image'] = TimestampRepresentation(-1, self.controller, width=config.data.preferences['drag-snapshot-width'], epsilon=config.data.preferences['bookmark-snapshot-precision'], visible_label=False)
         fr.add(self.label['image'])
         fr.set_expanded(True)
         v.pack_start(fr, expand=False)
 
         f=gtk.Frame(label=_("Contents"))
-        c=self.label['contents']=gtk.Label()
-        c.set_line_wrap(True)
-        c.set_selectable(True)
-        c.set_single_line_mode(False)
-        c.set_alignment(0.0, 0.0)
+        c=self.label['contents']=gtk.TextView()
+        c.set_wrap_mode(gtk.WRAP_WORD_CHAR)
         sw=gtk.ScrolledWindow()
-        sw.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
-        sw.add_with_viewport(c)
+        sw.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+        sw.add(c)
+        def set_text(widget, t):
+            b=widget.get_buffer()
+            b.delete(*b.get_bounds())
+            b.set_text(t)
+            return True
+        c.set_text=set_text.__get__(c)
         self.sw['contents']=sw
 
         image=self.label['imagecontents']=gtk.Image()
@@ -230,4 +227,22 @@ class AnnotationDisplay(AdhocView):
         v.show_all()
         image.hide()
         v.set_no_show_all(True)
+
+        def annotation_drag_received_cb(widget, context, x, y, selection, targetType, time):
+            """Handle the drop of an annotation.
+            """
+            if targetType == config.data.target_type['annotation']:
+                sources=[ self.controller.package.get(uri) for uri in unicode(selection.data, 'utf8').split('\n') ]
+                if sources:
+                    self.set_annotation(sources[0])
+                return True
+            return False
+        # The button can receive drops (to display annotations)
+        v.connect('drag-data-received', annotation_drag_received_cb)
+        v.drag_dest_set(gtk.DEST_DEFAULT_MOTION |
+                        gtk.DEST_DEFAULT_HIGHLIGHT |
+                        gtk.DEST_DEFAULT_ALL,
+                        config.data.drag_type['annotation'],
+                        gtk.gdk.ACTION_COPY | gtk.gdk.ACTION_LINK | gtk.gdk.ACTION_MOVE)
+
         return v

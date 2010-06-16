@@ -23,7 +23,6 @@ import gtk
 import re
 
 import advene.core.config as config
-from advene.core.imagecache import ImageCache
 from advene.gui.edit.elements import ContentHandler, TextContentHandler
 from advene.gui.util import png_to_pixbuf, decode_drop_parameters, get_pixmap_toolbutton, overlay_svg_as_pixbuf
 
@@ -156,7 +155,7 @@ class AnnotationPlaceholder:
 
     def build_pixbuf(self):
         if self.annotation is None:
-            pixbuf=png_to_pixbuf(ImageCache.not_yet_available_image,
+            pixbuf=png_to_pixbuf(self.controller.gui.imagecache.not_yet_available_image,
                                  width=self.width)
         elif 'overlay' in self.presentation:
             pixbuf=overlay_svg_as_pixbuf(self.controller.imagecache[self.annotation.media.url][self.annotation.begin],
@@ -183,7 +182,7 @@ class AnnotationPlaceholder:
             loader.close ()
             pixbuf = loader.get_pixbuf ()
         else:
-            pixbuf=png_to_pixbuf(ImageCache.not_yet_available_image,
+            pixbuf=png_to_pixbuf(self.controller.gui.imagecache.not_yet_available_image,
                                  width=self.width)
         pixbuf.as_html=self.as_html
         pixbuf._placeholder=self
@@ -219,7 +218,6 @@ class HTMLContentHandler (ContentHandler):
         self.placeholders=[]
 
         self.editing_source=False
-        self.tooltips=gtk.Tooltips()
 
     def close(self):
         for p in self.placeholders:

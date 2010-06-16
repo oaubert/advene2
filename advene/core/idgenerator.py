@@ -32,9 +32,6 @@ from libadvene.model.cam.query import Query
 
 from advene.util.helper import title2id
 
-normalized_re=re.compile(r'LATIN (SMALL|CAPITAL) LETTER (\w)')
-valid_re=re.compile(r'[a-zA-Z0-9_]')
-
 class Generator:
     """Identifier generator.
 

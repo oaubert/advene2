@@ -54,6 +54,7 @@ class EditionHistory(AdhocView):
         self.update_annotationtype=self.refresh
         self.update_relationtype=self.refresh
         self.update_schema=self.refresh
+        self.update_model=self.refresh
 
         self.controller=controller
         self.widget=self.build_widget()
@@ -88,7 +89,7 @@ class EditionHistory(AdhocView):
                           e)
                 content=getattr(e, 'content', None)
                 if content:
-                    self.controller.gui.tooltips.set_tip(b, content.data)
+                    b.set_tooltip_text(content.data)
                 enable_drag_source(b, e, self.controller)
                 b.connect('button-press-event', display_popup, e)
                 w.pack_start(b, expand=False)

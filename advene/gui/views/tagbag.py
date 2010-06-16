@@ -59,7 +59,6 @@ class TagBag(AdhocView):
             (_("New tag"), self.new_tag),
             (_("Clear"), self.clear),
             (_("Preferences"), self.edit_options),
-            (_("Save view"), self.save_view),
             (_("Save default options"), self.save_default_options),
             )
         self.options={
@@ -316,7 +315,7 @@ class TagBag(AdhocView):
 
         b=get_small_stock_button(gtk.STOCK_DELETE)
 
-        self.controller.gui.tooltips.set_tip(b, _("Drop a tag here to remove it from the list"))
+        b.set_tooltip_text(_("Drop a tag here to remove it from the list"))
         b.drag_dest_set(gtk.DEST_DEFAULT_MOTION |
                         gtk.DEST_DEFAULT_HIGHLIGHT |
                         gtk.DEST_DEFAULT_ALL,
@@ -324,9 +323,15 @@ class TagBag(AdhocView):
         b.connect('drag-data-received', remove_drag_received)
         hb.pack_start(b, expand=False)
 
-        b=get_small_stock_button(gtk.STOCK_ADD)
-        b.connect('clicked', self.new_tag)
-        hb.pack_start(b, expand=False)
+        for (stock, tip, method) in (
+            (gtk.STOCK_SAVE, _("Save as adhoc view"), self.save_view),
+            (gtk.STOCK_ADD, _("Add a new tag"), self.new_tag),
+            #(gtk.STOCK_INDEX, _("Display all defined tags"), self.all_tags),
+            ):
+            b=get_small_stock_button(stock)
+            b.set_tooltip_text(tip)
+            b.connect('clicked', method)
+            hb.pack_start(b, expand=False)
 
         v.buttonbox=hb
 

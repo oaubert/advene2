@@ -18,7 +18,6 @@
 #
 """VLC library functions."""
 
-import advene.core.config as config
 import time
 import StringIO
 import inspect
@@ -32,7 +31,14 @@ import re
 import zipfile
 import urllib
 import unicodedata
-import types
+
+import advene.core.config as config
+from advene.core.imagecache import ImageCache
+
+try:
+    import Image
+except ImportError:
+    print "Cannot load Image module. Image conversion is disabled."
 
 from gettext import gettext as _
 
@@ -48,14 +54,18 @@ from libadvene.util.defaultdict import DefaultDict
 from libadvene.model.consts import DC_NS_PREFIX, ADVENE_NS_PREFIX
 from libadvene.model.tales import iter_global_methods
 
-# Initialize ElementTree namespace map with our own prefixes
+# Initialize ElementTree namespace map with our own prefixes.  This
+# helps generating readable XML through ElementTree (the appropriate
+# namespace prefixes will be used)
 import xml.etree.ElementTree as ET
 ET._namespace_map[config.data.namespace]='advene'
 ET._namespace_map['http://www.w3.org/2000/svg']='svg'
 ET._namespace_map['http://www.w3.org/1999/xlink']='xlink'
+ET._namespace_map['http://experience.univ-lyon1.fr/advene/ns/advenetool']='advenetool'
+ET._namespace_map['http://xml.zope.org/namespaces/tal']='tal'
+ET._namespace_map['http://xml.zope.org/namespaces/metal']='metal'
 ET._namespace_map[DC_NS_PREFIX]='dc'
 ET._namespace_map[ADVENE_NS_PREFIX]='advene2'
-# FIXME: add other namespaces
 
 def fourcc2rawcode (code):
     """VideoLan to PIL code conversion.
@@ -136,15 +146,12 @@ def snapshot2png (image, output=None):
         png=TypedString(image.data)
         png.contenttype='image/png'
     elif code is not None:
-        print "snapshot: conversion module not available"
+            print "snapshot: conversion module not available"
     else:
         print "snapshot: unknown image type ", repr(image.type)
 
     if png is None:
-        f=open(config.data.advenefile( ( 'pixmaps', 'notavailable.png' ) ), 'rb')
-        png=TypedString(f.read(10000))
-        png.contenttype='image/png'
-        f.close()
+        png=ImageCache.not_yet_available_image
 
     if output is not None:
         f=open(output, 'wb')

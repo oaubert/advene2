@@ -24,6 +24,7 @@ It provides a basic framework for simple undos.
 from libadvene.model.cam.annotation import Annotation
 from libadvene.model.cam.view import View
 from libadvene.model.cam.query import Query
+from cPickle import dumps, loads
 
 name="Undo Manager"
 

@@ -27,7 +27,6 @@ from gettext import gettext as _
 
 import advene.gui.popup
 import advene.util.helper as helper
-import advene.util.importer
 from advene.util.merger import Differ
 
 labels = {
@@ -71,11 +70,13 @@ class TreeViewMerger:
 
         for l in self.differ.diff():
             name, s, d, action=l
+            # Note: s and d are normally Advene elements, except for
+            # resources for which we have the path.
             store.append(row=[ l,
                                labels.setdefault(name, name),
                                "%s %s (%s)" % (helper.get_type(s),
                                                self.controller.get_title(s),
-                                               s.id),
+                                               getattr(s, 'id', unicode(s))),
                                True ])
         return store
 
@@ -233,8 +234,6 @@ class Merger:
 
         vbox.add (self.widget)
         if self.controller.gui:
-            self.controller.gui.register_view (self)
-            window.connect('destroy', self.controller.gui.close_view_cb, window, self)
             self.controller.gui.init_window_size(window, 'merge')
             window.set_icon_list(*self.controller.gui.get_icon_list())
 

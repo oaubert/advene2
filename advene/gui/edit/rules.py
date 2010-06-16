@@ -119,28 +119,28 @@ class EditRuleSet(EditGeneric):
         b=gtk.Button(stock=gtk.STOCK_ADD)
         b.connect('clicked', add_rule_cb)
         b.set_sensitive(self.editable)
-        self.controller.gui.tooltips.set_tip(b, _("Add a new rule"))
+        b.set_tooltip_text(_("Add a new rule"))
         hb.pack_start(b, expand=False)
 
         b=gtk.Button(stock=gtk.STOCK_SELECT_COLOR)
         b.set_label(_("Subview"))
         b.connect('clicked', add_subview_cb)
         b.set_sensitive(self.editable)
-        self.controller.gui.tooltips.set_tip(b, _("Add a subview list"))
+        b.set_tooltip_text(_("Add a subview list"))
         hb.pack_start(b, expand=False)
 
         b=gtk.Button(stock=gtk.STOCK_REMOVE)
         b.connect('clicked', remove_rule_cb)
         b.set_sensitive(self.editable)
-        self.controller.gui.tooltips.set_tip(b, _("Remove the current rule"))
+        b.set_tooltip_text(_("Remove the current rule"))
         hb.pack_start(b, expand=False)
+
 
         vbox.pack_start(hb, expand=False)
 
         vbox.add(self.get_widget())
 
         return vbox
-
 
     def add_rule(self, rule, append=True):
         # Insert the given rule
@@ -284,7 +284,7 @@ class EditQuery(EditGeneric):
     def update_value(self):
         if not self.editable:
             return False
-        self.model.source=self.sourceentry.get_text()
+        self.model.sources=self.sourceentry.get_text().split(';')
         if self.valueentry is None:
             v='element'
         else:
@@ -359,7 +359,7 @@ class EditQuery(EditGeneric):
         self.sourceentry=TALESEntry(context=self.model,
                                     controller=self.controller,
                                     predefined=predef)
-        self.sourceentry.set_text(self.model.source)
+        self.sourceentry.set_text(";".join(self.model.sources))
         self.sourceentry.set_editable(self.editable)
         ef.add(self.sourceentry.widget)
         ef.show_all()
@@ -437,6 +437,8 @@ class EditRule(EditGeneric):
 
         self.namelabel=None
 
+        self.composition=self.model.condition.composition
+
         self.editactionlist=[]
         self.editconditionlist=[]
         self.widget=self.build_widget()
@@ -478,6 +480,7 @@ class EditRule(EditGeneric):
             self.model.condition=ConditionList([ e.model for e in self.editconditionlist ])
         else:
             self.model.condition=self.model.default_condition
+        self.model.condition.composition=self.composition
 
         # Rebuild actionlist from editactionlist
         self.model.action=ActionList([ e.model for e in self.editactionlist ])
@@ -608,12 +611,13 @@ class EditRule(EditGeneric):
         hb.add(gtk.HBox())
 
         def change_composition(combo):
-            self.model.condition.composition=combo.get_current_element()
+            self.composition=combo.get_current_element()
             return True
 
         c=dialog.list_selector_widget( [ ('and', _("All conditions must be met") ),
                                          ('or', _("Any condition can be met") ) ],
-                                       preselect=self.model.condition.composition)
+                                       preselect=self.composition,
+                                       callback=change_composition)
         hb.pack_start(c, expand=False)
 
         conditionsbox.pack_start(hb, expand=False, fill=False)
@@ -761,6 +765,7 @@ class EditCondition(EditGeneric):
                 ('annotation/begin', _('The annotation begin time') ),
                 ('annotation/end', _('The annotation end time') ),
                 ('annotation/duration', _('The annotation duration') ),
+                ('annotation/content/data', _('The annotation content') ),
                 ('annotation/type/id', _('The id of the annotation type') ),
                 ('annotation/content/mimetype', _('The annotation MIME-type') ),
                 ('annotation/incomingRelations', _("The annotation's incoming relations") ),
@@ -861,7 +866,6 @@ class EditAction(EditGeneric):
         self.paramlist={}
 
         self.catalog=catalog
-        self.tooltips=gtk.Tooltips()
         self.widget=self.build_widget()
 
     def invalid_items(self):
@@ -947,7 +951,7 @@ class EditAction(EditGeneric):
         entry.set_editable(self.editable)
         entry.entry.connect('changed', self.on_change_parameter, entry, name)
 
-        self.tooltips.set_tip(entry.entry, description)
+        entry.entry.set_tooltip_text(description)
 
         hbox.entry=entry
 

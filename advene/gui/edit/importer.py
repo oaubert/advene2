@@ -58,20 +58,25 @@ class ExternalImporter(AdhocView):
             self.importers.set_active(0)
             self.convert_button.set_sensitive(True)
             return
-        if os.path.exists(n) and not os.path.isdir(n):
+        if (os.path.exists(n) and not os.path.isdir(n)) or n.startswith('http:'):
             # Valid filename. Guess importers
-            valid=advene.util.importer.get_valid_importers(n)
+            valid, invalid=advene.util.importer.get_valid_importers(n)
             for i in valid:
                 model.append( ( i.name, i, None) )
             if n.lower().endswith('.xml'):
                 model.append( ( _("Advene package importer"), dummy_advene_importer, None) )
             if valid:
                 self.importers.set_active(0)
+            if invalid:
+                model.append( ( "--- " + _("Not likely") + " ---", None, None) )
+                for i in invalid:
+                    model.append( (i.name, i, None) )
             self.convert_button.set_sensitive(True)
-
         else:
             # Invalid filenames. Empty importers and disable convert button
-            model.append( (_("No valid importer"), None, None) )
+            #model.append( (_("Possible importers"), None, None) )
+            for i in advene.util.importer.IMPORTERS:
+                model.append( (i.name, i, None) )
             self.importers.set_active(0)
             self.convert_button.set_sensitive(False)
 
@@ -107,7 +112,7 @@ class ExternalImporter(AdhocView):
         mes=_('Completed conversion from file %(filename)s :\n%(statistics)s') % {
             'filename': fname,
             'statistics': i.statistics_formatted() }
-        dialog.message_dialog(mes)
+        dialog.message_dialog(mes, modal=False)
         self.log(mes)
         return True
 

@@ -23,18 +23,24 @@ FIXME: add navigation buttons (back, history)
 
 import gtk
 import urllib
+import urlparse
+import re
 
 engine=None
 try:
-    import gtkmozembed
-    gtkmozembed.set_comp_path('')
-    engine='mozembed'
+    import webkit
+    engine='webkit'
 except ImportError:
     try:
-        import gtkhtml2
-        engine='gtkhtml2'
+        import gtkmozembed
+        gtkmozembed.set_comp_path('')
+        engine='mozembed'
     except ImportError:
-        pass
+        try:
+            import gtkhtml2
+            engine='gtkhtml2'
+        except ImportError:
+            pass
 
 from gettext import gettext as _
 from advene.gui.views import AdhocView
@@ -164,6 +170,118 @@ class mozembed_wrapper:
         self.component=w
         return w
 
+class webkit_wrapper:
+    def __init__(self, controller=None, notify=None):
+        self.controller=controller
+        self.notify=notify
+        self.no_content_re = re.compile('^(/media/(play|pause|resume|stop)|/action/.+|/application/adhoc/.+)')
+        self.widget=self.build_widget()
+
+    def refresh(self, *p):
+        self.component.reload()
+        return True
+
+    def back(self, *p):
+        self.component.go_back()
+        return True
+
+    def set_url(self, url):
+        self.component.open(url)
+        return True
+
+    def build_widget(self):
+        w=webkit.WebView()
+
+        def update_location(url):
+            l=urlparse.urlparse(url)
+            if self.no_content_re.match(l[2]):
+                # webkit does not correctly handle 204 return code.
+                # Automatically go back.
+                # FIXME: to be removed once webkit is fixed.
+                self.back()
+            if self.notify:
+                self.notify(url=url)
+            return False
+
+        def update_label(c):
+            if self.notify:
+                self.notify(label=c.get_link_message())
+            return False
+
+        def _loading_start_cb(view, frame):
+            self.notify(label="Loading  %s - %s" % (frame.get_title(),
+                                                        frame.get_uri()))
+
+        def _loading_stop_cb(view, frame):
+            update_location(frame.get_uri())
+            pass
+
+        def _loading_progress_cb(view, progress):
+            self.notify(label=_("%s%% loaded") % progress)
+
+        def _title_changed_cb(widget, frame, title):
+            self.notify(label=_("Title %s") % title)
+
+        def _hover_link_cb(view, title, url):
+            
+            if not (view and url):
+                url=''
+            self.notify(label=url)
+
+        def _statusbar_text_changed_cb(view, text):
+            #if text:
+            self.notify(label=text)
+
+        def _icon_loaded_cb(self):
+            print "icon loaded"
+
+        def _selection_changed_cb(self):
+            print "selection changed"
+
+        def _navigation_requested_cb(view, frame, networkRequest):
+            return 1
+
+        def _javascript_console_message_cb(view, message, line, sourceid):
+            pass
+
+        def _javascript_script_alert_cb(view, frame, message):
+            pass
+
+        def _javascript_script_confirm_cb(view, frame, message, isConfirmed):
+            pass
+
+        def _javascript_script_prompt_cb(view, frame,
+                                         message, default, text):
+            pass
+
+        w.connect('load-started', _loading_start_cb)
+        w.connect('load-progress-changed', _loading_progress_cb)
+        w.connect('load-finished', _loading_stop_cb)
+        w.connect("title-changed", _title_changed_cb)
+        w.connect("hovering-over-link", _hover_link_cb)
+        w.connect("status-bar-text-changed",
+                              _statusbar_text_changed_cb)
+        w.connect("icon-loaded", _icon_loaded_cb)
+        w.connect("selection-changed", _selection_changed_cb)
+        #w.connect("set-scroll-adjustments",
+        #                      _set_scroll_adjustments_cb)
+        #w.connect("populate-popup", _populate_popup)
+
+        w.connect("console-message",
+                              _javascript_console_message_cb)
+        w.connect("script-alert",
+                              _javascript_script_alert_cb)
+        w.connect("script-confirm",
+                              _javascript_script_confirm_cb)
+        w.connect("script-prompt",
+                              _javascript_script_prompt_cb)
+
+        self.component=w
+        s=gtk.ScrolledWindow()
+        s.add(w)
+        
+        return s
+
 class HTMLView(AdhocView):
     _engine = engine
     view_name = _("HTML Viewer")
@@ -180,10 +298,6 @@ class HTMLView(AdhocView):
         if url is not None:
             self.open_url(url)
 
-    def close(self):
-        # Prevent closing the view, since it crashes the component for now.
-        return False
-
     def notify(self, url=None, label=None):
         if url is not None:
             self.current_url(url)
@@ -196,16 +310,17 @@ class HTMLView(AdhocView):
         return True
 
     def build_widget(self):
-        if engine is None:
+        mapping={ 'webkit': webkit_wrapper,
+                  'mozembed': mozembed_wrapper,
+                  'gtkhtml2': gtkhtml_wrapper,
+                  None: None}
+        wrapper=mapping.get(engine)
+        if wrapper is None:
             w=gtk.Label(_("No available HTML rendering component"))
             self.component=w
-        elif engine == 'mozembed':
-            self.component = mozembed_wrapper(controller=self.controller,
-                                              notify=self.notify)
-            w=self.component.widget
-        elif engine == 'gtkhtml2':
-            self.component = gtkhtml_wrapper(controller=self.controller,
-                                              notify=self.notify)
+        else:
+            self.component = wrapper(controller=self.controller,
+                                     notify=self.notify)
             w=self.component.widget
 
         def utbv_menu(*p):

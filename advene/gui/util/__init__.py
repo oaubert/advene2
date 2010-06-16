@@ -27,7 +27,6 @@ import cgi
 import StringIO
 
 import advene.core.config as config
-from advene.core.imagecache import ImageCache
 from libadvene.model.cam.annotation import Annotation
 from libadvene.model.cam.relation import Relation
 from libadvene.model.cam.view import View
@@ -35,6 +34,29 @@ from libadvene.model.cam.list import Schema
 from libadvene.model.cam.tag import AnnotationType, RelationType
 from libadvene.model.cam.query import Query
 import advene.util.helper as helper
+
+# Predefined MIMEtype for annotation contents
+predefined_content_mimetypes=[
+    ('text/plain', _("Plain text content")),
+    ('text/html', _("HTML content")),
+    ('application/x-advene-structured', _("Simple-structured content")),
+    ('application/x-advene-values', _("List of numeric values")),
+    ('image/svg+xml', _("SVG graphics content")),
+    ]
+
+if hasattr(gtk, 'image_new_from_pixbuf'):
+    image_new_from_pixbuf=gtk.image_new_from_pixbuf
+else:
+    def my_image_new_from_pixbuf(pb, width=None):
+        i=gtk.Image()
+        if width:
+            height = width * pb.get_height() / pb.get_width()
+            p=pb.scale_simple(width, height, gtk.gdk.INTERP_BILINEAR)
+        else:
+            p=pb
+        i.set_from_pixbuf(p)
+        return i
+    image_new_from_pixbuf=my_image_new_from_pixbuf
 
 def png_to_pixbuf (png_data, width=None, height=None):
     """Load PNG data into a pixbuf
@@ -60,22 +82,13 @@ def png_to_pixbuf (png_data, width=None, height=None):
     else:
         return pixbuf
 
-def pixbuf_from_position(controller, position=None, media_url=None, epsilon=None, width=None, height=None):
+def image_from_position(controller, position=None, width=None, height=None):
+    i=gtk.Image()
     if position is None:
         position=controller.player.current_position_value
-    if media_url is None and controller.current_media is not None:
-        media_url=controller.current_media.url
-    ic=controller.imagecache.get(media_url)
-    if ic is None:
-        png=ImageCache.not_yet_available_image
-    else:
-        png=ic.get(position, epsilon)
-    pixbuf=png_to_pixbuf(png, width=width, height=height)
-    return pixbuf
-
-def image_from_position(controller, position=None, media_url=None, epsilon=None, width=None, height=None):
-    i=gtk.Image()
-    i.set_from_pixbuf(pixbuf_from_position(controller, position=None, media_url=None, epsilon=None, width=None, height=None))
+    pb=png_to_pixbuf (controller.package.imagecache[position],
+                                         width=width, height=height)
+    i.set_from_pixbuf(pb)
     return i
 
 def overlay_svg_as_pixbuf(png_data, svg_data, width=None, height=None):
@@ -86,11 +99,9 @@ def overlay_svg_as_pixbuf(png_data, svg_data, width=None, height=None):
     """
     if not '<svg' in svg_data:
         # Generate pseudo-svg with data
-        svg_data="""<svg version='1' preserveAspectRatio="xMinYMin meet" viewBox='0 0 320 200'>
-  <text x='10' y='190' fill="white" font-size="24" stroke="black" font-family="sans-serif">
-%s
-  </text>
-</svg>
+        svg_data="""<svg:svg xmlns:svg="http://www.w3.org/2000/svg" width="320pt" height="200pt" version='1' preserveAspectRatio="xMinYMin meet" viewBox='0 0 320 200'>
+  <svg:text x='10' y='190' fill="white" font-size="24" stroke="black" font-family="sans-serif">%s</svg:text>
+</svg:svg>
 """ % svg_data
 
     try:
@@ -167,7 +178,9 @@ color_cache={}
 def name2color(color):
     """Return the gtk color for the given color name or code.
     """
-    if color:
+    if isinstance(color, gtk.gdk.Color):
+        gtk_color = color
+    elif color:
         # Found a color. Cache it.
         try:
             gtk_color=color_cache[color]
@@ -388,7 +401,7 @@ def contextual_drag_begin(widget, context, element, controller):
     cache=controller.gui.imagecache
 
     if isinstance(element, (long, int)):
-        begin=gtk.image_new_from_pixbuf(png_to_pixbuf (cache.get(element, epsilon=config.data.preferences['bookmark-snapshot-precision']), width=config.data.preferences['drag-snapshot-width']))
+        begin=image_new_from_pixbuf(png_to_pixbuf (cache.get(element, epsilon=config.data.preferences['bookmark-snapshot-precision']), width=config.data.preferences['drag-snapshot-width']))
         begin.set_style(bw_style)
 
         l=gtk.Label()
@@ -404,12 +417,12 @@ def contextual_drag_begin(widget, context, element, controller):
         # Pictures HBox
         h=gtk.HBox()
         h.set_style(bw_style)
-        begin=gtk.image_new_from_pixbuf(png_to_pixbuf (cache.get(element.begin), width=config.data.preferences['drag-snapshot-width']))
+        begin=image_new_from_pixbuf(png_to_pixbuf (cache.get(element.begin), width=config.data.preferences['drag-snapshot-width']))
         begin.set_style(bw_style)
         h.pack_start(begin, expand=False)
         # Padding
         h.pack_start(gtk.HBox(), expand=True)
-        end=gtk.image_new_from_pixbuf(png_to_pixbuf (cache.get(element.end), width=config.data.preferences['drag-snapshot-width']))
+        end=image_new_from_pixbuf(png_to_pixbuf (cache.get(element.end), width=config.data.preferences['drag-snapshot-width']))
         end.set_style(bw_style)
         h.pack_start(end, expand=False)
         v.pack_start(h, expand=False)
@@ -468,3 +481,18 @@ def enable_drag_source(widget, element, controller):
     widget.connect('drag-begin', contextual_drag_begin, element, controller)
     widget.connect('drag-end', contextual_drag_end)
     widget.connect('drag-data-get', drag_data_get_cb, controller)
+
+def gdk2intrgba(color, alpha=0xff):
+    """Convert a gdk.Color to int RGBA.
+    """
+    return ( (color.red >> 8) << 24) \
+         | ( (color.green >> 8) << 16) \
+         | ( (color.blue >> 8) <<  8) \
+         | alpha
+         
+def gdk2intrgb(color):
+    """Convert a gdk.Color to int RGB.
+    """
+    return ( (color.red >> 8) << 16) \
+         | ( (color.green >> 8) << 8) \
+         | (color.blue >> 8)

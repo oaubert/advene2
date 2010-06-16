@@ -63,6 +63,8 @@ class ViewBook(AdhocView):
         if view in self.permanent_widgets:
             self.log(_("Cannot remove this widget, it is essential."))
             return False
+        if hasattr(view, 'reparent_prepare'):
+            view.reparent_prepare()
         self.views.remove(view)
         view.widget.get_parent().remove(view.widget)
         return True
@@ -79,8 +81,6 @@ class ViewBook(AdhocView):
 
         Each view is an Advene view, and must have a .widget attribute
         """
-        if v.view_id == 'htmlview':
-            permanent=True
         if name is None:
             try:
                 name=v.view_name
@@ -171,13 +171,16 @@ class ViewBook(AdhocView):
             return False
 
         e=gtk.EventBox()
+        e.set_visible_window(False)
+        e.set_above_child(True)
         if len(name) > 13:
             shortname=unicode(name)[:12] + u'\u2026'
         else:
             shortname=name
-        l=gtk.Label(shortname)
+        l=gtk.Label()
+        l.set_markup("<small>%s</small>" % shortname)
         if self.controller.gui:
-            self.controller.gui.tooltips.set_tip(e, name)
+            e.set_tooltip_text(name)
         e.add(l)
         e.connect('button-press-event', popup_menu, v)
 
@@ -191,7 +194,7 @@ class ViewBook(AdhocView):
 
         if not permanent:
             b=get_pixmap_button('small_detach.png')
-            self.controller.gui.tooltips.set_tip(b, _("Detach view in its own window, or drag-and-drop to another zone"))
+            b.set_tooltip_text(_("Detach view in its own window, or drag-and-drop to another zone"))
             b.set_relief(gtk.RELIEF_NONE)
             b.connect('clicked', relocate_view, v, 'popup')
             b.connect('drag-data-get', label_drag_sent, v)
@@ -205,7 +208,7 @@ class ViewBook(AdhocView):
 
         if not permanent:
             b=get_pixmap_button('small_close.png')
-            self.controller.gui.tooltips.set_tip(b, _("Close view"))
+            b.set_tooltip_text(_("Close view"))
             b.set_relief(gtk.RELIEF_NONE)
             b.connect('clicked', close_view, v)
             hb.pack_start(b, expand=False, fill=False)
@@ -228,13 +231,13 @@ class ViewBook(AdhocView):
         def create_and_open_view(sources):
             v=self.controller.create_static_view(elements=sources)
             p=get_edit_popup(v, controller=self.controller)
-            self.add_view(p, name=_("Edit %s") % self.controller.get_title(v))
+            self.add_view(p, name=_("Edit %s") % self.controller.get_title(v, max_size=40))
             # FIXME: put focus on edit window
             return True
 
         def edit_annotation(a):
             p=get_edit_popup(a, controller=self.controller)
-            self.add_view(p, name=_("Edit %s") % self.controller.get_title(a))
+            self.add_view(p, name=_("Edit %s") % self.controller.get_title(a, max_size=40))
             return True
 
         def edit_selection(sources):
@@ -273,10 +276,10 @@ class ViewBook(AdhocView):
                         n=None
                     f.close()
                     return n
-                saved=[ v
-                        for v in self.controller.package.all.views
-                        if v.content.mimetype == 'application/x-advene-adhoc-view'
-                        and stbv_name(v) == name ]
+                    saved=[ v
+                            for v in self.controller.package.all.views
+                            if v.content.mimetype == 'application/x-advene-adhoc-view'
+                            and stbv_name(v) == name ]
                 if name == 'transcription':
                     menu=gtk.Menu()
                     i=gtk.MenuItem(_("Open a new transcription for..."))
@@ -316,7 +319,8 @@ class ViewBook(AdhocView):
                     menu.popup(None, None, None, 0, gtk.get_current_event_time())
                 else:
                     view=self.controller.gui.open_adhoc_view(name, label=label, destination=None)
-                    self.add_view(view, name=view.view_name)
+                    if view is not None:
+                        self.add_view(view, name=view.view_name)
             else:
                 # Bug
                 self.log("Cannot happen")
@@ -334,6 +338,8 @@ class ViewBook(AdhocView):
             if v is not None:
                 wid=v.widget
                 self.add_view(v, name=v._label)
+                if hasattr(v, 'reparent_done'):
+                    v.reparent_done()
             else:
                 print "Cannot find view ", selection.data
             return True
@@ -364,7 +370,7 @@ class ViewBook(AdhocView):
             at=self.controller.package.get(unicode(selection.data, 'utf8'))
             # Propose a menu to open various views for the annotation-type:
             menu=gtk.Menu()
-            title=self.controller.get_title(at)
+            title=self.controller.get_title(at, max_size=40)
             i=gtk.MenuItem(_("Use annotation-type %s :") % title, use_underline=False)
             menu.append(i)
             for label, action in (
@@ -390,7 +396,7 @@ class ViewBook(AdhocView):
 
             if len(sources) == 1:
                 a=sources[0]
-                title=self.controller.get_title(a)
+                title=self.controller.get_title(a, max_size=40)
                 i=gtk.MenuItem(_("Use annotation %s :") % title, use_underline=False)
                 menu.append(i)
                 for label, action in (
@@ -413,8 +419,8 @@ class ViewBook(AdhocView):
 
                 if self.controller.package.all.queries:
                     sm=gtk.Menu()
-                    for q in self.controller.package.all.queries:
-                        i=gtk.MenuItem(self.controller.get_title(q), use_underline=False)
+                    for q in self.controller.package.queries:
+                        i=gtk.MenuItem(self.controller.get_title(q, max_size=40), use_underline=False)
                         i.connect('activate', apply_query, q)
                         sm.append(i)
                     i=gtk.MenuItem(u"    " + _("as the context for the query..."), use_underline=False)

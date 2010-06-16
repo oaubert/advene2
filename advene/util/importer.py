@@ -74,32 +74,35 @@ def register(imp):
         IMPORTERS.append(imp)
 
 def get_valid_importers(fname):
-    """Return a list of valid importers for fname.
+    """Return two lists of importers (valid importers, not valid ones) for fname.
 
-    The list is sorted in priority order (best choice first)
+    The valid importers list is sorted in priority order (best choice first)
     """
-    res=[]
+    valid=[]
+    invalid=[]
     n=fname.lower()
     for i in IMPORTERS:
         v=i.can_handle(n)
         if v:
-            res.append( (i, v) )
+            valid.append( (i, v) )
+        else:
+            invalid.append(i)
     # reverse sort along matching scores
-    res.sort(lambda a, b: cmp(b[1], a[1]))
-    return [ i for (i, v) in res ]
+    valid.sort(lambda a, b: cmp(b[1], a[1]))
+    return [ i for (i, v) in valid ], invalid
 
 def get_importer(fname, **kw):
     """Return the first/best valid importer.
     """
-    l=get_valid_importers(fname)
+    valid, invalid=get_valid_importers(fname)
     i=None
-    if len(l) == 0:
+    if len(valid) == 0:
         print "No valid importer"
     else:
-        if len(l) > 1:
-            print "Multiple importers: ", str(l)
+        if len(valid) > 1:
+            print "Multiple importers: ", str(valid)
             print "Using first one."
-        i=l[0](**kw)
+        i=valid[0](**kw)
     return i
 
 class GenericImporter(object):
@@ -149,7 +152,7 @@ class GenericImporter(object):
 
     def progress(self, value=None, label=None):
         if self.callback:
-            self.callback(value, label)
+            self.callback(min(value, 1.0), label)
 
     def process_options(self, option_list):
         (self.options, self.args) = self.optionparser.parse_args(args=option_list)
@@ -208,7 +211,8 @@ class GenericImporter(object):
         except AttributeError:
             # The package does not have a _color_palette
             pass
-        schema.append(at)
+        at._fieldnames = {}
+
         self.update_statistics('annotation-type')
         return at
 
@@ -1398,102 +1402,6 @@ class IRIDataImporter(GenericImporter):
         self.progress(1.0)
         return self.package
 register(IRIDataImporter)
-
-class EventImporter(GenericImporter):
-    """Event importer.
-    """
-    name=_("Event importer")
-
-    def __init__(self, **kw):
-        super(EventImporter, self).__init__(**kw)
-        self.atypes={}
-        self.schema=None
-        self.lid=0
-
-    def can_handle(fname):
-        if fname.endswith('.evt'):
-            return 100
-        else:
-            return 0
-    can_handle=staticmethod(can_handle)
-
-    def xml_to_text(self, element):
-        l=[]
-        if isinstance(element, handyxml.HandyXmlWrapper):
-            element=element.node
-        if element.nodeType is xml.dom.Node.TEXT_NODE:
-            # Note: element.data returns a unicode object
-            # that happens to be in the default encoding (iso-8859-1
-            # currently on my system). We encode it to utf-8 to
-            # be sure to deal only with this encoding afterwards.
-            l.append(element.data.encode('utf-8'))
-        elif element.nodeType is xml.dom.Node.ELEMENT_NODE:
-            for e in element.childNodes:
-                l.append(self.xml_to_text(e))
-        return "".join(l)
-
-    def iterator(self, traces):
-        progress=0.5
-        incr=0.95 / len(traces.event)
-        lid=0
-        for ev in traces.event:
-            lid=lid+1
-            # if event already imported, we jump to next one
-            if lid<=self.lid:
-                continue
-            else:
-                self.lid=lid
-            try:
-                begin=ev.begin
-            except AttributeError, e:
-                print str(e)
-                begin=0
-            try:
-                end=ev.end
-            except AttributeError, e:
-                print str(e)
-                end=begin
-            try:
-                typeid=ev.type
-            except AttributeError, e:
-                print str(e)
-                typeid="None"
-            if not self.atypes.has_key(typeid):
-                self.atypes[typeid]=self.create_annotation_type(self.schema, typeid)
-            d={
-                'type': self.atypes[typeid],
-                'begin': begin,
-                'end': end,
-                'content': self.xml_to_text(ev),
-            }
-
-            self.progress(progress, _("Parsing event information"))
-            progress += incr
-
-            yield d
-
-
-    def process_file(self, filename, offset=0):
-        evt=handyxml.xml(filename, forced=True)
-        self.lid=offset
-        if evt.node.nodeName != 'events':
-            self.log("This does not look like an event file.")
-            return
-
-        if self.package is None:
-            self.progress(0.1, _("Creating package"))
-            self.package=Package(uri='event_history.xml', source=None)
-
-        p=self.package
-        self.progress(0.2, _("Creating traces schema"))
-        self.schema=self.create_schema('Traces', title="Events imported schema")
-
-        self.progress(0.5, _("Generating traces"))
-        self.convert(self.iterator(evt))
-        self.progress(1.0)
-        return self.lid
-
-register(EventImporter)
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:

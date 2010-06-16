@@ -36,12 +36,15 @@ http://laszlok2.blogspot.com/2006/05/prince-of-cairo_28.html
 import struct
 import os
 
-from gettext import gettext as _
-
 import gtk
 import cairo
 import pango
 import gobject
+
+try:
+    import rsvg
+except ImportError:
+    rsvg=None
 
 # Advene part
 import advene.core.config as config
@@ -114,7 +117,7 @@ class GenericColorButtonWidget(gtk.DrawingArea):
         cr.paint_with_alpha(0.0)
         widget.drag_source_set_icon(cm, pixmap)
         widget._icon=pixmap
-        def set_cursor(wid, t=None):
+        def set_cursor(wid, t=None, precision=None):
             try:
                 self.container.set_annotation(t)
             except AttributeError:
@@ -247,6 +250,7 @@ class AnnotationWidget(GenericColorButtonWidget):
     def __init__(self, annotation=None, container=None):
         self.annotation=annotation
         self.active=False
+        self._fraction_marker=None
         GenericColorButtonWidget.__init__(self, element=annotation, container=container)
         self.connect('key-press-event', self.keypress, self.annotation)
         self.connect('enter-notify-event', lambda b, e: b.grab_focus() and True)
@@ -267,6 +271,13 @@ class AnnotationWidget(GenericColorButtonWidget):
                              ,
                              gtk.gdk.ACTION_LINK | gtk.gdk.ACTION_COPY | gtk.gdk.ACTION_MOVE )
         self.no_image_pixbuf=None
+
+    def set_fraction_marker(self, f):
+        self._fraction_marker = f
+        self.update_widget()
+    def get_fraction_marker(self):
+        return self._fraction_marker
+    fraction_marker = property(get_fraction_marker, set_fraction_marker)
 
     def _drag_begin(self, widget, context):
         try:
@@ -299,17 +310,19 @@ class AnnotationWidget(GenericColorButtonWidget):
         l.set_style(style)
         v.pack_start(l, expand=False)
 
-        def set_cursor(wid, t=None):
+        def set_cursor(wid, t=None, precision=None):
             if t is None:
                 t=self.annotation
+            if precision is None:
+                precision=config.data.preferences['bookmark-snapshot-precision']
+            # FIXME not multi-media compatible
+            cache=self.controller.gui.imagecache
             if self.no_image_pixbuf is None:
                 self.no_image_pixbuf=png_to_pixbuf(ImageCache.not_yet_available_image, width=config.data.preferences['drag-snapshot-width'])
             if not t == w._current:
-                if isinstance(t, (long, int)):
-                    # FIXME: find out the appropriate media.
-                    cache=self.controller.gui.imagecache
-                    if cache.is_initialized(t, epsilon=config.data.preferences['bookmark-snapshot-precision']):
-                        begin.set_from_pixbuf(png_to_pixbuf (cache.get(t, epsilon=config.data.preferences['bookmark-snapshot-precision']), width=config.data.preferences['drag-snapshot-width']))
+                if isinstance(t, long) or isinstance(t, int):
+                    if cache.is_initialized(t, epsilon=precision):
+                        begin.set_from_pixbuf(png_to_pixbuf (cache.get(t, epsilon=precision), width=config.data.preferences['drag-snapshot-width']))
                     elif begin.get_pixbuf() != self.no_image_pixbuf:
                         begin.set_from_pixbuf(self.no_image_pixbuf)
                     end.hide()
@@ -483,23 +496,30 @@ class AnnotationWidget(GenericColorButtonWidget):
             # The annotation contains a list of space-separated values
             # that should be treated as percentage (between 0.0 and
             # 100.0) of the height (FIXME: define a scale somewhere)
-            #l=[ (1 - v / 100.0) for v in self.annotation.content.parsed ]
-            l=[ (1 - float(v) / 100) for v in self.annotation.content.data.split() ]
+            l=[ (1 - v / 100.0) for v in self.annotation.content.parsed ]
             s=len(l)
             if width < s:
                 # There are more samples than available pixels. Downsample the data
                 l=l[::(s/width)+1]
                 s=len(l)
             w=1.0 * width / s
-            c=w
+            c = 0
             context.set_source_rgba(0, 0, 0, .5)
             context.move_to(0, height)
-            context.line_to(0, int(height * v))
             for v in l:
                 context.line_to(int(c), int(height * v))
                 c += w
+                context.line_to(int(c), int(height * v))                
             context.line_to(int(c), height)
             context.fill()
+            return
+        elif self.annotation.content.mimetype == 'image/svg+xml' and rsvg is not None:
+            if width < 6:
+                return
+            s=rsvg.Handle(data=self.annotation.content.data)
+            scale = 1.0 * height / s.get_dimension_data()[1]
+            context.set_matrix(cairo.Matrix( scale, 0, 0, scale, 0, 0 ))
+            s.render_cairo(context)
             return
 
         # Draw the border
@@ -532,6 +552,15 @@ class AnnotationWidget(GenericColorButtonWidget):
             context.show_text(title.encode('utf8'))
         except MemoryError:
             print "MemoryError while rendering title for annotation ", self.annotation.id
+
+        if self._fraction_marker is not None:
+            x=int(self._fraction_marker * width)
+            context.set_source_rgba(0.9, 0, 0, 0.9)
+            context.set_line_width(2)
+            context.move_to(x, 0)
+            context.line_to(x, height)
+            context.stroke()
+
 gobject.type_register(AnnotationWidget)
 
 class AnnotationTypeWidget(GenericColorButtonWidget):
@@ -752,11 +781,10 @@ gobject.type_register(TimestampMarkWidget)
 class AnnotationRepresentation(gtk.Button):
     """Representation for an annotation.
     """
-    def __init__(self, annotation, controller, callback=None):
+    def __init__(self, annotation, controller):
         super(AnnotationRepresentation, self).__init__()
         self.annotation=annotation
         self.controller=controller
-        self.callback=callback
         self.add(self.controller.gui.get_illustrated_text(text=self.controller.get_title(annotation),
                                                           position=annotation.begin,
                                                           vertical=False,
@@ -828,7 +856,7 @@ class TimestampRepresentation(gtk.Button):
     @ivar label: the label (timestamp) widget
     @type label: gtk.Label
     """
-    def __init__(self, value, controller, width=None, epsilon=None, comment_getter=None, visible_label=True):
+    def __init__(self, value, controller, width=None, epsilon=None, comment_getter=None, visible_label=True, bgcolor=None):
         """Instanciate a new TimestampRepresentation.
 
         @param value: the timestamp value
@@ -843,11 +871,13 @@ class TimestampRepresentation(gtk.Button):
         @type comment_getter: method
         @param visible_label: should the timestamp label be displayed?
         @type visible_label: boolean
+        @param bgcolor: background color
+        @type bgcolor: string
         """
         super(TimestampRepresentation, self).__init__()
         self._value=value
         self.controller=controller
-        self.width=width or config.data.preferences['bookmark-snapshot-width']
+        self._width=width or config.data.preferences['bookmark-snapshot-width']
         if epsilon is None:
             epsilon=config.data.preferences['bookmark-snapshot-precision']
         self.epsilon=epsilon
@@ -859,16 +889,11 @@ class TimestampRepresentation(gtk.Button):
         # element as parameter, and adds appropriate menu items.
         self.extend_popup_menu=None
         self.highlight=False
-
-        style=get_color_style(self, 'black', 'white')
-        self.set_style(style)
+        self._bgcolor = None
 
         box=gtk.VBox()
-        box.set_style(style)
         self.image=gtk.Image()
-        self.image.set_style(style)
         self.label=gtk.Label()
-        self.label.set_style(style)
         box.pack_start(self.image, expand=False)
         box.pack_start(self.label, expand=False)
         if not self.visible_label:
@@ -876,6 +901,8 @@ class TimestampRepresentation(gtk.Button):
             self.label.hide()
         self.add(box)
         self.box=box
+
+        self.bgcolor = bgcolor
 
         self.refresh()
 
@@ -896,18 +923,40 @@ class TimestampRepresentation(gtk.Button):
 
         self._rules=[]
         # React to UpdateSnapshot events
-        def snapshot_update_cb(context, target):
-            if abs(context.globals['position'] - self._value) <= self.epsilon:
-                # Update the representation
-                self.refresh()
-            return True
-        def remove_rules(*p):
-            for r in self._rules:
-                self.controller.event_handler.remove_rule(r, 'internal')
-            return False
         self._rules.append(self.controller.event_handler.internal_rule (event='SnapshotUpdate',
-                                                                        method=snapshot_update_cb))
-        self.connect('destroy', remove_rules)
+                                                                        method=self.snapshot_update_cb))
+        self.connect('destroy', self.remove_rules)
+
+    def get_bgcolor(self):
+        return self._bgcolor
+    def set_bgcolor(self, color):
+        if color is None:
+            color='black'
+        if color != self._bgcolor:
+            style = get_color_style(self, color, 'white')
+            self.set_style(style)
+            self.box.set_style(style)
+            self.image.set_style(style)
+            self.label.set_style(style)
+            self._bgcolor = color
+    bgcolor = property(get_bgcolor, set_bgcolor)
+     
+    def set_width(self, w):
+        self._width = w
+        self.refresh()
+    def get_width(self):
+        return self._width
+    width = property(get_width, set_width)
+
+    def snapshot_update_cb(self, context, target):
+        if abs(context.globals['position'] - self._value) <= self.epsilon:
+            # Update the representation
+            self.refresh()
+        return True
+    def remove_rules(self, *p):
+        for r in self._rules:
+            self.controller.event_handler.remove_rule(r, 'internal')
+        return False
 
     def get_value(self):
         return self._value
@@ -965,6 +1014,8 @@ class TimestampRepresentation(gtk.Button):
                 png=ImageCache.not_yet_available_image
             else:
                 png=ic.get(v, epsilon=self.epsilon)
+            if png == ImageCache.not_yet_available_image and 'async-snapshot' in self.controller.player.player_capabilities:
+                self.controller.queue_action(self.controller.update_snapshot, v)
             self.image.set_from_pixbuf(png_to_pixbuf(png, width=self.width))
             self.set_size_request(-1, -1)
             self.image.show()
@@ -974,7 +1025,7 @@ class TimestampRepresentation(gtk.Button):
             self.label.show()
         else:
             self.label.hide()
-        self.controller.gui.tooltips.set_tip(self, ts)
+        self.set_tooltip_text(ts)
         return True
 
     def as_html(self, with_timestamp=True):
@@ -995,11 +1046,16 @@ class TimestampRepresentation(gtk.Button):
         self.width=w
         self.refresh()
 
-    def invalidate_snapshot(self, *p):
-        """Invalidate the snapshot image.
+    def refresh_snapshot(self, *p):
+        """Refresh the snapshot image.
         """
-        self.controller.package.imagecache.invalidate(self.value, self.epsilon)
-        self.controller.notify('SnapshotUpdate', position=self.value)
+        ic=self.controller.gui.imagecache
+        if ic.is_initialized(self.value, self.epsilon):
+            # Invalidate current snapshot
+            ic.invalidate(self.value, self.epsilon)
+            self.controller.notify('SnapshotUpdate', position=self.value)
+        # Ask for refresh
+        self.controller.update_snapshot(self.value)
         self.refresh()
         return True
 
@@ -1017,11 +1073,24 @@ class TimestampRepresentation(gtk.Button):
         p=self.controller.player
 
         menu = gtk.Menu()
-        item = gtk.MenuItem(_("Invalidate snapshot"))
-        item.connect('activate', self.invalidate_snapshot)
+
+        def goto(it, t):
+            c=self.controller
+            pos = c.create_position (value=t,
+                                     key=c.player.MediaTime,
+                                     origin=c.player.AbsolutePosition)
+            c.update_status (status="set", position=pos)
+            return True
+
+        item = gtk.MenuItem(_("Play"))
+        item.connect('activate', goto, self.value)
         menu.append(item)
 
-        item = gtk.MenuItem(_("Use the current player position"))
+        item = gtk.MenuItem(_("Refresh snapshot"))
+        item.connect('activate', self.refresh_snapshot)
+        menu.append(item)
+
+        item = gtk.MenuItem(_("Use current player position"))
         item.connect('activate', lambda i: self.set_value(p.current_position_value))
         if p.status != p.PauseStatus and p.status != p.PlayingStatus:
             item.set_sensitive(False)
@@ -1036,8 +1105,6 @@ class TimestampRepresentation(gtk.Button):
         return menu
 
     def set_color(self, color):
-        # FIXME: does not work ATM
-        self.modify_bg(gtk.STATE_NORMAL, color)
-        self.modify_base(gtk.STATE_NORMAL, color)
+        self.bgcolor = color
 
 gobject.type_register(TimestampRepresentation)

@@ -18,6 +18,8 @@
 #
 
 from advene.util.importer import GenericImporter, register
+import advene.core.config as config
+import time
 
 from gettext import gettext as _
 

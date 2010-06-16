@@ -23,6 +23,7 @@ Generic popup menu used by the various Advene views.
 
 import gtk
 import re
+import os
 
 from gettext import gettext as _
 
@@ -40,7 +41,6 @@ from libadvene.model.cam.query import Query
 from advene.rules.elements import RuleSet, Rule, Event, Condition, Action
 
 from advene.gui.util import image_from_position, dialog
-from advene.gui.edit.create import CreateElementPopup
 import advene.util.helper as helper
 
 class Menu:
@@ -56,10 +56,7 @@ class Menu:
 
     def get_title (self, element):
         """Return the element title."""
-        t=self.controller.get_title(element)
-        if len(t) > 80:
-            t=t[:80]
-        return t
+        return self.controller.get_title(element, max_size=40)
 
     def goto_annotation (self, widget, ann):
         c=self.controller
@@ -99,10 +96,10 @@ class Menu:
             mimetype='application/x-advene-ruleset'
         else:
             mimetype=None
-        cr = CreateElementPopup(type_=elementtype,
-                                parent=parent,
-                                controller=self.controller,
-                                mimetype=mimetype)
+        cr = self.controller.gui.create_element_popup(type_=elementtype,
+                                                      parent=parent,
+                                                      controller=self.controller,
+                                                      mimetype=mimetype)
         cr.popup()
         return True
 
@@ -169,7 +166,7 @@ class Menu:
         #
         #self.do_insert_resource_dir(parent=parent, dirname=dirname)
         return True
-        
+
     def edit_element (self, widget, el):
         self.controller.gui.edit_element(el)
         return True
@@ -179,15 +176,19 @@ class Menu:
                                             source="here/annotation_types/%s/annotations" % annotationtype.id)
         return True
 
-    def offset_element (self, widget, el):
+    def popup_get_offset(self):
         offset=dialog.entry_dialog(title='Enter an offset',
                                    text=_("Give the offset to use\non specified element.\nIt is in ms and can be\neither positive or negative."),
                                    default="0")
         if offset is not None:
-            offset=long(offset)
+            return long(offset)
         else:
-            return True
+            return offset
 
+    def offset_element (self, widget, el):
+        offset = self.popup_get_offset()
+        if offset is None:
+            return True
         if isinstance(el, Annotation):
             self.controller.notify('EditSessionStart', element=el, immediate=True)
             el.begin += offset
@@ -212,6 +213,7 @@ class Menu:
                     self.controller.notify('AnnotationEditEnd', annotation=a, batch=batch_id)
                     self.controller.notify('EditSessionEnd', element=a)
         return True
+
     def copy_id (self, widget, el):
         clip=gtk.clipboard_get()
         clip.set_text(el.id)
@@ -303,16 +305,29 @@ class Menu:
         menu.show_all()
         return menu
 
+    def display_stats(self, m, at):
+        """Display statistics about the annotation type.
+        """
+        msg=_("<b>Statistics about %s</b>\n\n") % self.controller.get_title(at)
+        msg += "%d annotations\n" % len(at.annotations)
+        msg += "Min duration : %s\n" % helper.format_time(min( a.duration for a in at.annotations))
+        msg += "Max duration : %s\n" % helper.format_time(max( a.duration for a in at.annotations))
+        msg += "Mean duration : %s\n" % helper.format_time(sum( a.duration for a in at.annotations) / len(at.annotations))
+        msg += "Total duration : %s\n" % helper.format_time(sum( a.duration for a in at.annotations))
+        dialog.message_dialog(msg)
+        return True
+
     def renumber_annotations(self, m, at):
         """Renumber all annotations of a given type.
         """
-        d = gtk.Dialog(title=_("Renumbering annotations of type %s") % self.controller.get_title(at),
+        d = gtk.Dialog(title=_("Renumbering annotations of type %s") % self.get_title(at),
                        parent=None,
                        flags=gtk.DIALOG_DESTROY_WITH_PARENT,
                        buttons=( gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL,
                                  gtk.STOCK_OK, gtk.RESPONSE_OK,
                                  ))
-        l=gtk.Label(_("Renumber all annotations according to their order.\n\nThis will replace the first numeric value of the annotation content with the new annotation number. If no numeric value is found and the annotation is structured, it will insert the number. *If no numeric value is found and the annotation is of type text/plain, it will overwrite the annotation content.*\nThe offset parameter allows you to renumber from the annotation number offset."))
+        l=gtk.Label()
+        l.set_markup(_("<b>Renumber all annotations according to their order.</b>\n\n<i>Note that this action cannot be undone.</i>\nReplace the first numeric value of the annotation content with the new annotation number.\nIf no numeric value is found and the annotation is structured, it will insert the number.\nIf no numeric value is found and the annotation is of type text/plain, it will overwrite the annotation content.\nThe offset parameter allows you to renumber from a given annotation."))
         l.set_line_wrap(True)
         l.show()
         d.vbox.add(l)
@@ -332,14 +347,28 @@ class Menu:
         dialog.center_on_mouse(d)
 
         res=d.run()
-        ret=None
         if res == gtk.RESPONSE_OK:
             re_number=re.compile('(\d+)')
             re_struct=re.compile('^num=(\d+)$', re.MULTILINE)
-            offset=s.get_value_as_int()-1
+            offset=s.get_value_as_int() - 1
             l=at.annotations
-            batch_id=object()
+            l.sort(key=lambda a: a.fragment.begin)
+            l=l[offset:]
+            size=float(len(l))
+            dial=gtk.Dialog(_("Renumbering %d annotations") % size,
+                           None,
+                           gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT,
+                           (gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL))
+            prg=gtk.ProgressBar()
+            dial.vbox.pack_start(prg, expand=False)
+            dial.show_all()
+
             for i, a in enumerate(l[offset:]):
+                prg.set_text(_("Annotation #%d") % i)
+                prg.set_fraction( i / size )
+                while gtk.events_pending():
+                    gtk.main_iteration()
+
                 if a.type.mimetype == 'application/x-advene-structured':
                     if re_struct.search(a.content.data):
                         # A 'num' field is present. Update it.
@@ -355,13 +384,10 @@ class Menu:
                     data=str(i+1)
                 else:
                     data=None
-                if data is not None:
-                    self.controller.notify('EditSessionStart', element=a, immediate=True)
+                if data is not None and a.content.data != data:
                     a.content.data=data
-                    self.controller.notify('AnnotationEditEnd', annotation=a, batch=batch_id)
-                    self.controller.notify('EditSessionEnd', element=a)
-        else:
-            ret=None
+            self.controller.notify('PackageActivate', package=self.controller.package)
+            dial.destroy()
 
         d.destroy()
         return True
@@ -389,7 +415,7 @@ class Menu:
         if not self.readonly:
             # Common to deletable elements
             if type(element) in (Annotation, Relation, View, Query,
-                                 AnnotationType, RelationType): # ResourceData
+                                 Schema, AnnotationType, RelationType): #ResourceData
                 add_item(_("Delete"), self.delete_element, element)
 
             #if type(element) == Resources and type(element.parent) == Resources:
@@ -398,7 +424,7 @@ class Menu:
 
             ## Common to offsetable elements
             if (config.data.preferences['expert-mode']
-                and type(element) in (Annotation, AnnotationType, Package)):
+                and type(element) in (Annotation, Schema, AnnotationType, Package)):
                 add_item(_("Offset"), self.offset_element, element)
 
         submenu.show_all()
@@ -430,7 +456,6 @@ class Menu:
         item = gtk.MenuItem(_("Highlight"), use_underline=False)
         item.set_submenu(self.activate_submenu(element))
         menu.append(item)
-
 
         def build_submenu(submenu, el, items):
             """Build the submenu for the given element.
@@ -496,14 +521,14 @@ class Menu:
             i.set_submenu(submenu)
             submenu.connect('map', build_related, element)
             menu.append(i)
-        
+
             if element.incoming_relations:
                 i=gtk.MenuItem(_("Incoming relations"), use_underline=False)
                 submenu=gtk.Menu()
                 i.set_submenu(submenu)
                 submenu.connect('map', build_submenu, element, element.incoming_relations)
                 menu.append(i)
-        
+
             if element.outgoing_relations:
                 i=gtk.MenuItem(_("Outgoing relations"), use_underline=False)
                 submenu=gtk.Menu()
@@ -561,11 +586,28 @@ class Menu:
         #add_item(_('Create a new resource file...'), self.create_element, ResourceData, element)
         add_item(_('Insert a new resource file...'), self.insert_resource_data, element)
         add_item(_('Insert a new resource directory...'), self.insert_resource_directory, element)
+
+        # FIXME
+        #if element.resourcepath == '':
+        #    # Resources root
+        #    if not element.has_key('soundclips'):
+        #        # Create the soundclips folder
+        #        element['soundclips'] = element.DIRECTORY_TYPE
+        #        self.controller.notify('ResourceCreate', resource=element['soundclips'])
+        #    add_item(_('Insert a soundclip...'), self.insert_soundclip, element['soundclips'])
+        #elif element.resourcepath == 'soundclips':
+        #    add_item(_('Insert a soundclip...'), self.insert_soundclip, element)
         return
 
     def make_resourcedata_menu(self, element, menu):
         def add_item(*p, **kw):
             self.add_menuitem(menu, *p, **kw)
+        def play_sound(w, filename):
+            self.controller.soundplayer.play(filename)
+            return True
+        if element.id.split('.')[-1] in ('wav', 'ogg', 'mp3'):
+            # Audio resource (presumably). Propose to play it.
+            add_item(_('Play sound'), play_sound, element.file_)
         if self.readonly:
             return
         return
@@ -588,12 +630,12 @@ class Menu:
         p=self.controller.package
         ident='v_caption_%s' % at.id
         if p.get(ident) is not None:
-            dialog.message_dialog(_("A caption dynamic view for %s already seems to exist.") % self.controller.get_title(at))
+            dialog.message_dialog(_("A caption dynamic view for %s already seems to exist.") % self.get_title(at))
             return True
         v=p.create_view(id=ident,
                         mimetype='application/x-advene-ruleset')
         v.title=_("Caption %s annotations") % self.controller.get_title(at)
-        
+
         # Build the ruleset
         r=RuleSet()
         catalog=self.controller.event_handler.catalog
@@ -611,7 +653,7 @@ class Menu:
         r.add_rule(rule)
 
         v.content.data=r.xml_repr()
-        
+
         p.views.append(v)
         self.controller.notify('ViewCreate', view=v)
         self.controller.activate_stbv(v)
@@ -628,17 +670,17 @@ class Menu:
         add_item(_('Generate a caption dynamic view'), lambda i: self.create_dynamic_view(element))
         add_item(_('Display as transcription'), lambda i: self.controller.gui.open_adhoc_view('transcription', source='here/annotation_types/%s/annotations' % element.id))
         add_item(_('Display annotations in table'), lambda i: self.controller.gui.open_adhoc_view('table', elements=element.annotations))
+        add_item(_('Export to another format...'), lambda i: self.controller.gui.export_element(element))
         if self.readonly:
             return
+        add_item(None)
         add_item(_('Select a color'), self.pick_color, element)
         add_item(_('Create a new annotation...'), self.create_element, Annotation, element)
         add_item(_('Delete all annotations...'), self.delete_elements, element, element.annotations)
         add_item(_('Renumber annotations'), self.renumber_annotations, element)
-
+        add_item(_('Adjust annotation bounds'), lambda m, at: self.controller.gui.adjust_annotationtype_bounds(at), element)
         add_item('')
-        i=gtk.MenuItem(_('%d annotations(s)') % len(element.annotations))
-        menu.append(i)
-        i.set_sensitive(False)
+        add_item(_('%d annotations(s) - statistics') % len(element.annotations), self.display_stats, element)
 
         return
 
@@ -681,12 +723,6 @@ class Menu:
         return
 
     def make_view_menu(self, element, menu):
-        def wysiwyg_edit(i, e):
-            c=self.controller.build_context(here=e)
-            url=c.evaluate('here/view/_richedit/absolute_url')
-            self.controller.open_url(url)
-            return True
-
         def open_in_browser(i, v):
             c=self.controller.build_context()
             url=c.evaluate('here/view/%s/absolute_url' % v.id)
@@ -704,9 +740,6 @@ class Menu:
         # FIXME: check toplevel metadata
         elif t == 'static':
             add_item(_('Open in web browser'), open_in_browser, element)
-        if 'html' in element.content.mimetype and self.controller.package.get('_richedit') is not None:
-            # The richedit view is available. Propose to use it.
-            add_item(_('Edit in the WYSIWYG editor'), wysiwyg_edit, element)
         return
 
     def make_bundle_menu(self, element, menu):
@@ -722,3 +755,4 @@ class Menu:
         elif element.viewableType == 'schema-list':
             add_item(_('Create a new schema...'), self.create_element, Schema, element.rootPackage)
         return
+

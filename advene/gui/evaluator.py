@@ -30,15 +30,38 @@ import __builtin__
 import inspect
 
 class Evaluator:
-    """Evaluator popup window.
+    """Evaluator window. Shortcuts:
+    
+    F1: display this help
+    
+    Control-Return: evaluate the expression. If a selection is
+    active, evaluate only the selection.
+    
+    Control-l: clear the expression buffer
+    Control-S: save the expression buffer
+    Control-n: next item in history
+    Control-p: previous item in history
+    Control-b: store the expression as a bookmark
+    Control-space: display bookmarks
+    
+    Control-PageUp/PageDown: scroll the output window
+    Control-s: save the output
+    
+    Control-d: display completion possibilities
+    Tab: perform autocompletion
+    Control-h:   display docstring for element before cursor
+    Control-H:   display source for element before cursor
+    Control-f:   auto-fill parameters for a function
     """
-    def __init__(self, globals_=None, locals_=None, historyfile=None):
+    def __init__(self, globals_=None, locals_=None, historyfile=None, display_info_widget=False):
         if globals_ is None:
             globals_ = {}
         if locals_ is None:
             locals_ = {}
         self.globals_ = globals_
         self.locals_ = locals_
+        # display info widget (additional messages)
+        self.display_info_widget = display_info_widget
 
         # History and bookmark handling
         self.history = []
@@ -105,6 +128,8 @@ class Evaluator:
 
     def load_data(self, name):
         res=[]
+        if name is None:
+            return res
         try:
             f=open(name, 'r')
         except IOError:
@@ -117,6 +142,8 @@ class Evaluator:
     def save_data(self, data, name):
         """Save a command history.
         """
+        if name is None:
+            return
         try:
             f=open(name, 'w')
         except IOError:
@@ -152,7 +179,7 @@ class Evaluator:
     def scroll_output(self, d):
         a=self.resultscroll.get_vadjustment()
         new=a.value + d * a.page_increment
-        if  new >= 0 and new < a.upper - a.page_size:
+        if  new >= 0 and new < a.upper:
             a.value=new
         a.value_changed ()
         return True
@@ -226,29 +253,7 @@ class Evaluator:
         """Display the help message.
         """
         self.clear_output()
-        self.log("""Evaluator window help:
-
-        F1: display this help
-
-        Control-Return: evaluate the expression. If a selection is
-                        active, evaluate only the selection.
-
-        Control-l: clear the expression buffer
-        Control-S: save the expression buffer
-        Control-n: next item in history
-        Control-p: previous item in history
-        Control-b: store the expression as a bookmark
-        Control-space: display bookmarks
-
-        Control-PageUp/PageDown: scroll the output window
-        Control-s: save the output
-
-        Control-d: display completion possibilities
-        Tab: perform autocompletion
-        Control-h:   display docstring for element before cursor
-        Control-H:   display source for element before cursor
-        Control-f:   auto-fill parameters for a function
-        """)
+        self.log(self.__doc__)
         return True
 
     def previous_entry(self, *p, **kw):
@@ -654,7 +659,7 @@ class Evaluator:
         window = gtk.Window(gtk.WINDOW_TOPLEVEL)
         window.connect('key-press-event', self.key_pressed_cb)
         window.set_title ("Python evaluation")
-        
+
         b=gtk.SeparatorToolItem()
         b.set_expand(True)
         b.set_draw(False)
@@ -737,12 +742,18 @@ class Evaluator:
         if not self.bookmarks:
             return True
         m=gtk.Menu()
-        for b in self.bookmarks:
-            i=gtk.MenuItem(b)
+        for b in reversed(self.bookmarks):
+            i=gtk.MenuItem(b, use_underline=False)
             i.connect('activate', set_expression, b)
             m.append(i)
         m.show_all()
         m.popup(None, widget, None, 0, gtk.get_current_event_time())
+        return True
+
+    def info(self, *p):
+        if self.display_info_widget:
+            for l in p:
+                self.logbuffer.insert_at_cursor(time.strftime("%H:%M:%S") + l + "\n")
         return True
 
     def build_widget(self):
@@ -755,17 +766,18 @@ class Evaluator:
         # Use small toolbar button everywhere
         gtk.settings_get_default().set_property('gtk_toolbar_icon_size', gtk.ICON_SIZE_SMALL_TOOLBAR)
 
-        for (icon, action) in (
-            (gtk.STOCK_SAVE, self.save_output_cb),
-            (gtk.STOCK_CLEAR, self.clear_output),
-            (gtk.STOCK_DELETE, self.clear_expression),
-            (gtk.STOCK_EXECUTE, self.evaluate_expression),
-            (gtk.STOCK_ADD, self.add_bookmark),
-            (gtk.STOCK_REMOVE, self.remove_bookmark),
-            (gtk.STOCK_INDEX, self.display_bookmarks),
+        for (icon, tip, action) in (
+            (gtk.STOCK_SAVE, "Save output window (C-s)", self.save_output_cb),
+            (gtk.STOCK_CLEAR, "Clear output window", self.clear_output),
+            (gtk.STOCK_DELETE, "Clear expression (C-l)", self.clear_expression),
+            (gtk.STOCK_EXECUTE, "Evaluate expression (C-Return)", self.evaluate_expression),
+            (gtk.STOCK_ADD, "Add a bookmark (C-b)", self.add_bookmark),
+            (gtk.STOCK_REMOVE, "Remove a bookmark", self.remove_bookmark),
+            (gtk.STOCK_INDEX, "Display bookmarks (C-Space)", self.display_bookmarks),
             ):
             b=gtk.ToolButton(icon)
             b.connect('clicked', action)
+            b.set_tooltip_text(tip)
             tb.insert(b, -1)
 
         # So that applications can define their own buttons
@@ -793,7 +805,19 @@ class Evaluator:
         self.resultscroll.add(self.output)
         self.resultscroll.set_size_request( -1, 200 )
         f.add(self.resultscroll)
-        vbox.add(f)
+
+        if self.display_info_widget:
+            self.logwidget = gtk.TextView()
+            self.logbuffer = self.logwidget.get_buffer()
+            sw=gtk.ScrolledWindow()
+            sw.add(self.logwidget)
+
+            pane=gtk.VPaned()
+            vbox.add(pane)
+            pane.add1(f)
+            pane.pack2(sw)
+        else:
+            vbox.add(f)
 
         self.source.connect('key-press-event', self.key_pressed_cb)
         self.output.connect('key-press-event', self.key_pressed_cb)
@@ -806,11 +830,14 @@ class Evaluator:
 
         return vbox
 
-if __name__ == "__main__":
-
-    ev=Evaluator(globals_=globals(), locals_=locals(),
-                 historyfile=os.path.join(os.getenv('HOME'),
-                                          '.pyeval.log'))
+def launch(globals_=None, locals_=None, historyfile=None):
+    if globals_ is None:
+        globals_={}
+    if locals_ is None:
+        locals_={}
+    if historyfile is None:
+        historyfile=os.path.join(os.getenv('HOME'), '.pyeval.log')
+    ev=Evaluator(globals_=globals_, locals_=locals_, historyfile=historyfile)
 
     ev.locals_['self']=ev
     window=ev.popup(embedded=False)
@@ -819,6 +846,7 @@ if __name__ == "__main__":
     window.connect('destroy', lambda e: gtk.main_quit())
 
     gtk.main ()
-    # Will not do anything here since ev.historyfile was not
-    # initialized
     ev.save_history()
+
+if __name__ == "__main__":
+    launch(globals(), locals())

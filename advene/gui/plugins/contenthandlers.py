@@ -57,7 +57,6 @@ class ZoneContentHandler (ContentHandler):
         self.fname=None
         self.view = None
         self.shape = None
-        self.tooltips=gtk.Tooltips()
 
     def set_editable (self, boolean):
         self.editable = boolean
@@ -163,7 +162,6 @@ class SVGContentHandler (ContentHandler):
         self.view = None
         self.sourceview=None
         self.editing_source=False
-        self.tooltips=gtk.Tooltips()
 
     def close(self):
         for r in self.rules:
@@ -183,6 +181,9 @@ class SVGContentHandler (ContentHandler):
                 f.close()
             except xml.parsers.expat.ExpatError:
                 root=None
+                dialog.message_dialog(
+                    _("Error while parsing SVG content:\n\n%s") % unicode(e),
+                    icon=gtk.MESSAGE_ERROR)
             if root:
                 self.view.drawer.clear_objects()
                 path=''
@@ -266,7 +267,7 @@ class SVGContentHandler (ContentHandler):
         return False
 
     def set_begin(self, t):
-        i=image_from_position(self.controller, t, height=160)
+        i=image_from_position(self.controller, t)
         self.view.set_background(i)
         return True
 
@@ -275,20 +276,20 @@ class SVGContentHandler (ContentHandler):
         vbox=gtk.VBox()
 
         if self.parent is not None and hasattr(self.parent, 'begin'):
-            i=image_from_position(self.controller, self.parent.begin, height=160)
+            i=image_from_position(self.controller, self.parent.begin)
             self.view = ShapeEditor(background=i, pixmap_dir=config.data.advenefile('pixmaps'))
 
             def snapshot_update_cb(context, target):
                 if context.globals['position'] == self.parent.begin:
                     # Refresh image
-                    i=image_from_position(self.controller, self.parent.begin, height=160)
+                    i=image_from_position(self.controller, self.parent.begin)
                     self.view.set_background(i)
                 return True
             self.rules.append(self.controller.event_handler.internal_rule (event='SnapshotUpdate',
                                                                            method=snapshot_update_cb))
 
             def annotation_update_cb(context, target):
-                i=image_from_position(self.controller, self.parent.begin, height=160)
+                i=image_from_position(self.controller, self.parent.begin)
                 self.view.set_background(i)
                 return True
             self.rules.append(self.controller.event_handler.internal_rule (event='AnnotationEditEnd',

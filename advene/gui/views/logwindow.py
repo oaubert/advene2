@@ -42,6 +42,7 @@ def register(controller):
 class LogWindow(AdhocView):
     view_name = _("Links")
     view_id = 'linksview'
+    tooltip = _("URL stack")
     def __init__ (self, controller=None):
         super(LogWindow, self).__init__(controller=controller)
         self.close_on_package_load = False
@@ -52,7 +53,6 @@ class LogWindow(AdhocView):
         self.options={}
 
         self.controller=controller
-        self.tooltips=gtk.Tooltips()
         # Timeout for messages in ms
         self.timeout=5000
         # Data is a tuple list: (timestamp, position, message, url, widget)
@@ -120,13 +120,13 @@ class LogWindow(AdhocView):
         # Make the message left-aligned
         b.child.set_alignment(0.0, 0.5)
         b.connect('clicked', self.goto_url, url)
-        self.tooltips.set_tip(b, _("Go to %s") % url)
+        b.set_tooltip_text(_("Go to %s") % url)
         hb.add(b)
 
         b=gtk.Button(helper.format_time(position))
         b.child.set_alignment(0.0, 0.5)
         b.connect('clicked', self.goto_position, position)
-        self.tooltips.set_tip(b, _("Go to the given position"))
+        b.set_tooltip_text(_("Go to the given position"))
         hb.pack_start(b, expand=False)
 
         hb.show_all()

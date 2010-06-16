@@ -19,6 +19,9 @@
 """
 Merge packages
 ==============
+
+FIXME: integrate svn+ssh://svn.gna.org/svn/advene/trunk@6540 
+(git 7b5e2c54082087a91b5158bdc3b6d357784f5e1c )
 """
 
 import sys

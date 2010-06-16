@@ -22,8 +22,15 @@
 import sys
 import re
 import os
+import operator
 
 import gtk
+import pango
+
+try:
+    import gtksourceview2
+except ImportError:
+    gtksourceview2=None
 
 import urllib
 
@@ -71,7 +78,7 @@ class TranscriptionImporter(advene.util.importer.GenericImporter):
 class TranscriptionEdit(AdhocView):
     view_name = _("Note taking")
     view_id = 'transcribe'
-    tooltip = _("Synchronized note taking editor")
+    tooltip = _("Take notes on the fly as a timestamped transcription")
     def __init__ (self, controller=None, parameters=None, filename=None):
         super(TranscriptionEdit, self).__init__(controller=controller)
         self.close_on_package_load = False
@@ -83,10 +90,13 @@ class TranscriptionEdit(AdhocView):
 
         self.controller=controller
         self.package=controller.package
-        self.tooltips=gtk.Tooltips()
 
         self.sourcefile=None
         self.empty_re = re.compile('^\s*$')
+
+        # When importing existing annotations, memorize their type so
+        # that we can propose it by default when exporting again.
+        self.imported_type=None
 
         self.options = {
             'timestamp': True, # _("If checked, click inserts timestamp marks"))
@@ -99,6 +109,7 @@ class TranscriptionEdit(AdhocView):
             'autoscroll': True,
             'autoinsert': True,
             'snapshot-size': 32,
+            'font-size': 0,
             }
 
         self.colors = {
@@ -121,6 +132,7 @@ class TranscriptionEdit(AdhocView):
         self.timestamp_play = None
 
         self.widget=self.build_widget()
+        self.update_font_size()
         if filename is not None:
             self.load_transcription(filename=filename)
         for n, v in arg:
@@ -144,11 +156,27 @@ class TranscriptionEdit(AdhocView):
         ew.add_spin(_("Reaction time"), "delay", _("Reaction time (substracted from current player time)"), -5000, 5000)
         ew.add_checkbox(_("Auto-insert"), "autoinsert", _("Automatic timestamp mark insertion"))
         ew.add_spin(_("Automatic insertion delay"), 'automatic-mark-insertion-delay', _("If autoinsert is active, timestamp marks will be automatically inserted when text is entered after no interaction since this delay (in ms).\n1000 is typically a good value."), 0, 100000)
+        ew.add_spin(_("Font size"), "font-size", _("Font size for text (0 for standard size)"), 0, 48)
 
         res=ew.popup()
         if res:
+            if cache['font-size'] != self.options['font-size']:
+                # Font-size was changed. Update the textview.
+                self.update_font_size(cache['font-size'])
             self.options.update(cache)
         return True
+
+    def update_font_size(self, size=None):
+        if size is None:
+            size=self.options['font-size']
+        if size == 0:
+            # Get the default value from a temporary textview
+            t=gtk.TextView()
+            size=t.get_pango_context().get_font_description().get_size() / pango.SCALE
+            del t
+        f=self.textview.get_pango_context().get_font_description()
+        f.set_size(size * pango.SCALE)
+        self.textview.modify_font(f)
 
     def show_searchbox(self, *p):
         self.searchbox.show()
@@ -204,8 +232,30 @@ class TranscriptionEdit(AdhocView):
             return True
         return False
 
+    def can_undo(self):
+        try:
+            return hasattr(self.textview.get_buffer(), 'can_undo')
+        except AttributeError, e:
+            return False
+
+    def undo(self, *p):
+        b=self.textview.get_buffer()
+        if b.can_undo():
+            b.undo()
+        return True
+
     def build_widget(self):
         vbox = gtk.VBox()
+
+        if gtksourceview2 is not None:
+            self.textview=gtksourceview2.View()
+            self.textview.set_buffer(gtksourceview2.Buffer())
+        else:
+            self.textview = gtk.TextView()
+
+        # We could make it editable and modify the annotation
+        self.textview.set_editable(True)
+        self.textview.set_wrap_mode (gtk.WRAP_WORD)
 
         hb=gtk.HBox()
         vbox.pack_start(hb, expand=False)
@@ -218,10 +268,6 @@ class TranscriptionEdit(AdhocView):
         sw.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
         vbox.add (sw)
 
-        self.textview = gtk.TextView()
-        # We could make it editable and modify the annotation
-        self.textview.set_editable(True)
-        self.textview.set_wrap_mode (gtk.WRAP_WORD)
 
         # 0-mark at the beginning
         zero=self.create_timestamp_mark(0, self.textview.get_buffer().get_start_iter())
@@ -439,9 +485,10 @@ class TranscriptionEdit(AdhocView):
 
         def popup_modify(win, t):
             timestamp=child.value + t
-            self.tooltips.set_tip(child, "%s" % helper.format_time(timestamp))
-            if self.tooltips.active_tips_data is None:
-                button.emit('show-help', gtk.WIDGET_HELP_TOOLTIP)
+            child.set_tooltip_text("%s" % helper.format_time(timestamp))
+            # FIXME: find a way to do this in the new gtk.Tooltip API?
+            #if self.tooltips.active_tips_data is None:
+            #    button.emit('show-help', gtk.WIDGET_HELP_TOOLTIP)
             child.value=timestamp
             if self.options['play-on-scroll']:
                 popup_goto(child, timestamp)
@@ -519,6 +566,7 @@ class TranscriptionEdit(AdhocView):
             return True
 
         b=self.textview.get_buffer()
+        b.begin_user_action()
         anchor=b.create_child_anchor(it)
         # Create the mark representation
         child=TimestampRepresentation(timestamp, self.controller, width=self.options['snapshot-size'], visible_label=False)
@@ -526,6 +574,7 @@ class TranscriptionEdit(AdhocView):
         child.connect('clicked', popup_goto)
         child.popup_menu=None
         child.connect('button-press-event', self.mark_button_press_cb, anchor, child)
+        b.end_user_action()
 
         def handle_scroll_event(button, event):
             if not (event.state & gtk.gdk.CONTROL_MASK):
@@ -535,14 +584,15 @@ class TranscriptionEdit(AdhocView):
             else:
                 i='scroll-increment'
 
-            if event.direction == gtk.gdk.SCROLL_DOWN:
+            if event.direction == gtk.gdk.SCROLL_DOWN or event.direction == gtk.gdk.SCROLL_RIGHT:
                 button.value -= config.data.preferences[i]
-            elif event.direction == gtk.gdk.SCROLL_UP:
+            elif event.direction == gtk.gdk.SCROLL_UP or event.direction == gtk.gdk.SCROLL_LEFT:
                 button.value += config.data.preferences[i]
 
-            self.tooltips.set_tip(button, "%s" % helper.format_time(button.value))
-            if self.tooltips.active_tips_data is None:
-                button.emit('show-help', gtk.WIDGET_HELP_TOOLTIP)
+                button.set_tooltip_text("%s" % helper.format_time(button.value))
+            # FIXME: find a way to do this in the new gtk.Tooltip API?
+            #if self.tooltips.active_tips_data is None:
+            #    button.emit('show-help', gtk.WIDGET_HELP_TOOLTIP)
             self.timestamp_play = button.value
             button.grab_focus()
             return True
@@ -561,7 +611,7 @@ class TranscriptionEdit(AdhocView):
 
         child.connect('scroll-event', handle_scroll_event)
         child.connect('key-release-event', mark_key_release_cb, anchor, child)
-        self.tooltips.set_tip(child, "%s" % helper.format_time(timestamp))
+        child.set_tooltip_text("%s" % helper.format_time(timestamp))
         child.value=timestamp
         child.ignore=False
         self.update_mark(child)
@@ -814,10 +864,17 @@ class TranscriptionEdit(AdhocView):
         if self.sourcefile:
             fname=self.sourcefile
         else:
+            # Use current movie filename as basename
+            default_name='transcribe.txt'
+            l=self.controller.player.playlist_get_list()
+            if l:
+                default_name=os.path.splitext(os.path.basename(l[0]))[0] + ".txt"
             fname=dialog.get_filename(title= ("Save transcription to..."),
                                                action=gtk.FILE_CHOOSER_ACTION_SAVE,
                                                button=gtk.STOCK_SAVE,
-                                               default_dir=config.data.path['data'])
+                                               default_dir=config.data.path['data'],
+                                               default_file=default_name
+                                               )
         if fname is not None:
             self.save_transcription(filename=fname)
         return True
@@ -922,6 +979,8 @@ class TranscriptionEdit(AdhocView):
         if at is None:
             return True
 
+        self.imported_type=at
+
         if not self.buffer_is_empty():
             if not dialog.message_dialog(_("This will overwrite the current textual content. Are you sure?"),
                                                   icon=gtk.MESSAGE_QUESTION):
@@ -981,6 +1040,7 @@ class TranscriptionEdit(AdhocView):
             return True
 
         type_selection=dialog.list_selector_widget(members=[ (a, self.controller.get_title(a), self.controller.get_element_color(a)) for a in ats],
+                                                   preselect=self.imported_type,
                                                    callback=handle_new_type_selection)
 
         hb=gtk.HBox()
@@ -1090,7 +1150,7 @@ class TranscriptionEdit(AdhocView):
         self.options['snapshot-size']=size
         for m in self.marks:
             m.set_width(size)
-            
+
     def scale_snaphots_menu(self, i):
         def set_scale(i, s):
             self.set_snapshot_scale(s)
@@ -1139,9 +1199,16 @@ class TranscriptionEdit(AdhocView):
         for text, tooltip, icon, callback in tb_list:
             b=gtk.ToolButton(label=text)
             b.set_stock_id(icon)
-            b.set_tooltip(self.tooltips, tooltip)
+            b.set_tooltip_text(tooltip)
             b.connect('clicked', callback)
             tb.insert(b, -1)
+
+        if self.can_undo():
+            b=gtk.ToolButton(gtk.STOCK_UNDO)
+            b.connect('clicked', lambda i: self.undo())
+            b.set_tooltip_text(_("Undo"))
+            tb.insert(b, -1)
+            b.show()
 
         def handle_toggle(t, option_name):
             self.options[option_name]=t.get_active()
@@ -1149,7 +1216,7 @@ class TranscriptionEdit(AdhocView):
 
         b=gtk.ToggleToolButton(gtk.STOCK_JUMP_TO)
         b.set_active(self.options['autoscroll'])
-        b.set_tooltip(self.tooltips, _("Automatically scroll to the mark position when playing"))
+        b.set_tooltip_text(_("Automatically scroll to the mark position when playing"))
         b.connect('toggled', handle_toggle, 'autoscroll')
         b.set_label(_("Autoscroll"))
         tb.insert(b, -1)
@@ -1160,7 +1227,7 @@ class TranscriptionEdit(AdhocView):
         b.set_icon_widget(i)
         b.set_label(_("Autoinsert"))
         b.set_active(self.options['autoinsert'])
-        b.set_tooltip(self.tooltips, _("Automatically insert marks"))
+        b.set_tooltip_text(_("Automatically insert marks"))
         b.connect('toggled', handle_toggle, 'autoinsert')
         tb.insert(b, -1)
 

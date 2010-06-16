@@ -24,7 +24,7 @@ from advene.gui.views.browser import Browser
 import advene.util.helper
 from advene.gui.util import dialog
 
-re_tales=re.compile('^\$\{(.+)\}\s*$')
+re_tales=re.compile('^\$\{([^}]+)\}\s*$')
 
 class TALESEntry:
     """TALES expression entry widget.
@@ -134,8 +134,8 @@ class TALESEntry:
                                                preselect=preselect,
                                                entry=True)
         self.entry=self.combo.child
-        self.entry.connect('changed', lambda e: self.controller.gui.tooltips.set_tip(self.entry, self.combo.get_current_element()))
-        self.controller.gui.tooltips.set_tip(self.entry, self.combo.get_current_element())
+        self.entry.connect('changed', lambda e: self.entry.set_tooltip_text(self.combo.get_current_element()))
+        self.entry.set_tooltip_text(self.combo.get_current_element())
 
         hbox.pack_start(self.combo, expand=True)
 

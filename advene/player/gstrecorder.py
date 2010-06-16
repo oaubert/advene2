@@ -22,6 +22,7 @@ Based on gst >= 0.10 API.
 """
 
 import tempfile
+import time
 
 import advene.core.config as config
 
@@ -36,7 +37,6 @@ except ImportError:
     gst=None
 
 import os
-from threading import Condition
 
 name="GStreamer video recorder"
 
@@ -113,7 +113,7 @@ class Player:
 
         self.player=None
         self.pipeline=None
-        self.videofile="/tmp/gstrecorder.mp3"
+        self.videofile=time.strftime("/tmp/advene_record-%Y%m%d-%H%M%S.ogg")
         self.build_pipeline()
 
         self.status=Player.UndefinedStatus
@@ -127,25 +127,25 @@ class Player:
         if self.videofile is None:
             return
         videofile=self.videofile
-        audiosrc='autoaudiosink'
+        audiosrc='autoaudiosrc'
+        videosrc='autovideosrc'
         videosink='autovideosink'
-        if config.data.os == 'darwin':
-            videosrc='osxvideosrc'
-        elif config.data.os == 'win32':
-            videosrc='dshowsrcwrapper'
-        else:
-            videosrc='v4l2src queue-size=4'
-            audiosrc='alsasrc device=hw:1,0'
-            videosink='xvimagesink'
-            if config.data.player['vout'] == 'x11':
-                sink='ffmpegcolorspace ! ximagesink'
 
-        self.pipeline=gst.parse_launch('%(videosrc)s ! video/x-raw-yuv,width=352,height=288 ! tee name=tee ! ffmpegcolorspace ! ffenc_mpeg4 bitrate=400000 ! queue ! avimux name=mux ! filesink location=%(videofile)s  %(audiosrc)s ! lame ! mux.  tee. ! queue ! %(videosink)s name=sink sync=false' % locals())
-        #self.pipeline=gst.parse_launch('alsasrc name=source device=hw:1,0 ! lame ! filesink location=%s' % self.videofile)
-        #self.player = self.pipeline.get_by_name('source')
+        self.pipeline=gst.parse_launch('%(videosrc)s ! video/x-raw-yuv,width=352,height=288 ! queue ! tee name=tee ! ffmpegcolorspace ! theoraenc drop-frames=1 ! queue ! oggmux name=mux ! filesink location=%(videofile)s  %(audiosrc)s ! audioconvert ! vorbisenc ! mux.  tee. ! queue ! %(videosink)s name=sink sync=false' % locals())
         self.imagesink=self.pipeline.get_by_name('sink')
         self.player=self.pipeline
 
+        # Asynchronous XOverlay support.
+        bus = self.pipeline.get_bus()
+        bus.enable_sync_message_emission()
+        def on_sync_message(bus, message):
+            if message.structure is None:
+                return
+            if message.structure.get_name() == 'prepare-xwindow-id' and self.xid is not None:
+                message.src.set_xwindow_id(self.xid)
+                if hasattr(message.src.props, 'force-aspect-ratio'):
+                    message.src.set_property("force-aspect-ratio", True)
+        bus.connect('sync-message::element', on_sync_message)
 
     def position2value(self, p):
         """Returns a position in ms.
@@ -201,24 +201,28 @@ class Player:
         # No navigation
         return
 
-    def start(self, position):
+    def start(self, position=None):
+        self.videofile=time.strftime("/tmp/advene_record-%Y%m%d-%H%M%S.ogg")
+        self.build_pipeline()
+        self.set_visual(self.xid)
+
         if self.player is None:
             return
         self.player.set_state(gst.STATE_PLAYING)
 
-    def pause(self, position):
+    def pause(self, position=None):
         # Impossible to pause recording (it should be possible, but
         # gstreamer does not like it)
         return
 
-    def resume(self, position):
+    def resume(self, position=None):
         self.pause(position)
 
-    def stop(self, position):
+    def stop(self, position=None):
         self.stream_duration=self.current_position
         if self.player is None:
             return
-        self.player.set_state(gst.STATE_READY)
+        self.player.set_state(gst.STATE_NULL)
 
     def exit(self):
         if self.player is None:
@@ -230,7 +234,7 @@ class Player:
             # tempfile.mktemp should not be used for security reasons.
             # But the probability of a tempfile attack against Advene
             # is rather low at the time of writing this comment.
-            self.videofile=tempfile.mktemp('.avi', 'record_')
+            self.videofile=tempfile.mktemp('.ogg', 'record_')
             print "%s already exists. We will not overwrite, so use %s instead " % (item, self.videofile)
         else:
             self.videofile=item
@@ -364,11 +368,12 @@ class Player:
 
     def set_visual(self, xid):
         self.xid = xid
-        try:
-            self.imagesink.set_xwindow_id(self.xid)
-            self.imagesink.set_property('force-aspect-ratio', True)
-        except AttributeError:
-            pass
+        if self.imagesink.implements_interface(gst.interfaces.XOverlay):
+            realsink = autovideosink.get_by_interface(gst.interfaces.XOverlay)
+            if realsink:
+                realsink.set_xwindow_id(self.xid)
+                if hasattr(realsink.props, 'force-aspect-ratio'):
+                    realsink.set_property('force-aspect-ratio', True)
         return True
 
     def restart_player(self):

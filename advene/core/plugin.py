@@ -57,12 +57,9 @@ class PluginCollection(list):
                 try:
                     p = Plugin(d, fname, self.prefix)
                     self.append(p)
-                except PluginException:
+                except (PluginException, ImportError, OSError):
                     # Silently ignore non-plugin files
-                    continue
-                except ImportError, e:
-                    print "ImportError when loading %s: %s" % (fname, str(e))
-                    continue
+                    pass
 
     def standard_plugins(self, d):
         for name in os.listdir(d):
@@ -115,15 +112,14 @@ class Plugin(object):
         else:
             name, ext = os.path.splitext(fname)
             if ext == '.py':
-                try:
-                    self._plugin = imp.load_source('_'.join( (prefix, name) ), fullname, open(fullname) )
-                except Exception, e:
-                    raise ImportError("Problem when loading %s : %s" % (fullname, unicode(e)))
+                f=open(fullname, 'r')
+                self._plugin = imp.load_source('_'.join( (prefix, name) ), fullname, f )
+                f.close()
             elif ext == '.pyc':
-                try:
-                    self._plugin = imp.load_compiled('_'.join( (prefix, name) ), fullname, open(fullname) )
-                except Exception, e:
-                    raise ImportError("Problem when loading %s : %s" % (fullname, unicode(e)))
+                f=open(fullname, 'r')
+                self._plugin = imp.load_compiled('_'.join( (prefix, name) ), fullname, f )
+                f.close()
+
         # Is this really a plugin ?
         if not hasattr(self._plugin, 'name') or not hasattr(self._plugin, 'register'):
             raise PluginException("%s is not a plugin" % fullname)

@@ -20,9 +20,10 @@
 """
 
 import re
-import sets
 
 import gtk
+
+import advene.core.config as config
 
 # Advene part
 from advene.gui.edit.properties import EditWidget
@@ -46,7 +47,7 @@ def register(controller):
 class TranscriptionView(AdhocView):
     view_name = _("Transcription")
     view_id = 'transcription'
-    tooltip = _("Representation of a set of annotation as a transcription")
+    tooltip = _("Display annotations as a text transcription")
 
     def __init__ (self, controller=None, source=None, elements=None, parameters=None):
         super(TranscriptionView, self).__init__(controller=controller)
@@ -103,15 +104,15 @@ class TranscriptionView(AdhocView):
 
         self.quick_options=helper.CircularList( (
             # (separator, display_time)
-            (" ", False),
             ("\n", False),
-            ("\n", True),
+            (" ", False),
             (" ", True),
+            ("\n", True),
             ) )
 
         # Try to determine a default representation
         try:
-            t=sets.Set([ a.type for a in self.model ])
+            t=set([ a.type for a in self.model ])
         except:
             t=[]
         if len(t) == 1:
@@ -238,7 +239,7 @@ class TranscriptionView(AdhocView):
             If the update is not possible (too complex representation), return False.
             """
             if self.options['default-representation']:
-                rep=a.type.representation
+                rep=a.type.representation or ""
             else:
                 rep=self.options['representation']
             m=parsed_representation.match(rep)
@@ -314,7 +315,7 @@ class TranscriptionView(AdhocView):
             (gtk.STOCK_PREFERENCES, self.edit_options, _("Edit preferences")),
             ):
             b=gtk.ToolButton(stock_id=icon)
-            b.set_tooltip(self.controller.gui.tooltips, tip)
+            b.set_tooltip_text(tip)
             b.connect('clicked', action)
             tb.insert(b, -1)
         mainbox.pack_start(tb, expand=False)
@@ -383,7 +384,7 @@ class TranscriptionView(AdhocView):
 #
 #        b=get_small_stock_button(gtk.STOCK_GO_FORWARD, find_next)
 #        b.set_relief(gtk.RELIEF_NONE)
-#        self.controller.gui.tooltips.set_tip(b, _("Find next occurrence"))
+#        b.set_tooltip_text(_("Find next occurrence"))
 #        self.searchbox.pack_start(b, expand=False, fill=False)
 
         fill=gtk.HBox()

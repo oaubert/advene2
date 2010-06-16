@@ -28,6 +28,7 @@ import sys
 
 import advene.core.config as config
 import advene.util.helper as helper
+import libadvene.model.exceptions
 
 _fs_encoding = sys.getfilesystemencoding()
 # In some cases, sys.getfilesystemencoding returns None. And if the
@@ -123,6 +124,8 @@ def list_selector_widget(members=None,
             if l:
                 # The element is present.
                 combo.set_active(l[0])
+            else:
+                combo.set_active_iter(combo.get_model().append( (unicode(el), el, None) ))
 
     # Bind the method to the combobox object
     combobox.get_current_element = get_current_element.__get__(combobox)
@@ -571,6 +574,7 @@ def get_filename(title=_("Open a file"),
          _("Advene files (.xml, .czp, .apl)"),
          ('*.xml', '*.czp', '*.apl')),
         ('session', _("Advene session (.apl)"), ( '*.apl', ) ),
+        ('audio', _("Audio files"), ('*.wav', '*.mp3', '*.ogg')),
         ('video', _("Video files"), [ "*%s" % e for e in config.data.video_extensions ])
         ):
         filters[name]=gtk.FileFilter()

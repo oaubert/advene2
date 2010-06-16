@@ -90,7 +90,7 @@ class Montage(AdhocView):
 
         # Needed by AnnotationWidget
         self.button_height = 20
-        self.active_color=gtk.gdk.color_parse ('#fdfd4b')
+        self.active_color=name2color('#fdfd4b')
 
         self.master_view=None
 
@@ -103,6 +103,9 @@ class Montage(AdhocView):
 
         self.mainbox=None
         self.widget=self.build_widget()
+        
+        # Annotation widget currently played
+        self.current_widget = None
 
         if elements is not None:
             # Fill with default values
@@ -202,6 +205,16 @@ class Montage(AdhocView):
         self.duration_label.set_text(helper.format_time(duration))
         return True
 
+    def update_position(self, pos):
+        w=self.current_widget
+        if w is None:
+            return
+        f=w.annotation
+        if not pos in f:
+            w.fraction_marker=None
+            return
+        w.fraction_marker = 1.0 * (pos - f.begin) / f.duration
+
     def clear(self, *p):
         self.contents=[]
         self.refresh()
@@ -292,6 +305,9 @@ class Montage(AdhocView):
             """
             try:
                 w=annotation_queue.next()
+                if self.current_widget is not None:
+                    self.current_widget.fraction_marker=None
+                self.current_widget=w
                 a=w.annotation
                 #print "Playing ", a.id
             except StopIteration:
@@ -299,6 +315,9 @@ class Montage(AdhocView):
                 self.controller.update_status('pause')
                 for w in self.contents:
                     self.set_widget_active(w, False)
+                if self.current_widget is not None:
+                    self.current_widget.fraction_marker=None
+                self.current_widget=None
                 return False
             # Go to the annotation
             # Change position only if we are not already at the right place
@@ -365,7 +384,7 @@ class Montage(AdhocView):
         tb.set_style(gtk.TOOLBAR_ICONS)
 
         b=get_small_stock_button(gtk.STOCK_DELETE)
-        self.controller.gui.tooltips.set_tip(b, _("Drop an annotation here to remove it from the list"))
+        b.set_tooltip_text(_("Drop an annotation here to remove it from the list"))
         b.drag_dest_set(gtk.DEST_DEFAULT_MOTION |
                         gtk.DEST_DEFAULT_HIGHLIGHT |
                         gtk.DEST_DEFAULT_ALL,
@@ -375,8 +394,8 @@ class Montage(AdhocView):
         ti.add(b)
         tb.insert(ti, -1)
 
-        b=gtk.ToolButton(stock_id=gtk.STOCK_MEDIA_PLAY)
-        b.set_tooltip(self.controller.gui.tooltips, _("Play the montage"))
+        b=gtk.ToolButton(gtk.STOCK_MEDIA_PLAY)
+        b.set_tooltip_text(_("Play the montage"))
         b.connect('clicked', self.play)
         tb.insert(b, -1)
 
@@ -401,11 +420,11 @@ class Montage(AdhocView):
             self.zoom_adjustment.value=self.zoom_adjustment.value * factor
             return True
 
-        b=gtk.ToolButton(stock_id=gtk.STOCK_ZOOM_OUT)
+        b=gtk.ToolButton(gtk.STOCK_ZOOM_OUT)
         b.connect('clicked', zoom, 1.3)
         tb.insert(b, -1)
 
-        b=gtk.ToolButton(stock_id=gtk.STOCK_ZOOM_IN)
+        b=gtk.ToolButton(gtk.STOCK_ZOOM_IN)
         b.connect('clicked', zoom, .7)
         tb.insert(b, -1)
 
@@ -424,7 +443,7 @@ class Montage(AdhocView):
         ti.add(self.zoom_combobox)
         tb.insert(ti, -1)
 
-        b=gtk.ToolButton(stock_id=gtk.STOCK_ZOOM_100)
+        b=gtk.ToolButton(gtk.STOCK_ZOOM_100)
         b.connect('clicked', lambda i: self.zoom_adjustment.set_value(1.0))
         tb.insert(b, -1)
 
@@ -437,13 +456,13 @@ class Montage(AdhocView):
                 event="AnnotationDeactivate"
                 label=_("Highlight annotations")
                 b.highlight=True
-            self.controller.gui.tooltips.set_tip(b, label)
+                b.set_tooltip_text(label)
             for a in set( [ w.annotation for w in self.contents ] ):
                 self.controller.notify(event, annotation=a)
             return True
-        b=gtk.ToggleToolButton()
         i=gtk.Image()
         i.set_from_file(config.data.advenefile( ( 'pixmaps', 'highlight.png') ))
+        b=gtk.ToggleToolButton()
         b.set_icon_widget(i)
         b.highlight=True
         b.connect('clicked', toggle_highlight)

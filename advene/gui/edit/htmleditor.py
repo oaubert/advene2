@@ -39,14 +39,14 @@ import StringIO
 import re
 from HTMLParser import HTMLParser
 try:
-    import gtksourceview
+    import gtksourceview2
 except ImportError:
-    gtksourceview=None
+    gtksourceview2=None
 
-if gtksourceview is None:
+if gtksourceview2 is None:
     textview_class=gtk.TextView
 else:
-    textview_class=gtksourceview.SourceView
+    textview_class=gtksourceview2.View
 
 broken_xpm="""20 22 5 1
   c black
@@ -150,8 +150,8 @@ class HTMLEditor(textview_class, HTMLParser):
         """
         gtk.TextView.__init__(self, *cnf, **kw)
         HTMLParser.__init__(self)
-        if gtksourceview is not None:
-            self.set_buffer(gtksourceview.SourceBuffer())
+        if gtksourceview2 is not None:
+            self.set_buffer(gtksourceview2.Buffer())
         self.set_editable(True)
         self.set_wrap_mode(gtk.WRAP_WORD)
 
@@ -217,7 +217,10 @@ class HTMLEditor(textview_class, HTMLParser):
         self.__tb.connect('delete-range', delete_range)
 
     def can_undo(self):
-        return (gtksourceview is not None and self.get_buffer().can_undo())
+        try:
+            return hasattr(self.get_buffer(), 'can_undo')
+        except AttributeError, e:
+            return False
 
     def undo(self, *p):
         b=self.get_buffer()
@@ -367,6 +370,7 @@ class HTMLEditor(textview_class, HTMLParser):
     def handle_img(self, tag, attr):
         dattr=dict(attr)
         src=dattr.get('src')
+        data=None
         if src:
             data, msg=self.url_load(src)
             if data is None:
@@ -378,6 +382,7 @@ class HTMLEditor(textview_class, HTMLParser):
         # Process width and height attributes
         attrwidth = dattr.get('width')
         attrheight = dattr.get('height')
+        # Note: attrwidth and attrheight are strings (possibly empty)
 
         if data is not None:
             # Caveat: GdkPixbuf is known not to be safe to load images
@@ -389,13 +394,13 @@ class HTMLEditor(textview_class, HTMLParser):
                 if attrwidth and attrheight:
                     # Both are specified. Simply use them.
                     width, height = attrwidth, attrheight
-                elif attrwidth and not attrheight:
+                elif attrwidth:
                     # Only width is specified.
-                    height = 1.0 * attrheight / attrwidth * width
-                    width = attrwidth
-                elif attrheight and not attrwidth:
-                    width = 1.0 * attrwidth / attrheight * height
-                    height = attrheight
+                    height = int(attrwidth) * height / width
+                    width = int(attrwidth)
+                elif attrheight:
+                    width = int(attrheight) * width / height
+                    height = int(attrheight)
                 loader.set_size(int(width), int(height))
             if attrwidth or attrheight:
                 loader.connect('size-prepared', set_size)
@@ -916,7 +921,7 @@ if __name__ == "__main__":
         ev.toolbar.insert(b, -1)
         b.show()
 
-    if gtksourceview is not None:
+    if gtksourceview2 is not None:
         b=gtk.ToolButton(gtk.STOCK_UNDO)
         b.connect('clicked', lambda i: t.undo())
         ev.toolbar.insert(b, -1)

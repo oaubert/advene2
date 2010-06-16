@@ -34,6 +34,7 @@ class Parser(XmlParserBase):
         parser is pretty sure it can handle the URL.
         """
         r = 0
+        print "claims_for_parse", str(file_)
         if hasattr(file_, "seek"):
             # try to open it as xml file and get the root element
             t = file_.tell()
@@ -42,8 +43,10 @@ class Parser(XmlParserBase):
             try:
                 ev, el = it.next()
             except ExpatError, e:
+                print "ExpatError", unicode(e)
                 return 0
             else:
+                print "TAG ", el.tag, cls._NAMESPACE_URI
                 if el.tag == "{%s}package" % cls._NAMESPACE_URI:
                     return 80
                 else:
@@ -106,7 +109,8 @@ class Parser(XmlParserBase):
     _NAMESPACE_URI = ADVENE_XML
 
     def __init__(self, file_, package):
-        assert self.__class__.claims_for_parse(file_) > 0
+        _claims = self.__class__.claims_for_parse(file_)
+        assert _claims > 0, "Unclaimed package %d" % _claims
         XmlParserBase.__init__(self, file_, package, self._NAMESPACE_URI,
                                "package")
         self._postponed = []

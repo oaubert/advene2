@@ -81,8 +81,6 @@ class InteractiveQuery(AdhocView):
     def get_interactive_query(self):
         l=self.controller.package.get('_interactive')
         if l:
-            if not isinstance(l, Query):
-                return None, None
             q=SimpleQuery()
             f=l.content.as_file
             q.from_xml(f, origin=l.uriref)
@@ -256,7 +254,7 @@ class InteractiveResult(AdhocView):
         if isinstance(self.query, basestring):
             # Quicksearch entry. Convert to Quicksearch class.
             q=Quicksearch(controller=self.controller,
-                          source=config.data.preferences['quicksearch-source'],
+                          sources=config.data.preferences['quicksearch-sources'],
                           searched=self.query,
                           case_sensitive=not config.data.preferences['quicksearch-ignore-case'])
             self.query=q
@@ -299,7 +297,6 @@ class InteractiveResult(AdhocView):
                 self.log(_("%s exists and is not a query") % i)
                 return True
             create=False
-            self.controller.notify('EditSessionStart', element=q)
         else:
             create=True
             # Create the query
@@ -314,7 +311,6 @@ class InteractiveResult(AdhocView):
             self.controller.notify('QueryCreate', query=q)
         else:
             self.controller.notify('QueryEditEnd', query=q)
-            self.controller.notify('EditSessionEnd', element=q)
         return q
 
     def create_comment(self, *p):
@@ -437,8 +433,8 @@ class InteractiveResult(AdhocView):
             e.set_width_chars(12)
             e.connect('activate', self.redo_quicksearch, e)
             b=get_small_stock_button(gtk.STOCK_FIND, self.redo_quicksearch, e)
-            self.controller.gui.tooltips.set_tip(e, _('String to search'))
-            self.controller.gui.tooltips.set_tip(b, _('Search again'))
+            e.set_tooltip_text(_('String to search'))
+            b.set_tooltip_text(_('Search again'))
             top_box.pack_start(e, expand=False)
             top_box.pack_start(b, expand=False)
 
@@ -472,7 +468,7 @@ class InteractiveResult(AdhocView):
                     event="AnnotationDeactivate"
                     label=_("Highlight annotations")
                     b.highlight=True
-                self.controller.gui.tooltips.set_tip(b, label)
+                b.set_tooltip_text(label)
                 for a in annotation_list:
                     self.controller.notify(event, annotation=a)
                 return True
@@ -519,7 +515,7 @@ class InteractiveResult(AdhocView):
                     else:
                         ti=gtk.ToolButton(stock_id=icon)
                     ti.connect('clicked', action)
-                    ti.set_tooltip(self.controller.gui.tooltips, tip)
+                    ti.set_tooltip_text(tip)
                     tb.insert(ti, -1)
 
                 self.table=table
@@ -530,20 +526,20 @@ class InteractiveResult(AdhocView):
 
                 ti=gtk.ToolButton(gtk.STOCK_CONVERT)
                 ti.connect('clicked', lambda b: gtable.csv_export())
-                ti.set_tooltip(self.controller.gui.tooltips, _("Export table"))
+                ti.set_tooltip_text(_("Export table"))
                 tb.insert(ti, -1)
                 self.table=gtable
 
 
             ti=get_pixmap_toolbutton('editaccumulator.png',
                                      lambda b: self.open_in_edit_accumulator(self.table.get_elements()))
-            ti.set_tooltip(self.controller.gui.tooltips, _("Edit elements"))
+            ti.set_tooltip_text(_("Edit elements"))
             tb.insert(ti, -1)
 
             if config.data.preferences['expert-mode']:
                 ti=get_pixmap_toolbutton('python.png',
                                          lambda b: self.open_in_evaluator(self.table.get_elements()))
-                ti.set_tooltip(self.controller.gui.tooltips, _("Open in python evaluator"))
+                ti.set_tooltip_text(_("Open in python evaluator"))
                 tb.insert(ti, -1)
         else:
             v.add(gtk.Label(_("Result:\n%s") % unicode(self.result)))

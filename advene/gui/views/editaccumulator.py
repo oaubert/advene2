@@ -61,24 +61,24 @@ class EditAccumulator(AccumulatorPopup):
 
         def handle_ok(b, w):
             e.apply_cb()
-            self.undisplay_cb(b, w)
+            #self.undisplay_cb(b, w)
             return True
 
         # OK button
         b=get_pixmap_button('small_ok.png', handle_ok, w)
         b.set_relief(gtk.RELIEF_NONE)
-        self.controller.gui.tooltips.set_tip(b, _("Validate and close"))
+        b.set_tooltip_text(_("Validate"))
         hbox.pack_start(b, expand=False)
 
         # Close button
         b=get_pixmap_button('small_close.png', self.undisplay_cb, w)
         b.set_relief(gtk.RELIEF_NONE)
-        self.controller.gui.tooltips.set_tip(b, _("Close"))
+        b.set_tooltip_text(_("Close"))
         hbox.pack_start(b, expand=False)
 
         t=self.get_short_title(element)
         l=gtk.Label()
-        l.set_markup('<b>%s</b>' % t)
+        l.set_markup('<b>%s</b>' % t.replace('<', '&lt;'))
         hbox.pack_start(l, expand=True)
 
         self.edited_elements[element]=w
@@ -127,9 +127,9 @@ class EditAccumulator(AccumulatorPopup):
             return False
         w=self.edited_elements[element]
         l=w._title_label
-        l.set_markup('<b>%s</b>' % self.get_short_title(element))
+        l.set_markup('<b>%s</b>' % self.get_short_title(element).replace('<', '&lt;'))
         return True
-            
+
     def update_annotation(self, annotation, event):
         self.update_element(annotation, event)
         return True

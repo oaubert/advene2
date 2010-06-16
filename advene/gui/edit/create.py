@@ -19,6 +19,8 @@
 """Dialogs for the creation of new elements.
 """
 
+import advene.core.config as config
+
 from gettext import gettext as _
 
 import sys
@@ -33,9 +35,10 @@ from libadvene.model.cam.list import Schema
 from libadvene.model.cam.resource import Resource
 from libadvene.model.cam.view import View
 from libadvene.model.cam.query import Query
-from advene.rules.elements import RuleSet, Rule, Event, Action, SubviewList, SimpleQuery
+from advene.rules.elements import RuleSet, Rule, Event, Action, SubviewList
 
 from advene.gui.util import dialog
+import advene.gui.edit.elements
 import advene.util.helper as helper
 
 element_label = helper.element_label

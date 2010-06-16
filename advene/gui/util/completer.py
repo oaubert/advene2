@@ -25,6 +25,8 @@ This code is inspired and adapted from the Scribes project
 import gtk
 import re
 
+import advene.core.config as config
+
 from libadvene.model.cam.annotation import Annotation
 from libadvene.model.cam.tag import AnnotationType, RelationType
 from libadvene.model.cam.query import Query
@@ -307,7 +309,7 @@ class Indexer:
             'views': set(),
             }
         self.regexp=re.compile(r'[^\w\d_]+', re.UNICODE)
-        self.size_limit=5
+        self.size_limit=4
 
     def get_words(self, s):
         """Return the list of indexable words from the given string.
@@ -327,6 +329,11 @@ class Indexer:
 
         for at in self.package.all.annotation_types:
             s=self.index.get(at.id, set())
+
+            words=at.meta.get(config.data.namespace + "completions")
+            if words is not None:
+                s.update(self.get_words(words.strip()))
+
             for a in at.annotations:
                 s.update(self.get_words(a.content_data))
             self.index[at.id]=s
@@ -344,6 +351,9 @@ class Indexer:
             s=self.index.get(atid, set())
         elif isinstance(element, (AnnotationType, RelationType, Query)):
             self.index['views'].add(element.id)
+            words=element.meta.get(config.data.namespace + "completions")
+            if words is not None:
+                self.index.get(element.id, set()).update(self.get_words(words.strip()))
             return True
         else:
             return True
@@ -394,8 +404,8 @@ if __name__ == "__main__":
     window.connect('destroy', lambda e: gtk.main_quit())
     window.set_title ('test')
 
-    import gtksourceview
-    t=gtksourceview.SourceView(gtksourceview.SourceBuffer())
+    import gtksourceview2
+    t=gtksourceview2.View(gtksourceview2.Buffer())
     #t=gtk.TextView()
     if sys.argv[1:]:
         print "loading ", sys.argv[1]

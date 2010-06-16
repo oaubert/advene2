@@ -27,7 +27,7 @@ import re
 import gtk
 import advene.util.helper as helper
 from advene.gui.widget import TimestampRepresentation
-from advene.gui.util import encode_drop_parameters, decode_drop_parameters
+from advene.gui.util import encode_drop_parameters, decode_drop_parameters, dialog
 from gettext import gettext as _
 
 class TimeAdjustment:
@@ -55,12 +55,8 @@ class TimeAdjustment:
 
     def make_widget(self):
 
-        def invalidate_snapshot(item, value):
-            # Invalidate the image
-            # FIXME: how to determine the appropriate imagecache ?
-            self.controller.imagecache[self.controller.current_media].invalidate(value)
-            self.controller.notify('SnapshotUpdate', position=value)
-            self.update_display()
+        def refresh_snapshot(item):
+            self.image.refresh_snapshot()
             return True
 
         def image_button_clicked(button):
@@ -76,8 +72,8 @@ class TimeAdjustment:
             if event.button == 3 and event.type == gtk.gdk.BUTTON_PRESS:
                 # Display the popup menu
                 menu = gtk.Menu()
-                item = gtk.MenuItem(_("Invalidate snapshot"))
-                item.connect('activate', invalidate_snapshot, self.value)
+                item = gtk.MenuItem(_("Refresh snapshot"))
+                item.connect('activate', refresh_snapshot)
                 menu.append(item)
                 menu.show_all()
                 menu.popup(None, None, None, 0, gtk.get_current_event_time())
@@ -104,17 +100,15 @@ class TimeAdjustment:
                 tip=_("Decrement value by %.2f s") % (incr_value / 1000.0)
             else:
                 tip=_("Increment value by %.2f s") % (incr_value / 1000.0)
-            self.tooltips.set_tip(b, tip)
+            b.set_tooltip_text(tip)
             return b
-
-        self.tooltips = self.controller.gui.tooltips
 
         vbox=gtk.VBox()
 
         hbox=gtk.HBox()
         hbox.set_homogeneous(False)
 
-        if self.editable and not self.compact:
+        if self.editable:
             vb=gtk.VBox()
             b=make_button(-self.large_increment, "2leftarrow.png")
             vb.pack_start(b, expand=False)
@@ -129,10 +123,10 @@ class TimeAdjustment:
         self.image=TimestampRepresentation(self.value, self.controller, width, epsilon=1000/25, visible_label=False)
         self.image.connect('button-press-event', image_button_press)
         self.image.connect('clicked', image_button_clicked)
-        self.tooltips.set_tip(self.image, _("Click to play\ncontrol+click to set to current time\ncontrol+scroll to modify value\nright-click to invalidate screenshot"))
+        self.image.set_tooltip_text(_("Click to play\nControl+click to set to current time\Scroll to modify value (with control/shift)\nRight-click to invalidate screenshot"))
         hbox.pack_start(self.image, expand=False)
 
-        if self.editable and not self.compact:
+        if self.editable:
             vb=gtk.VBox()
             b=make_button(self.large_increment, "2rightarrow.png")
             vb.pack_start(b, expand=False)
@@ -157,7 +151,7 @@ class TimeAdjustment:
             current_pos=gtk.Button()
             i=gtk.Image()
             i.set_from_file(config.data.advenefile( ( 'pixmaps', 'set-to-now.png') ))
-            self.tooltips.set_tip(current_pos, _("Set to current player position"))
+            current_pos.set_tooltip_text(_("Set to current player position"))
             current_pos.add(i)
             current_pos.connect('clicked', self.use_current_position)
             hb.pack_start(current_pos, expand=False)
@@ -175,17 +169,18 @@ class TimeAdjustment:
         hb.show()
 
         def handle_scroll_event(button, event):
-            if not (event.state & gtk.gdk.CONTROL_MASK):
-                return True
-            if event.state & gtk.gdk.SHIFT_MASK:
-                i='second-scroll-increment'
+            if event.state & gtk.gdk.CONTROL_MASK:
+                i=config.data.preferences['scroll-increment']
+            elif event.state & gtk.gdk.SHIFT_MASK:
+                i=config.data.preferences['second-scroll-increment']
             else:
-                i='scroll-increment'
+                # 1 frame
+                i=1000/25
 
-            if event.direction == gtk.gdk.SCROLL_DOWN:
-                incr=-config.data.preferences[i]
-            elif event.direction == gtk.gdk.SCROLL_UP:
-                incr=config.data.preferences[i]
+            if event.direction == gtk.gdk.SCROLL_DOWN or event.direction == gtk.gdk.SCROLL_LEFT:
+                incr=-i
+            elif event.direction == gtk.gdk.SCROLL_UP or event.direction == gtk.gdk.SCROLL_RIGHT:
+                incr=i
 
             v=self.value
             v += incr
@@ -244,7 +239,7 @@ class TimeAdjustment:
 
     def play_from_here(self, button):
         if self.controller.player.status == self.controller.player.PauseStatus:
-            self.controller.update_status("resume", self.value)
+            self.controller.update_status("set", self.value)
         elif self.controller.player.status != self.controller.player.PlayingStatus:
             self.controller.update_status("start", self.value)
         self.controller.update_status("set", self.value)

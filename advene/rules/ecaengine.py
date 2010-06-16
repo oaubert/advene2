@@ -29,9 +29,24 @@ import sched
 import threading
 import copy
 import StringIO
+import urllib
 
+import advene.rules.elements
 from libadvene.util.session import session
-from advene.rules.elements import Action, ActionList, Rule, RuleSet, ECACatalog
+
+class MyThread(threading.Thread):
+    """Override the standard run() method.
+    
+    Its behaviour changed in 2.6, and removed the __target, _args and
+    _kwargs variable. Since we keep reusing them, this broke our code.
+    """
+    def __init__(self, **kwargs):
+        super(MyThread, self).__init__(**kwargs)
+        self._target=kwargs.get('target', None)
+
+    def run(self):
+        if self._target:
+            self._target()
 
 class ECAEngine:
     """ECAEngine class.
@@ -72,10 +87,11 @@ class ECAEngine:
         # History of events
         self.event_history = []
         self.controller=controller
-        self.catalog=ECACatalog()
+        self.catalog=advene.rules.elements.ECACatalog()
         self.scheduler=sched.scheduler(time.time, time.sleep)
-        self.schedulerthread=threading.Thread(target=self.scheduler.run)
+        self.schedulerthread=MyThread(target=self.scheduler.run)
         self.views_to_notify=[]
+
     def get_state(self):
         """Return a state of the current rulesets.
 
@@ -99,9 +115,9 @@ class ECAEngine:
         # Note: to add an additional class, do not forget to update
         # the notify method
         self.rulesets = {
-            'default': RuleSet(),
-            'internal': RuleSet(),
-            'user': RuleSet(),
+            'default': advene.rules.elements.RuleSet(),
+            'internal': advene.rules.elements.RuleSet(),
+            'user': advene.rules.elements.RuleSet()
             }
 
     def clear_ruleset(self, type_='user'):
@@ -110,7 +126,7 @@ class ECAEngine:
         @param type_: the ruleset's class
         @type type_: string
         """
-        self.rulesets[type_] = RuleSet()
+        self.rulesets[type_] = advene.rules.elements.RuleSet()
         self.update_rulesets()
 
     def extend_ruleset(self, rs, type_='user'):
@@ -157,7 +173,7 @@ class ECAEngine:
         @return: the new ruleset
         @rtype: RuleSet
         """
-        self.rulesets[type_] = RuleSet(uri=filename, catalog=self.catalog, priority=priority)
+        self.rulesets[type_] = advene.rules.elements.RuleSet(uri=filename, catalog=self.catalog, priority=priority)
         self.update_rulesets()
         return self.rulesets[type_]
 
@@ -187,7 +203,7 @@ class ECAEngine:
         @param delay: a delay for execution (in s)
         @type delay: float
         """
-        if isinstance(action, ActionList):
+        if isinstance(action, advene.rules.elements.ActionList):
             for a in action:
                 self.schedule(a, context, delay)
             return
@@ -204,10 +220,11 @@ class ECAEngine:
         if action.immediate or immediate:
             action.execute(context)
         else:
+            #print "Scheduling %s with delay %f" % (action.name, delay)
             if delay:
-                self.scheduler.enterabs(time.time()+delay, 0, wrap_execute, (action, context))
+                self.scheduler.enterabs(time.time()+delay, 0, wrap_execute, (action, context,))
             else:
-                self.scheduler.enter(delay, 0, wrap_execute, (action, context))
+                self.scheduler.enter(delay, 0, wrap_execute, (action, context,))
             if not self.schedulerthread.isAlive():
                 try:
                     self.schedulerthread.run()
@@ -286,11 +303,11 @@ class ECAEngine:
         """
         if method is None or event is None:
             return
-        rule=Rule(name="internal",
-                  priority=200,
-                  event=event,
-                  condition=condition,
-                  action=Action(method=method))
+        rule=advene.rules.elements.Rule(name="internal",
+                                        priority=200,
+                                        event=event,
+                                        condition=condition,
+                                        action=advene.rules.elements.Action(method=method))
         self.add_rule(rule, 'internal')
         return rule
 
@@ -322,7 +339,7 @@ class ECAEngine:
         except ValueError:
             # Ignore the error if the rule was already removed.
             # but display a warning anyway (it should not happen)
-            print "Trying to remove non-existant rule %s from %s ruleset" % (str(rule.name), type_)
+            print "Trying to remove non-existant rule %s from %s ruleset" % (str(rule), type_)
             pass
 
     def dump(self):
@@ -359,7 +376,8 @@ class ECAEngine:
             self.event_history.append(d)
             for v in self.views_to_notify:
                 # should only be TraceBuilder plugin or other trace building system
-                v.receive(d)
+                #v.receive(d)
+                v.equeue.put(d)
         immediate=False
         if 'immediate' in kw:
             immediate=True

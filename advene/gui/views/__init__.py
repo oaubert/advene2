@@ -142,7 +142,7 @@ class AdhocView(object):
                 elif isinstance(l, gtk.HBox):
                     # It may be a HBox with multiple elements. Find the label.
                     # Normally (cf gui.viewbook), the label is in an EventBox
-                    l=l.get_children()[0].get_children()[0]
+                    l=l.get_children()[1].get_children()[0]
                     l.set_text(label)
         elif isinstance(p, gtk.VBox):
             # It is a popup window. Set its title.
@@ -352,13 +352,19 @@ class AdhocView(object):
     def attach_view(self, menuitem, window):
         def relocate_view(item, v, d):
             # Reference the widget so that it is not destroyed
+            if hasattr(v, 'reparent_prepare'):
+                v.reparent_prepare()
             wid=v.widget
+            wid.hide()
             wid.get_parent().remove(wid)
             if d in ('south', 'east', 'west', 'fareast'):
                 v._destination=d
                 self.controller.gui.viewbook[d].add_view(v, name=v._label)
                 window.disconnect(window.cleanup_id)
                 window.destroy()
+            wid.show()
+            if hasattr(v, 'reparent_done'):
+                v.reparent_done()
             return True
 
         menu=gtk.Menu()
@@ -424,6 +430,8 @@ class AdhocView(object):
             if targetType == config.data.target_type['adhoc-view-instance']:
                 # This is not very robust, but allows to transmit a view instance reference
                 selection.set(selection.target, 8, repr(self).encode('utf8'))
+                if hasattr(self, 'reparent_prepare'):
+                    self.reparent_prepare()
                 self.widget.get_parent().remove(self.widget)
                 # Do not trigger the close_view_cb handler
                 window.disconnect(window.cleanup_id)
@@ -432,7 +440,7 @@ class AdhocView(object):
             return False
 
         b=get_pixmap_button('small_attach.png', self.attach_view, window)
-        self.controller.gui.tooltips.set_tip(b, _("Click or drag-and-drop to reattach view"))
+        b.set_tooltip_text(_("Click or drag-and-drop to reattach view"))
         b.connect('drag-data-get', drag_sent)
         # The widget can generate drags
         b.drag_source_set(gtk.gdk.BUTTON1_MASK,
@@ -459,6 +467,9 @@ class AdhocView(object):
 
         window.buttonbox.show_all()
         window.show_all()
+
+        if hasattr(self, 'reparent_done'):
+            self.reparent_done()
 
         if self.controller and self.controller.gui:
             self.controller.gui.register_view (self)

@@ -107,9 +107,9 @@ class Config(object):
         if self.os == 'win32':
             self.path = {
                 # VLC binary path
-                'vlc': 'c:\\Program Files\\VideoLAN\\VLC',
+                'vlc': 'c:\\Program Files\\Advene',
                 # VLC additional plugins path
-                'plugins': 'c:\\Program Files\\Advene\\lib',
+                'plugins': 'c:\\Program Files\\Advene\\vlcplugins',
                 # Advene modules path
                 'advene': 'c:\\Program Files\\Advene',
                 # Advene resources (.glade, template, ...) path
@@ -147,7 +147,7 @@ class Config(object):
                 'moviepath': '_:%s' % os.path.join( self.get_homedir(), 'Movies' ),
                 # Locale dir FIXME
                 'locale': '/Applications/Advene.app/locale',
-                'shotdetect': 'shotdetect',
+                'shotdetect': '/Applications/Advene.app/Contents/Resources/share/shotdetect',
                 }
         else:
             self.path = {
@@ -168,7 +168,7 @@ class Config(object):
                 # Movie files search path. _ is the
                 # current package path
                 'moviepath': '_',
-                'locale': '/usr/share/advene/locale',
+                'locale': '/usr/share/locale',
                 'shotdetect': 'shotdetect',
                 }
 
@@ -219,6 +219,8 @@ class Config(object):
             'time-increment': 2000,
             # Time increment (Control-Shift-Left/Right)
             'second-time-increment': 5000,
+            # Time increment (Control-Shift-Up/Down)
+            'third-time-increment': 1,
             'timeline': {
                 'font-size': 10,
                 'button-height': 20,
@@ -243,21 +245,23 @@ class Config(object):
             # Imagecache save on exit: 'never', 'ask' or 'always'
             'imagecache-save-on-exit': 'ask',
             'quicksearch-ignore-case': True,
-            # quicksearch source. If None, it is all package's annotations.
-            # Else it is a TALES expression applied to the current package
-            'quicksearch-source': None,
+            # quicksearch sources. If [], it is all package's annotations.
+            # Else it is a list of TALES expression applied to the current package
+            'quicksearch-sources': [],
             # Display advanced options
             'expert-mode': False,
             # Package auto-save : 'never', 'ask' or 'always'
             'package-auto-save': 'never',
             # auto-save interval in ms. Every 5 minutes by default.
             'package-auto-save-interval': 5 * 60 * 1000,
+            # slave player automatic synchronization delay. 0 to disable.
+            'slave-player-sync-delay': 3000,
             # Interface language. '' means system default.
             'language': '',
             'save-default-workspace': 'never',
             'restore-default-workspace': 'ask',
-            # Daily check for updates on the Advene website ?
-            'update-check': False,
+            # Weekly check for updates on the Advene website ?
+            'update-check': True,
             # Last update time
             'last-update': 0,
             # Width of the image used to display the snapshot of a bookmark
@@ -275,6 +279,7 @@ class Config(object):
             # popup views may be forced into a specific viewbook,
             # instead of default popup
             'popup-destination': 'popup',
+            'embedded': True,
             }
 
         # Player options
@@ -285,23 +290,18 @@ class Config(object):
 
         # Player options
         self.player = {
-            'plugin': 'vlcnative',
+            'plugin': 'gstreamer',
             'bundled': True,
             'embedded': True,
-            'name': 'vlc',
             'vout': 'default',
-            'svg': False,
+            'svg': True,
             'osdfont': '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf',
             'verbose': None, # None, 0, 1, 2
             'snapshot': True,
             'caption': True,
-            'snapshot-dimensions': (160,100),
-            'snapshot-chroma': 'RV32',
+            'snapshot-width': 160,
             'dvd-device': '/dev/dvd',
             }
-        if self.os in ('linux', 'darwin'):
-            # Use gstreamer by default on linux
-            self.player['plugin']='gstreamer'
 
         self.webserver = {
             'port': 1234,
@@ -324,7 +324,7 @@ class Config(object):
         self.sound_volume=0
 
         # Update delay for position marker in views (in ms)
-        self.slow_update_delay=200
+        self.slow_update_delay=10
 
         # Reaction time offset (in ms) used when setting annotations
         self.reaction_time=200
@@ -334,14 +334,13 @@ class Config(object):
             'application/x-advene-structured',
             'application/x-advene-sparql-query',
             'application/x-javascript',
+            'application/javascript',
+            'application/json',
             'application/x-advene-adhoc-view',
             'application/x-advene-workspace-view',
             'application/x-advene-quicksearch',
-            'application/x-advene-values',
-            'application/x-advene-ruleset',
-            'application/x-advene-simplequery',
             'application/x-advene-type-constraint',
-            'application/xml',
+            'application/x-advene-values',
             )
 
         # Drag and drop parameters for URIed element and other elements
@@ -381,6 +380,7 @@ class Config(object):
             '.mpg', '.mpeg',  '.mp4',
             '.ogm',
             '.ogg',
+            '.ogv',
             '.rm',
             '.vob',
             '.mkv',
@@ -409,7 +409,7 @@ class Config(object):
             u'string:#008C00',
             u'string:#006E2E',
             u'string:#4096EE',
-            u'string:#FF0084',
+            u'string:#F0C5ED',
             u'string:#B02B2C',
             u'string:#D15600',
             u'string:#C79810',
@@ -453,9 +453,6 @@ class Config(object):
         parser.add_option("-v", "--version", dest="version", action="store_true",
                           help="Display version number and exit.")
 
-        parser.add_option("", "--simple", dest="simple", action="store_true",
-                          help="Use the simplified GUI.")
-
         parser.add_option("-s", "--settings-dir", dest="settings", action="store",
                           type="string", default=None, metavar="SETTINGSDIR",
                           help="Alternate configuration directory (default: ~/.advene).")
@@ -472,9 +469,10 @@ class Config(object):
                           dest="player",
                           action="store",
                           type="choice",
-                          # FIXME: we should register player plugins and use introspection
-                          choices=("vlcnative", "dummy", "vlcorbit",
-                                   "xine", "gstreamer", "quicktime", "gstrecorder"),
+                          # FIXME: we should register player plugins
+                          # and use introspection, but plugin loading
+                          # happens later.
+                          choices=("dummy", "vlcctypes", "gstreamer", "gstrecorder"),
                           default=None,
                           help="Video player selection")
 
@@ -517,20 +515,23 @@ class Config(object):
         h=self.preferences['history']
         if len(h) > self.preferences['history-size-limit']:
             self.preferences['history']=h[-self.preferences['history-size-limit']:]
-
-        if not os.path.exists(self.path['shotdetect']):
-            if self.os == 'win32':
-                sdname='shotdetect.exe'
-            else:
-                sdname='shotdetect'
-            sd=find_in_path(sdname)
-            if sd is not None:
-                self.path['shotdetect']=sd
-            else:
-                sd=self.advenefile(sdname, 'resources')
-                if os.path.exists(sd):
-                    self.path['shotdetect']=sd
-
+        
+        if self.os == 'darwin':
+            # Force display-caption disabling on darwin.
+            self.preferences['display-caption']=False
+            if not 'forced-svg' in self.player:
+                # Disable by default svg rendering, until we have
+                # found a solution to the performance issue
+                self.player['svg']=False
+                self.player['forced-svg']=True
+        else:
+            # Force once svg to True, to ensure that most people will
+            # have SVG enabled. If they choose to disable it
+            # beforehand through Edit/Preferences, the setting will be
+            # respected.
+            if not 'forced-svg' in self.player:
+                self.player['svg']=True
+                self.player['forced-svg']=True
         return True
 
     def win32_specific_config(self):
@@ -551,7 +552,7 @@ class Config(object):
         print "Setting Advene paths from %s" % advenehome
         self.path['advene'] = advenehome
         self.path['locale'] = os.path.sep.join( (advenehome, 'locale') )
-        self.path['plugins'] = os.path.sep.join( (advenehome, 'lib') )
+        self.path['plugins'] = os.path.sep.join( (advenehome, 'vlcplugins') )
         self.path['resources'] = os.path.sep.join( (advenehome, 'share') )
         self.path['web'] = os.path.sep.join( (advenehome, 'share', 'web') )
 
@@ -563,8 +564,6 @@ class Config(object):
         # This one should go away sometime. But for the moment, the only way
         # to embed vlc is to use the X11 video output
         self.player['vout'] = 'x11'
-        # There is still a pb with captioning, just use the workaround
-        self.preferences['display-caption']=True
 
     def get_registry_value (self, subkey, name):
         """(win32) get a value from the registry.
@@ -735,36 +734,6 @@ class Config(object):
 
         self.config_file=conffile
 
-    def get_player_args (self):
-        """Build the VLC player argument list.
-
-        FIXME: this is valid for VLC only, so this should belong
-        to player.vlcnative.
-
-        @return: the list of arguments
-        """
-        args=[]
-        filters=[]
-
-        args.append( '--intf=dummy' )
-
-        if os.path.isdir(self.path['plugins']):
-            args.append( '--plugin-path=%s' % self.path['plugins'] )
-        if self.player['verbose'] is not None:
-            args.append ('--verbose')
-            args.append (self.player['verbose'])
-        if self.player['vout'] != 'default':
-            args.append( '--vout=%s' % self.player['vout'] )
-        if self.player['svg']:
-            args.append( '--text-renderer=svg' )
-        if self.player['bundled']:
-            args.append( '--no-plugins-cache' )
-        if filters != []:
-            # Some filters have been defined
-            args.append ('--vout-filter=%s' %":".join(filters))
-        #print "player args", args
-        return [ str(i) for i in args ]
-
     def get_userid (self):
         """Return the userid (login name).
 
@@ -821,8 +790,6 @@ class Config(object):
 
     userid = property (fget=get_userid,
                        doc="Login name of the user")
-    player_args = property (fget=get_player_args,
-                            doc="List of arguments for the VLC player")
 
     version_string = property(fget=get_version_string,
                               doc="Version string")
@@ -840,11 +807,25 @@ class Config(object):
         # .advenerc. Rationale: if the .advenerc was really correct, it
         # would have set the correct paths in the first place.
         print "Overriding 'resources', 'locale', 'advene' and 'web' config paths"
-        data.path['resources']=os.path.sep.join((maindir, 'share'))
-        data.path['locale']=os.path.sep.join( (maindir, 'locale') )
-        data.path['web']=os.path.sep.join((maindir, 'share', 'web'))
-        data.path['advene']=maindir
-        #config.data.path['plugins']=os.path.sep.join( (maindir, 'vlc') )
+        self.path['resources']=os.path.sep.join((maindir, 'share'))
+        self.path['locale']=os.path.sep.join( (maindir, 'locale') )
+        self.path['web']=os.path.sep.join((maindir, 'share', 'web'))
+        self.path['advene']=maindir
+
+        if not os.path.exists(self.path['shotdetect']):
+            if self.os == 'win32':
+                sdname='shotdetect.exe'
+            else:
+                sdname='shotdetect'
+            sd=find_in_path(sdname)
+            if sd is not None:
+                self.path['shotdetect']=sd
+            else:
+                sd=self.advenefile(sdname, 'resources')
+                if os.path.exists(sd):
+                    self.path['shotdetect']=sd
+
+        #config.data.path['plugins']=os.path.sep.join( (maindir, 'vlcplugins') )
 
 data = Config ()
 data.check_settings_directory()

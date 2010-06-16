@@ -31,15 +31,17 @@ notifications and actions triggering.
 import sys
 import time
 import os
+import cgi
 import socket
+import tempfile
 import re
 import webbrowser
 import urllib
 import StringIO
 import gobject
 import shlex
+import itertools
 import operator
-import tempfile
 
 import advene.core.config as config
 
@@ -49,7 +51,6 @@ import advene.core.plugin
 from advene.core.mediacontrol import PlayerFactory
 from advene.core.imagecache import ImageCache
 import advene.core.idgenerator
-
 
 from advene.rules.elements import RuleSet, RegisteredAction, SimpleQuery, Quicksearch
 import advene.rules.ecaengine
@@ -74,7 +75,7 @@ from libadvene.model.tales import AdveneContext, AdveneTalesException
 import advene.util.helper as helper
 #import advene.util.importer
 import xml.etree.ElementTree as ET
-#import advene.rules.importer
+from advene.util.audio import SoundPlayer
 
 from simpletal import simpleTAL, simpleTALES
 
@@ -167,7 +168,7 @@ class AdveneController(object):
         self.aliases = {}
         self.current_alias = None
         # Imagecache dict indexed by media url
-        self.imagecache={}
+        self.imagecache=DefaultDict(default=None)
 
         self.cleanup_done=False
         if args is None:
@@ -187,6 +188,8 @@ class AdveneController(object):
         self.videotime_bookmarks = []
         self.usertime_bookmarks = []
 
+        self.pending_duration_update = False
+
         self.restricted_annotation_type=None
         self.restricted_annotations=None
         self.restricted_rule=None
@@ -199,16 +202,24 @@ class AdveneController(object):
 
         self.package = None
 
+        self._soundplayer=None
+
         self.playerfactory=PlayerFactory()
         self.player = self.playerfactory.get_player()
         self.player.get_default_media = self.get_current_mediafile
         self.player_restarted = 0
+        self.slave_players = set()
+        # source-id (returned by gobject.timeout_add)
+        self.slave_player_timeout = None
 
         # Some player can define a cleanup() method
         try:
             self.player.cleanup()
         except AttributeError:
             pass
+
+        # Scrubbing timeout guard
+        self.scrub_lastvalue = None
 
         # Event handler initialization
         self.event_handler = advene.rules.ecaengine.ECAEngine (controller=self)
@@ -326,10 +337,7 @@ class AdveneController(object):
 
         # Now we can process the events
         for (method, args, kw) in ev:
-            #print "Scheduling %s" % method
-            #import traceback
-            #traceback.print_stack()
-            #print "Process action: %s" % str(method), str(args), str(kw)
+            #print "Process action: %s" % str(method)
             try:
                 method(*args, **kw)
             except Exception, e:
@@ -360,7 +368,7 @@ class AdveneController(object):
         catalog.event_names[name]=description
         if modifying:
             catalog.modifying_events.add(name)
-        
+
     def register_view(self, view):
         """Register a view.
         """
@@ -402,9 +410,35 @@ class AdveneController(object):
         advene.util.importer.register(imp)
 
     def register_player(self, imp):
-        """Register a video player.
+        """Register a video player plugin.
         """
         config.data.register_player(imp)
+
+    def register_slave_player(self, p):
+        """Register a slave video player.
+        """
+        self.slave_players.add(p)
+
+        def synchronize_players():
+            for p in self.slave_players:
+                p.synchronize()
+            if not self.slave_players or config.data.preferences['slave-player-sync-delay'] == 0:
+                # Abort the timeout
+                self.slave_player_timeout = None
+                return False
+            else:
+                return True
+
+        if self.slave_player_timeout is None and config.data.preferences['slave-player-sync-delay'] != 0:
+            self.slave_player_timeout = gobject.timeout_add(config.data.preferences['slave-player-sync-delay'], synchronize_players)
+
+    def unregister_slave_player(self, p):
+        """Unregister a slave video player.
+        """
+        try:
+            self.slave_players.remove(p)
+        except KeyError:
+            pass
 
     def register_videotime_action(self, t, action):
         """Register an action to be executed when reaching the given movie time.
@@ -504,8 +538,18 @@ class AdveneController(object):
         self.notify('RestrictType', annotationtype=at)
         return True
 
-    def search_string(self, searched=None, source=None, case_sensitive=False):
-        """Search a string in the given source (TALES expression).
+    @property
+    def defined_quicksearch_sources(self):
+        """Return a list of TitledElements
+        """
+        return [ helper.TitledElement(expression, label) 
+                 for (label, expression) in [ (_("All annotations"), "all_annotations") ] + [
+                (_("Annotations of type %s") % self.get_title(at),
+                 'here/all/annotation_types/%s/annotations' % at.id) for at in self.package.all.annotation_types ] + [ (_("Views"), 'here/views'), (_("Tags"), 'tags'), (_("Ids"), 'ids') ] 
+                 ]
+
+    def search_string(self, searched=None, sources=None, case_sensitive=False):
+        """Search a string in the given sources (TALES expressions).
 
         A special source value 'tags' will return the elements that
         are tagged with the searched string.
@@ -532,31 +576,9 @@ class AdveneController(object):
         else:
             data_func=lambda e: normalize_case(e.content.data)
 
-        if source is None:
-            source=p.all.annotations
-        elif source == 'tags':
-            source=p.all.user_tags
-            if case_sensitive:
-                data_func=lambda e: e.title
-            else:
-                data_func=lambda e: normalize_case(e.title)
-        elif source == 'ids':
-            # Special search.
-            res=[]
-            for i in searched.split():
-                if '*' in i:
-                    # Joker.
-                    i=i.replace('*', '.*')
-                    res.extend( e for e in p.all if re.match(i, e.id))
-                else:
-                    e=p.get(i)
-                    if e is not None:
-                        res.append(e)
-            return res
-        else:
-            c=self.build_context()
-            source=c.evaluate(source)
-
+        if sources is None:
+            sources=[ "all_annotations" ]
+        
         # Replace standard \n/\t escape, because \ are parsed by shlex
         searched=searched.replace('\\n', '%n').replace('\\t', '%t')
         try:
@@ -571,24 +593,43 @@ class AdveneController(object):
         exceptions=[ w[1:] for w in words if w.startswith('-') ]
         normal=[ w for w in words if not w.startswith('+') and not w.startswith('-') ]
 
-        for w in mandatory:
-            w=normalize_case(w)
-            source=[ e for e in source if w in data_func(e) ]
-        for w in exceptions:
-            w=normalize_case(w)
-            source=[ e for e in source if w not in data_func(e) ]
-        if not normal:
-            # No "normal" search terms. Return the result.
-            return source
-        normal=[ normalize_case(w) for w in normal ]
-        res=[]
-        for e in source:
-            data=data_func(e)
-            for w in normal:
-                if w in data:
-                    res.append(e)
-                    break
-        return res
+        result=[]
+
+        for source in sources:
+            if source == 'ids':
+                # Special search.
+                res=[]
+                for i in searched.split():
+                    e=p.get_element_by_id(i)
+                    if e is not None:
+                        result.append(e)
+                continue
+            else:
+                if source == 'all_annotations':
+                    source = 'here/all/annotations'
+                elif source == 'tags':
+                    source = 'here/all/tags'
+                c=self.build_context()
+                sourcedata=c.evaluate(source)
+
+            for w in mandatory:
+                w=normalize_case(w)
+                sourcedata=[ e for e in sourcedata if w in data_func(e) ]
+            for w in exceptions:
+                w=normalize_case(w)
+                sourcedata=[ e for e in sourcedata if w not in data_func(e) ]
+            if not normal:
+                # No "normal" search terms. Return the result.
+                result.extend(sourcedata)
+            else:
+                normal=[ normalize_case(w) for w in normal ]
+                for e in sourcedata:
+                    data=data_func(e)
+                    for w in normal:
+                        if w in data:
+                            result.append(e)
+                            break
+        return result
 
     def evaluate_query(self, query=None, context=None, expr=None):
         """Evaluate a Query in a given context.
@@ -626,8 +667,8 @@ class AdveneController(object):
             qexpr=Quicksearch(controller=self)
             qexpr.from_xml(query.content.stream)
             if expr is not None:
-                # Override the source... Is it a good idea ?
-                qexpr.source=expr
+                # Override the sources... Is it a good idea ?
+                qexpr.sources=[ expr ]
             result=qexpr.execute(context=context)
         else:
             raise Exception("Unsupported query type for %s" % query.id)
@@ -679,6 +720,12 @@ class AdveneController(object):
         self.log(_("Cannot start the webserver\nThe following processes seem to use the %(port)s port: %(processes)s") % { 'port': pat,
                                                                                                                            'processes':  processes})
 
+    @property
+    def soundplayer(self):
+        if self._soundplayer is None:
+            self._soundplayer=SoundPlayer()
+        return self._soundplayer
+
     def init(self, args=None):
         """Initialize the controller.
         """
@@ -705,14 +752,8 @@ class AdveneController(object):
             pass
 
         # Read the default rules
-        try:
-            self.event_handler.read_ruleset_from_file(config.data.advenefile('default_rules.xml'),
-                                                      type_='default', priority=100)
-        except IOError, e:
-            self.log(_("Cannot read default ruleset %(file)s: %(error)s") % {
-                    'error': unicode(e),
-                    'file': config.data.advenefile('default_rules.xml') })
-            
+        self.event_handler.read_ruleset_from_file(config.data.advenefile('default_rules.xml'),
+                                                  type_='default', priority=100)
 
         self.event_handler.internal_rule (event="PackageLoad",
                                           method=self.manage_package_load)
@@ -722,7 +763,7 @@ class AdveneController(object):
                 self.server = AdveneWebServer(controller=self, port=config.data.webserver['port'])
                 serverthread = threading.Thread (target=self.server.start)
                 serverthread.setName("Advene webserver")
-                serverthread.start ()
+                serverthread.start()
             except socket.error:
                 if config.data.os != 'win32':
                     self.busy_port_info()
@@ -804,11 +845,13 @@ class AdveneController(object):
                 event_name,
                 helper.format_time(self.player.current_position_value),
                 str(kw))
+            import traceback
+            traceback.print_stack()
+            print "-" * 80
 
         # Set the package._modified state
         # This does not really belong here, but it is the more convenient and
         # maybe more effective way to implement it
-
         if event_name in self.modifying_events:
             # Find the element's package
             # Kind of hackish... This information should be clearly available somewhere
@@ -846,11 +889,22 @@ class AdveneController(object):
             v=0
         return v
 
+    def get_snapshot(self, annotation, epsilon=None):
+        """Return the snapshot for the given annotation.
+        """
+        ic=self.imagecache.get(annotation.media.url)
+        if ic is not None:
+            return ic.get(annotation.begin, epsilon)
+        else:
+            return None
+
+    def snapshot_taken(self, snap):
+        if snap is not None and snap.height != 0 and self.current_media:
+            self.imagecache[self.current_media.url][snap.date] = helper.snapshot2png(snap)
+            self.notify('SnapshotUpdate', position=snap.date)
+        
     def update_snapshot (self, position=None):
         """Event handler used to take a snapshot for the given position.
-
-        !!! For the moment, the position parameter is ignored, and the
-            snapshot is taken for the current position.
 
         @return: a boolean (~desactivation)
         """
@@ -860,6 +914,15 @@ class AdveneController(object):
             ic=None
         if (config.data.player['snapshot']
             and ic and not ic.is_initialized (position)):
+
+            # Check if the player has async_snapshot capability.
+            async=getattr(self.player, 'async_snapshot', None)
+            if async is not None:
+                if self.player.snapshot_notify is None:
+                    self.player.snapshot_notify=self.snapshot_taken
+                async(position or 0)
+                return True
+
             # FIXME: only 0-relative position for the moment
             # print "Update snapshot for %d" % position
             try:
@@ -961,22 +1024,28 @@ class AdveneController(object):
             url=u"%s/view/%s" % (url, defaultview)
         return url
 
-    def get_title(self, element, representation=None):
+    def get_title(self, element, representation=None, max_size=None):
         """Return the title for the given element.
         """
+        def trim_size(s):
+            if max_size is not None and len(s) > max_size:
+                return s[:max_size]+'\u2026'
+            else:
+                return s
+
         def cleanup(s):
             i=s.find('\n')
             if i > 0:
-                return s[:i]
+                return trim_size(s[:i])
             else:
-                return s
+                return trim_size(s)
 
         if element is None:
             return _("None")
         if isinstance(element, unicode) or isinstance(element, str):
-            return element
+            return trim_size(element)
         if isinstance(element, Annotation) or isinstance(element, Relation):
-            if representation:
+            if representation is not None and representation != "":
                 c=self.build_context(here=element)
                 try:
                     r=c.evaluate(representation)
@@ -994,6 +1063,7 @@ class AdveneController(object):
                 if not r:
                     r=element.id
                 return cleanup(r)
+
             else:
                 c=self.build_context(here=element)
                 try:
@@ -1011,7 +1081,7 @@ class AdveneController(object):
                 arrow=u'->'
             else:
                 arrow=u'\u2192'
-            return arrow + unicode(cleanup(element.title or element.id))
+            return arrow + unicode(cleanup(element.title))
         if hasattr(element, 'title') and element.title:
             return unicode(cleanup(element.title))
         if hasattr(element, 'id') and element.id:
@@ -1075,7 +1145,9 @@ class AdveneController(object):
                     if d.startswith('file:'):
                         d=d.replace('file://', '')
                     d=urllib.url2pathname(d)
-                    d=unicode(os.path.dirname(d), sys.getfilesystemencoding())
+                    if not isinstance(d, unicode):
+                        d=unicode(d, sys.getfilesystemencoding())
+                    d=os.path.dirname(d)
                 if '~' in d:
                     # Expand userdir
                     d=unicode(os.path.expanduser(d), sys.getfilesystemencoding())
@@ -1086,6 +1158,11 @@ class AdveneController(object):
                     mediafile=n
                     self.log(_("Found matching video file in moviepath: %s") % n)
                     break
+        else:
+            # Path exists. It may be a relative path, so convert it to
+            # absolute path.
+            mediafile=os.path.abspath(mediafile)
+
         return mediafile
 
     def get_defined_tags(self, p=None):
@@ -1106,6 +1183,8 @@ class AdveneController(object):
         p.playlist_clear()
         if uri is not None:
             p.playlist_add_item (uri)
+        # Reset cached_duration so that it will be updated on play
+        self.pending_duration_update = True
         self.notify("MediaChange", uri=uri)
 
     def set_default_media (self, uri, package=None):
@@ -1129,13 +1208,17 @@ class AdveneController(object):
             media=package.create_media('m1', uri)
         if m:
             uri=self.player.dvd_uri(title, chapter)
+
         self.set_mediafile(uri)
 
-        if not uri in self.imagecache:
+        if uri is not None and uri != "" and not uri in self.imagecache:
             # Not yet present. Initialize an imagecache
             ic=ImageCache()
             self.imagecache[uri]=ic
             ic.load(helper.mediafile2id(uri))
+            # Update package title and description if necessary
+            if not package.title or package.title == "Template package":
+                package.title = _("Analysis of ") + unicode(os.path.basename(uri))
 
     def delete_element (self, el, immediate_notify=False, batch_id=None):
         """Delete an element from its package.
@@ -1195,8 +1278,10 @@ class AdveneController(object):
                 # Do not just duplicate the annotation
                 return None
             elif delete:
-                self.notify('EditSessionStart', element=annotation, immediate=True)
                 # If delete, then we can simply move the annotation
+                # without deleting it.
+                if notify:
+                    self.notify('EditSessionStart', element=annotation, immediate=True)
                 d=annotation.duration
                 annotation.begin=position
                 annotation.end=position+d
@@ -1204,21 +1289,13 @@ class AdveneController(object):
                     self.notify("AnnotationEditEnd", annotation=annotation, comment="Transmute annotation")
                     self.notify('EditSessionEnd', element=annotation)
                 return annotation
-
-        if delete:
-            # Moving the annotation
-            self.notify('EditSessionStart', element=annotation, immediate=True)
-            an = annotation
-            an.type = annotationType
-        else:
-            # We want to make a copy. Create a new annotation
-            ident=self.package._idgenerator.get_id(Annotation)
-            an = self.package.create_annotation(id=ident,
-                                                media=annotation.media,
-                                                begin=annotation.begin,
-                                                end=annotation.end,
-                                                mimetype=annotationType.mimetype,
-                                                type = annotationType)
+        ident=self.package._idgenerator.get_id(Annotation)
+        an = self.package.create_annotation(id=ident,
+                                            media=annotation.media,
+                                            begin=annotation.begin,
+                                            end=annotation.end,
+                                            mimetype=annotationType.mimetype,
+                                            type = annotationType)
 
         if position is not None:
             # Change the position
@@ -1227,18 +1304,61 @@ class AdveneController(object):
             an.end=position+d
             
         # Check if types are compatible.
-        # FIXME: we need a generic type conversion framework here
-        an.content.data=annotation.content.data
-
-        if notify:
-            if delete:
-                self.notify('AnnotationMove', annotation=an, comment="Transmute annotation")
-                self.notify('AnnotationEditEnd', annotation=an, comment="Transmute annotation")
-                self.notify('EditSessionEnd', element=an)
+        # FIXME: should be made more generic, but we need more metadata for this.
+        if (an.type.mimetype == annotation.type.mimetype
+            or an.type.mimetype == 'text/plain'):
+            # We consider that text/plain can hold anything
+            an.content.data=annotation.content.data
+        elif an.type.mimetype == 'application/x-advene-zone':
+            # we want to define a zone.
+            if annotation.type.mimetype == 'text/plain':
+                d={ 'name': annotation.content.data.replace('\n', '\\n') }
+            elif annotation.type.mimetype == 'application/x-advene-structured':
+                r=re.compile('^(\w+)=(.*)')
+                d=dict([ (r.findall(l) or [ ('_error', l) ])[0] for l in annotation.content.data.split('\n') ])
+                name="Unknown"
+                for n in ('name', 'title', 'content'):
+                    if d.has_key(n):
+                        name=d[n]
+                        break
+                d['name']=name.replace('\n', '\\n')
             else:
-                self.notify('EditSessionStart', element=an, immediate=True)
-                self.notify("AnnotationCreate", annotation=an, comment="Transmute annotation")
-                self.notify('EditSessionEnd', element=an)
+                d={'name': 'Unknown'}
+            d.setdefault('x', 50)
+            d.setdefault('y', 50)
+            d.setdefault('width', 10)
+            d.setdefault('height', 10)
+            d.setdefault('shape', 'rect')
+            an.content.data="\n".join( [ "%s=%s" % (k, v) for k, v in d.iteritems() ] )
+        elif an.type.mimetype == 'application/x-advene-structured':
+            if annotation.type.mimetype == 'text/plain':
+                an.content.data = "title=" + annotation.content.data.replace('\n', '\\n')
+            elif annotation.type.mimetype == 'application/x-advene-structured':
+                an.content.data = annotation.content.data
+            else:
+                self.log("Cannot convert %s to %s" % (annotation.type.mimetype,
+                                                      an.type.mimetype))
+                an.content.data = annotation.content.data
+        elif an.type.mimetype == 'image/svg+xml':
+            # Use a template for text->SVG conversion. 
+            # FIXME: we should be able to propose a variety of templates, passed as parameter from the GUI
+            an.content.data = """<svg:svg height="320pt" preserveAspectRatio="xMinYMin meet" version="1" viewBox="0 0 400 320" width="400pt" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svg="http://www.w3.org/2000/svg">
+  <text fill="green" name="Content" stroke="green" style="stroke-width:1; font-family: sans-serif; font-size: 22" x="8" y="290">%s</text>
+</svg:svg>""" % self.get_title(annotation)
+        else:
+            self.log("Do not know how to convert %s to %s" % (annotation.type.mimetype,
+                                                              an.type.mimetype))
+            an.content.data = annotation.content.data
+
+        if delete and not annotation.relations:
+            if notify:
+                self.notify('EditSessionStart', element=annotation, immediate=True)
+                self.notify('AnnotationMove', annotation=annotation, comment="Transmute annotation")
+                self.notify('AnnotationDelete', annotation=annotation, comment="Transmute annotation")
+                annotation.delete()
+        if notify:
+            self.notify("AnnotationCreate", annotation=an, comment="Transmute annotation")
+
         return an
 
     def duplicate_annotation(self, annotation):
@@ -1272,13 +1392,16 @@ class AdveneController(object):
                                             type=annotation.type,
                                             begin=position,
                                             end=annotation.end)
-        an.content.data=annotation.content.data
 
         # Shorten the first one.
         self.notify('EditSessionStart', element=annotation, immediate=True)
         annotation.end = position
         self.notify("AnnotationEditEnd", annotation=annotation, comment="Duplicate annotation")
         self.notify('EditSessionEnd', element=annotation)
+
+        # Shorten the second one
+        an.begin = position
+        an.content.data=annotation.content.data
         self.notify("AnnotationCreate", annotation=an, comment="Duplicate annotation")
         return an
 
@@ -1295,26 +1418,24 @@ class AdveneController(object):
             d.begin=begin
             d.end=end
         # Merging data
-        # FIXME: handle differing mimetypes
-        d.content.data=d.content.data + '\n' + s.content.data
-        #mts=s.type.mimetype
-        #mtd=d.type.mimetype
-        #if mtd == 'text/plain':
-        #    d.content.data=d.content.data + '\n' + s.content.data
-        #elif ( mtd == mts and mtd == 'application/x-advene-structured' ):
-        #    # Compare fields and merge identical fields
-        #    sdata=s.content.parsed()
-        #    ddata=d.content.parsed()
-        #    for k, v in sdata.iteritems():
-        #        if k in ddata:
-        #            # Merge fields
-        #            ddata[k] = "|".join( (sdata[k], ddata[k]) )
-        #        else:
-        #            ddata[k] = sdata[k]
-        #    # Re-encode ddata
-        #    d.content.data="\n".join( [ "%s=%s" % (k, unicode(v).replace('\n', '%0A')) for (k, v) in ddata.iteritems() if k != '_all' ] )
-        #elif mtd == 'application/x-advene-structured':
-        #    d.content.data=d.content.data + '\nmerged_content="' + cgi.urllib.quote(s.content.data)+'"'
+        mts=s.type.mimetype
+        mtd=d.type.mimetype
+        if mtd == 'text/plain':
+            d.content.data=d.content.data + '\n' + s.content.data
+        elif ( mtd == mts and mtd == 'application/x-advene-structured' ):
+            # Compare fields and merge identical fields
+            sdata=s.content.parsed()
+            ddata=d.content.parsed()
+            for k, v in sdata.iteritems():
+                if k in ddata:
+                    # Merge fields
+                    ddata[k] = "|".join( (sdata[k], ddata[k]) )
+                else:
+                    ddata[k] = sdata[k]
+            # Re-encode ddata
+            d.content.data="\n".join( [ "%s=%s" % (k, unicode(v).replace('\n', '%0A')) for (k, v) in ddata.iteritems() if k != '_all' ] )
+        elif mtd == 'application/x-advene-structured':
+            d.content.data=d.content.data + '\nmerged_content="' + cgi.urllib.quote(s.content.data)+'"'
         self.notify("AnnotationMerge", annotation=d,comment="Merge annotations", batch=batch_id)
         self.delete_element(s, batch_id=batch_id)
         self.notify("AnnotationEditEnd", annotation=d, comment="Merge annotations", batch=batch_id)
@@ -1325,7 +1446,7 @@ class AdveneController(object):
         """Activate the given player.
         """
         # Stop the current player.
-        self.player.stop(0)
+        self.player.stop()
         self.player.exit()
         if 'record' in self.player.player_capabilities:
             # The old player was a recorder. Chances are that we
@@ -1344,7 +1465,7 @@ class AdveneController(object):
         mediafile = self.get_current_mediafile()
         if mediafile != "":
             self.set_mediafile(mediafile)
-        
+
     def restart_player (self):
         """Restart the media player."""
         self.player.restart_player ()
@@ -1482,21 +1603,36 @@ class AdveneController(object):
             l=list(config.data.color_palette)
         self.package._color_palette=helper.CircularList(l)
 
+        self.pending_duration_update = True
+
         # FIXME: this information should be derived from the available
         # p.all.medias
-        duration = self.package.meta.get( config.data.namespace, "duration" )
+        duration = self.package.meta.get( config.data.namespace + "duration" )
         if duration is not None:
             try:
                 v=long(float(duration))
+                self.pending_duration_update = False
             except ValueError:
                 v=0
             self.cached_duration = v
-        elif len(self.package.all.annotations):
-            self.cached_duration = max(a.end for a in self.package.all.annotations)
         else:
-            self.cached_duration = 30000
-        
+            self.cached_duration = 0
+
         self.register_package(alias, self.package)
+
+        # Compatibility issues in ruleset/queries: since r4503, we are
+        # stricter wrt. namespaces. Fix common problems.
+        for q in self.package.own.queries:
+            if 'http://liris.cnrs.fr/advene/ruleset' in q.content.data:
+                print "Fixing query", q.id
+                q.content.data = q.content.data.replace('http://liris.cnrs.fr/advene/ruleset',
+                                                        config.data.namespace)
+        for v in self.package.own.views:
+            if (v.content.mimetype == 'application/x-advene-ruleset'
+                and '<ruleset>' in v.content.data):
+                print "Fixing view ", v.id
+                v.content.data = v.content.data.replace('<ruleset>',
+                                                        '<ruleset xmlns="http://experience.univ-lyon1.fr/advene/ns/advenetool">')
 
         # Notification must be immediate, since at application startup, package attributes
         # (_indexer, imagecache) are initialized by events, and may be needed by
@@ -1566,6 +1702,12 @@ class AdveneController(object):
         libadvene.util.session.session.package=self.package
         libadvene.util.session.session.user=config.data.userid
 
+        # Reset the cached duration
+        duration = self.package.meta.get(config.data.namespace + "duration")
+        self.cached_duration = long(float(duration or 0))
+        if not self.cached_duration:
+            self.pending_duration_update = True
+
         mediafile = self.get_current_mediafile()
         if mediafile:
             if self.player.is_active():
@@ -1581,6 +1723,7 @@ class AdveneController(object):
             view=self.package.get_element(default_stbv)
             if view and helper.get_view_type(view) == 'dynamic':
                 self.activate_stbv(view)
+
         self.notify ("PackageActivate", package=self.package)
 
     def save_session(self, name=None):
@@ -1812,7 +1955,10 @@ class AdveneController(object):
                 self.server.stop()
             except Exception:
                 pass
-
+            # closing tracers Threads puting exit_coding in queue
+            for tr in self.tracers:
+                tr.equeue.put(tr.exit_code)
+                tr.join()
             # Terminate the VLC server
             try:
                 #print "Exiting vlc player"
@@ -1930,6 +2076,8 @@ class AdveneController(object):
             #     print "update_status %s %s" % (status, position)
             if self.player.playlist_get_list():
                 self.player.update_status (status, position)
+                for p in self.slave_players:
+                    p.update_status(status, position)
                 # Update the destination screenshot
                 if hasattr(position, 'value'):
                     # It is a player.Position. Do a simple conversion
@@ -1940,9 +2088,7 @@ class AdveneController(object):
             # FIXME: we should catch more specific exceptions and
             # devise a better feedback than a simple print
             import traceback
-            s=StringIO.StringIO()
-            traceback.print_exc (file = s)
-            self.log(_("Raised exception in update_status: %s") % str(e), s.getvalue())
+            self.log(_("Raised exception in update_status: %s") % traceback.format_exc())
         en=self.status2eventname.get(status, None)
         if en and notify:
             self.notify (en,
@@ -1964,15 +2110,45 @@ class AdveneController(object):
         """
         try:
             self.player.position_update ()
-        except self.player.InternalException:
+        except self.player.InternalException, e:
             # The server is down. Restart it.
-            print "Restarting player..."
+            print "Restarting player...", str(e)
             self.player_restarted += 1
             if self.player_restarted > 5:
                 raise Exception (_("Unable to start the player."))
             self.restart_player ()
 
         return self.player.current_position_value
+
+    def player_scrub(self, pos):
+        """Scrub to a given position.
+        """
+        p=self.player
+        if p.status == p.PauseStatus and 'frame-by-frame' in p.player_capabilities:
+            self.update_status("set", pos, notify=True)
+        return False
+
+    def player_delayed_scrub(self, pos):
+        """Scrub to a given position.
+
+        To avoid too fast scrubbing, we set a timeout. The actual
+        scrubbing is done with the last value given when the timeout expires.
+        """
+        def do_scrub():
+            if self.scrub_lastvalue is not None:
+                # FIXME: there is a concurrency issue here.
+                self.player_scrub(self.scrub_lastvalue)
+                self.scrub_lastvalue = None
+            return False
+
+        p=self.player
+        if p.status == p.PauseStatus and 'frame-by-frame' in p.player_capabilities:
+            if self.scrub_lastvalue is None:
+                # Not in a scrubbing state.
+                gobject.timeout_add(250, do_scrub)
+            self.scrub_lastvalue = pos
+
+        return True
 
     def update (self):
         """Update the information.
@@ -2055,8 +2231,10 @@ class AdveneController(object):
                     break
 
         # Update the cached duration if necessary
-        if self.current_media and self.current_media.duration <= 0 and self.player.stream_duration > 0:
-            self.current_media.duration = long(self.player.stream_duration)
+        if self.pending_duration_update and self.player.stream_duration > 0:
+            self.cached_duration = self.current_media.duration = long(self.player.stream_duration)
+            self.notify('DurationUpdate', duration=self.current_media.duration)
+            self.pending_duration_update = False
 
         return pos
 
@@ -2120,10 +2298,10 @@ class AdveneController(object):
                          for v in importer_package.own.views
                          if v.id != 'index' ), key=lambda v: v.title )
     
-    def apply_export_filter(self, filter, filename):
-        """Apply the given export filename and output the result to filename.
+    def apply_export_filter(self, element, filter, filename):
+        """Apply the given export filename to the element and output the result to filename.
         """
-        ctx=self.build_context()
+        ctx=self.build_context(here=element)
         try:
             stream=open(filename, 'wb')
         except Exception, e:
@@ -2133,11 +2311,18 @@ class AdveneController(object):
         kw = {}
         if filter.content.mimetype is None or filter.content.mimetype.startswith('text/'):
             compiler = simpleTAL.HTMLTemplateCompiler ()
-            compiler.parseTemplate (filter.content.stream, 'utf-8') 
+            compiler.parseTemplate (filter.content.stream, 'utf-8')
+            if filter.content.mimetype == 'text/plain':
+                # Convert HTML entities to their values
+                output = StringIO.StringIO()
+            else:
+                output = stream
             try:
-                compiler.getTemplate ().expand (context=ctx, outputFile=stream, outputEncoding='utf-8')
+                compiler.getTemplate ().expand (context=ctx, outputFile=output, outputEncoding='utf-8')
             except simpleTALES.ContextContentException, e:
                 self.log(_("Error when exporting: %s") % unicode(e))
+            if filter.content.mimetype == 'text/plain':
+                stream.write(output.getvalue().replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&'))
         else:
             compiler = simpleTAL.XMLTemplateCompiler ()
             compiler.parseTemplate (filter.content.stream)
