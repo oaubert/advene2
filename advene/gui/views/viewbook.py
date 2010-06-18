@@ -276,10 +276,10 @@ class ViewBook(AdhocView):
                         n=None
                     f.close()
                     return n
-                    saved=[ v
-                            for v in self.controller.package.all.views
-                            if v.content.mimetype == 'application/x-advene-adhoc-view'
-                            and stbv_name(v) == name ]
+                saved=[ v
+                        for v in self.controller.package.all.views
+                        if v.content.mimetype == 'application/x-advene-adhoc-view'
+                        and stbv_name(v) == name ]
                 if name == 'transcription':
                     menu=gtk.Menu()
                     i=gtk.MenuItem(_("Open a new transcription for..."))
