@@ -1220,7 +1220,7 @@ class AdveneController(object):
             if not package.title or package.title == "Template package":
                 package.title = _("Analysis of ") + unicode(os.path.basename(uri))
 
-    def delete_element (self, el, immediate_notify=False, batch_id=None):
+    def delete_element (self, el, immediate_notify=False, batch=None):
         """Delete an element from its package.
 
         Take care of all dependencies (for instance, annotations which
@@ -1231,22 +1231,22 @@ class AdveneController(object):
             # modified during the loop
             self.notify('EditSessionStart', element=el, immediate=True)
             for r in el.relations[:]:
-                self.delete_element(r, immediate_notify=immediate_notify, batch_id=batch_id)
+                self.delete_element(r, immediate_notify=immediate_notify, batch=batch)
             # We have to notify before actually deleting, since the
             # reference is no more valid thereafter.
-            self.notify('AnnotationDelete', annotation=el, immediate=immediate_notify, batch=batch_id)
+            self.notify('AnnotationDelete', annotation=el, immediate=immediate_notify, batch=batch)
             el.delete()
         elif isinstance(el, Relation):
             self.notify('RelationDelete', relation=el, immediate=immediate_notify)
             el.delete()
         elif isinstance(el, AnnotationType):
             for a in el.annotations:
-                self.delete_element(a, immediate_notify=True, batch_id=batch_id)
+                self.delete_element(a, immediate_notify=True, batch=batch)
             self.notify('AnnotationTypeDelete', annotationtype=el, immediate=immediate_notify)
             el.delete()
         elif isinstance(el, RelationType):
             for r in el.relations:
-                self.delete_element(r, immediate_notify=True, batch_id=batch_id)
+                self.delete_element(r, immediate_notify=True, batch=batch)
             self.notify('RelationTypeDelete', relationtype=el, immediate=immediate_notify)
             el.delete()
         elif isinstance(el, Schema):
@@ -1254,11 +1254,11 @@ class AdveneController(object):
             el.delete()
         elif isinstance(el, View):
             self.notify('EditSessionStart', element=el, immediate=True)
-            self.notify('ViewDelete', view=el, immediate=immediate_notify, batch=batch_id)
+            self.notify('ViewDelete', view=el, immediate=immediate_notify, batch=batch)
             el.delete()
         elif isinstance(el, Query):
             self.notify('EditSessionStart', element=el, immediate=True)            
-            self.notify('QueryDelete', query=el, immediate=immediate_notify, batch=batch_id)
+            self.notify('QueryDelete', query=el, immediate=immediate_notify, batch=batch)
             el.delete()
         elif isinstance(el, Resource):
             self.notify('ResourceDelete', resource=el, immediate=immediate_notify)
@@ -1437,7 +1437,7 @@ class AdveneController(object):
         elif mtd == 'application/x-advene-structured':
             d.content.data=d.content.data + '\nmerged_content="' + cgi.urllib.quote(s.content.data)+'"'
         self.notify("AnnotationMerge", annotation=d,comment="Merge annotations", batch=batch_id)
-        self.delete_element(s, batch_id=batch_id)
+        self.delete_element(s, batch=batch_id)
         self.notify("AnnotationEditEnd", annotation=d, comment="Merge annotations", batch=batch_id)
         self.notify('EditSessionEnd', element=d)
         return d
