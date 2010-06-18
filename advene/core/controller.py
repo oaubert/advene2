@@ -1130,7 +1130,15 @@ class AdveneController(object):
         elif mediafile.startswith('http:'):
             # FIXME: check for the existence of the file?
             pass
-        elif not os.path.exists(mediafile.encode(sys.getfilesystemencoding(), 'ignore')):
+        else:
+            mediafile=self.locate_mediafile(mediafile)
+
+        return mediafile
+
+    def locate_mediafile(self, mediafile):
+        """Locate the given media file.
+        """
+        if not os.path.exists(mediafile.encode(sys.getfilesystemencoding(), 'ignore')):
             # It is a file. It should exist. Else check for a similar
             # one in moviepath
             # UNIX/Windows interoperability: convert pathnames
@@ -1145,9 +1153,7 @@ class AdveneController(object):
                     if d.startswith('file:'):
                         d=d.replace('file://', '')
                     d=urllib.url2pathname(d)
-                    if not isinstance(d, unicode):
-                        d=unicode(d, sys.getfilesystemencoding())
-                    d=os.path.dirname(d)
+                    d=unicode(os.path.dirname(d), sys.getfilesystemencoding())
                 if '~' in d:
                     # Expand userdir
                     d=unicode(os.path.expanduser(d), sys.getfilesystemencoding())
@@ -1765,6 +1771,14 @@ class AdveneController(object):
         if name is None:
             name=p.url
         old_url = p.url
+
+        # Check if we know the stream duration. If so, save it as
+        # package metadata.
+        # FIXME: store as <media> metadata
+        d=self.cached_duration
+        if d > 0:
+            p.meta[config.data.namespace + "duration"] = unicode(d)
+
 
         p.save_as(name, erase=True)
         p._modified = False
