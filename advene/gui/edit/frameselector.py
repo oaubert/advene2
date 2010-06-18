@@ -22,8 +22,8 @@ It depends on a Controller instance to be able to interact with the video player
 """
 
 import gtk
-from advene.gui.widget import TimestampRepresentation
-from advene.gui.util import dialog
+from advene.gui.widget import TimestampRepresentation, GenericColorButtonWidget
+from advene.gui.util import dialog, get_color_style
 from gettext import gettext as _
 
 class FrameSelector(object):
@@ -33,17 +33,24 @@ class FrameSelector(object):
     the timestamp and allows to select the most appropriate
     one.
     """
-    def __init__(self, controller, timestamp=0, callback=None):
+    def __init__(self, controller, timestamp=0, callback=None, border_mode='left'):
         self.controller = controller
         self.timestamp = timestamp
         self.selected_value = timestamp
         self.callback = callback
+        # border_mode is either 'left', 'right', 'both' or None
+        self.border_mode = border_mode
+
         # Number of displayed timestamps
         self.count = 8
         self.frame_length = 1000 / 25
-        # Reference to the HBox holding TimestampRepresentation widgets.
+
+        self.black_color = gtk.gdk.color_parse('black')
+        self.red_color = gtk.gdk.color_parse('red')
+
+        # List of TimestampRepresentation widgets.
         # It is initialized in build_widget()
-        self.container = None
+        self.frames = []
         self.widget = self.build_widget()
         
     def set_timestamp(self, timestamp):
@@ -76,29 +83,47 @@ class FrameSelector(object):
         else:
             index_offset = 0
         
-        for c in self.container.get_children():
-            c.value = t
+        matching_index = -1
+        for (i, f) in enumerate(self.frames):
+            f.value = t
+            f.left_border.set_color(self.black_color)
+            f.right_border.set_color(self.black_color)
+
             if t < self.timestamp:
-                c.bgcolor = '#666666'
+                f.bgcolor = '#666666'
             else:
-                c.bgcolor = 'black'
+                if matching_index < 0:
+                    matching_index = i
+
+                if t == self.timestamp and self.border_mode == 'right':
+                    f.bgcolor = '#666666'
+                else:
+                    f.bgcolor = 'black'
+
             t += self.frame_length
+
+        if matching_index >= 0:
+            f = self.frames[matching_index]
+            if self.border_mode == 'left' or self.border_mode ==  'both':
+                f.left_border.set_color(self.red_color)
+            if self.border_mode == 'right' or self.border_mode ==  'both':
+                f.right_border.set_color(self.red_color)
 
         # Handle focus
         if focus_index is None:
             focus_index = self.count / 2
 
-        self.container.get_children()[focus_index + index_offset].grab_focus()
+        self.frames[focus_index + index_offset].grab_focus()
         return True
 
     def update_offset(self, offset, focus_index=None):
         """Update the timestamps to go forward/backward.
         """
         if offset < 0:
-            ref=self.container.get_children()[0]
+            ref=self.frames[0]
             start = max(ref.value + offset * self.frame_length, 0)
         else:
-            ref=self.container.get_children()[offset]
+            ref=self.frames[offset]
             start = ref.value
         self.update_timestamp(start + self.count / 2 * self.frame_length, focus_index)
         return True
@@ -107,7 +132,7 @@ class FrameSelector(object):
         """Update non-initialized snapshots.
         """
         ic=self.controller.package.imagecache
-        for c in self.container.get_children():
+        for c in self.frames:
             if not ic.is_initialized(c.value):
                 self.controller.update_snapshot(c.value)
         return True
@@ -123,7 +148,7 @@ class FrameSelector(object):
     def focus_index(self):
         """Return the index of the TimestampRepresentation which has the focus.
         """
-        return self.container.get_children().index(self.container.get_focus_child())
+        return self.frames.index(self.frames[0].get_parent().get_focus_child())
 
     def handle_key_press(self, widget, event):
         if event.keyval == gtk.keysyms.Left:
@@ -131,14 +156,14 @@ class FrameSelector(object):
             if i == 0:
                 self.update_offset(-1, focus_index = 0)
             else:
-                self.container.get_children()[i - 1].grab_focus()
+                self.frames[i - 1].grab_focus()
             return True
         elif event.keyval == gtk.keysyms.Right:
             i = self.focus_index()
-            if i == len(self.container.get_children()) -1:
+            if i == len(self.frames) -1:
                 self.update_offset(+1, focus_index = -1)
             else:
-                self.container.get_children()[i + 1].grab_focus()
+                self.frames[i + 1].grab_focus()
             return True
         return False
 
@@ -191,17 +216,49 @@ class FrameSelector(object):
 
         vb.pack_start(buttons, expand=False)
 
+        l = gtk.Label(_("Click on a frame to select its time."))
+        vb.pack_start(l, expand=False)
+
         hb=gtk.HBox()
 
-        for i in xrange(-self.count / 2, self.count / 2):
-            r=TimestampRepresentation(0, self.controller, width=100, visible_label=True, epsilon=30)
+        ar = gtk.Arrow(gtk.ARROW_LEFT, gtk.SHADOW_IN)
+        ar.set_tooltip_text(_("Scroll to see more frames"))
+        hb.pack_start(ar, expand=False)
+
+        r = None
+        for i in xrange(self.count):
+
+            border = GenericColorButtonWidget('border')
+            border.default_size=(3, 110)
+            border.local_color=self.black_color
+
+            if r is not None:
+                # Previous TimestampRepresentation -> right border
+                r.right_border = border
+
+            r = TimestampRepresentation(0, self.controller, width=100, visible_label=True, epsilon=30)
+            self.frames.append(r)
             r.connect("clicked", self.select_time)
+            r.left_border = border
+            
+            hb.pack_start(border, expand=False)
             hb.pack_start(r, expand=False)
 
+        # Last right border
+        border = GenericColorButtonWidget('border')
+        border.default_size=(3, 110)
+        border.local_color=self.black_color
+        r.right_border = border
+        hb.pack_start(border, expand=False)
+
+        ar = gtk.Arrow(gtk.ARROW_RIGHT, gtk.SHADOW_IN)
+        ar.set_tooltip_text(_("Scroll to see more frames"))
+        hb.pack_start(ar, expand=False)
+
+        hb.set_style(get_color_style(hb, 'black', 'black'))
         hb.connect('scroll-event', self.handle_scroll_event)
         hb.connect('key-press-event', self.handle_key_press)
         vb.add(hb)
 
-        self.container = hb
         self.update_timestamp(self.timestamp)
         return vb
