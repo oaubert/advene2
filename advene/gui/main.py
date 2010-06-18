@@ -373,8 +373,8 @@ class AdveneGUI(object):
                         os.path.dirname(advene.__file__), 'gui', n),
                                                prefix="advene_gui_%s" % n)
                 self.gui_plugins.extend(l)
-            except OSError:
-                print "OSerror"
+            except OSError, e:
+                print "OSerror", str(e)
                 pass
         # Adhoc view toolbuttons signal handling
         def adhoc_view_drag_sent(widget, context, selection, targetType, eventTime, name):
