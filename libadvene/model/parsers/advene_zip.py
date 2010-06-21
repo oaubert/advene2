@@ -30,27 +30,6 @@ class Parser(object):
         """
         r = 0
 
-        if hasattr(file_, "seek"):
-            # try to open it as zip file and get the mimetype from archive
-            t = file_.tell()
-            try:
-                z = ZipFile(file_, "r")
-            except BadZipfile:
-                return 0
-            else:
-                if "mimetype" in z.namelist():
-                    if z.read("mimetype").startswith(cls.MIMETYPE):
-                        return 80
-                    else:
-                        return 0
-                elif "content.xml" in z.namelist():
-                    r = 20
-                    # wait for other information to make up our mind
-                else:
-                    return 0
-                z.close()
-            file_.seek(t)
-            
         info = getattr(file_, "info", lambda: {})()
         mimetype = info.get("content-type", "")
         if mimetype.startswith(cls.MIMETYPE):
@@ -63,7 +42,32 @@ class Parser(object):
                 r += 40
             elif fpath.endswith(".zip"):
                 r += 20
-        print "+++", r
+
+        if hasattr(file_, "seek"):
+            # If possible, inspect ZIP file to adjust the claim-score.
+            # NB: if those tests fail, we do not drop the claim-score to 0,
+            # but merely reduce it. This is because, if no other parser claims
+            # that file, a ParseError will be more informative than a
+            # NoClaimError.
+            old_pos = file_.tell()
+            try:
+                z = ZipFile(file_, "r")
+            except BadZipfile:
+                r /= 5
+            else:
+                if "mimetype" in z.namelist():
+                    if z.read("mimetype").startswith(cls.MIMETYPE):
+                        r = max(r, 70)
+                    else:
+                        r /= 5
+                elif "content.xml" in z.namelist():
+                    r = max(r, 20)
+                    # wait for other information to make up our mind
+                else:
+                    r /= 5
+                z.close()
+            file_.seek(old_pos)
+            
         return r
 
     @classmethod

@@ -34,25 +34,6 @@ class Parser(XmlParserBase):
         parser is pretty sure it can handle the URL.
         """
         r = 0
-        print "claims_for_parse", str(file_)
-        if hasattr(file_, "seek"):
-            # try to open it as xml file and get the root element
-            t = file_.tell()
-            file_.seek(0)
-            it = iterparse(file_, events=("start",))
-            try:
-                ev, el = it.next()
-            except ExpatError, e:
-                print "ExpatError", unicode(e)
-                return 0
-            else:
-                print "TAG ", el.tag, cls._NAMESPACE_URI
-                if el.tag == "{%s}package" % cls._NAMESPACE_URI:
-                    return 80
-                else:
-                    return 0
-            file_.seek(0)
-            
         info = getattr(file_, "info", lambda: {})()
         mimetype = info.get("content-type", "")
         if mimetype.startswith(cls.MIMETYPE):
@@ -66,6 +47,27 @@ class Parser(XmlParserBase):
                 r += 50
             elif fpath.endswith(".xml"):
                 r += 20
+
+        if hasattr(file_, "seek"):
+            # If possible, inspect XML file to adjust the claim-score.
+            # NB: if those tests fail, we do not drop the claim-score to 0,
+            # but merely reduce it. This is because, if no other parser claims
+            # that file, a ParseError will be more informative than a
+            # NoClaimError.
+            old_pos = file_.tell()
+            file_.seek(0)
+            it = iterparse(file_, events=("start",))
+            try:
+                ev, el = it.next()
+            except ExpatError, e:
+                r /= 5
+            else:
+                if el.tag != "{%s}package" % cls._NAMESPACE_URI:
+                    r /= 2
+                else:
+                    r = max(70, r)
+            file_.seek(old_pos)
+            
         return r
 
     @classmethod

@@ -1,12 +1,14 @@
-from os import rmdir, unlink
+from os import fdopen, rmdir, unlink
 from os.path import join
-from tempfile import mkdtemp
+from tempfile import mkdtemp, mkstemp
 from unittest import TestCase, main
 from urllib import pathname2url
 
 from libadvene.model.consts import DC_NS_PREFIX
-from libadvene.model.core.package import Package
+from libadvene.model.core.package import Package, NoClaimingError
 from libadvene.model.backends.sqlite import _set_module_debug
+from libadvene.model.parsers.advene_xml import ParserError, Parser as XmlParser
+from libadvene.model.parsers.advene_zip import BadZipfile, Parser as ZipParser
 
 _set_module_debug(True) # enable all asserts in backend_sqlite
 
@@ -682,6 +684,43 @@ class TestEvents(TestCase):
 
 
     # TODO other element types
+
+class TestParsing(TestCase):
+
+    def fill_file(self, suffix, data):
+        fd, self.filename = mkstemp(suffix)
+        f = fdopen(fd, "w")
+        f.write(data)
+        f.close()
+
+    def tearDown(self):
+        try:
+            unlink(self.filename)
+        except OSError:
+            pass
+
+    def testBadParser(self):
+        self.fill_file(".xml", """<?xml version="1.0"?>
+            <foo><bar>baz</bar></foo>
+        """)
+        # the generated file is not claimed
+        f = open(self.filename)
+        assert XmlParser.claims_for_parse(f) > 0
+        f.close()
+        self.assertRaises(ParserError, Package, self.filename)
+    
+    def testForceParser(self):
+        self.fill_file(".foo", """<?xml version="1.0"?>
+            <foo><bar>baz</bar></foo>
+        """)
+        # the generated file is not claimed
+        f = open(self.filename)
+        assert XmlParser.claims_for_parse(f) == 0
+        assert ZipParser.claims_for_parse(f) == 0
+        f.close()
+        self.assertRaises(NoClaimingError, Package, self.filename)
+        self.assertRaises(ParserError, Package, self.filename, parser=XmlParser)
+        self.assertRaises(BadZipfile, Package, self.filename, parser=ZipParser)
 
 if __name__ == "__main__":
     main()

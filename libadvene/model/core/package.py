@@ -69,7 +69,8 @@ class Package(WithMetaMixin, WithEventsMixin, WithAbsoluteUrlMixin, object):
     tag_factory = Tag
     view_factory = View
 
-    def __init__(self, url, create=False, readonly=False, force=False):
+    def __init__(self, url, create=False, readonly=False, force=False,
+                 parser=None):
         """FIXME: missing docstring.
 
         @param url: the URL of the package
@@ -78,16 +79,19 @@ class Package(WithMetaMixin, WithEventsMixin, WithAbsoluteUrlMixin, object):
         @type create: boolean
         @param readonly: should the package be readonly (in the case of loading an existing package) ?
         @type readonly: boolean
-        @param force: ???
+        @param force: should the package be (re-)created in the backend if it already exists
         @type force: boolean
+        @param parser: the parser class to be used if any (will guess if None)
+        @type parser: type
         """
         assert not (create and readonly), "Cannot create a read-only package"
+        assert create or not force, "Force is only meaningful on create"
         self._url = url = _make_absolute(url)
         self._readonly = readonly
         self._backend = None
         self._transient = False
         self._serializer = None
-        parser = None
+        must_parse = False
         if create:
             for b in iter_backends():
                 claims = b.claims_for_create(url)
@@ -107,22 +111,24 @@ class Package(WithMetaMixin, WithEventsMixin, WithAbsoluteUrlMixin, object):
                 elif claims.exception:
                     raise claims.exception
             else:
+                must_parse = True
                 try:
                     f = smart_urlopen(url)
                 except URLError:
                     raise NoClaimingError("bind %s (URLError)" % url)
                 cmax = 0
-                for p in iter_parsers():
-                    c = p.claims_for_parse(f)
-                    if c > cmax:
-                        cmax = c
-                        parser = p
-                if cmax > 0:
+                if parser is None:
+                    for p in iter_parsers():
+                        c = p.claims_for_parse(f)
+                        if c > cmax:
+                            cmax = c
+                            parser = p
+                if parser is not None:
                     self._serializer = parser.SERIALIZER
                     backend, package_id = self._make_transient_backend()
                 else:
                     f.close()
-                    raise NoClaimingError("bind %s" % url)
+                    raise NoClaimingError("bind %s (No parser)" % url)
 
         self._backend        = backend
         self._id             = package_id
@@ -146,7 +152,7 @@ class Package(WithMetaMixin, WithEventsMixin, WithAbsoluteUrlMixin, object):
             # keys are backends
             # values are dicts with package-ids as keys, and packages as values
 
-        if parser:
+        if must_parse:
             parser.parse_into(f, self)
             f.close()
 

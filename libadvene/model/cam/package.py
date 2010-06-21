@@ -287,8 +287,9 @@ class Package(CorePackage):
     tag_factory = Tag
     view_factory = View
 
-    def __init__(self, url, create=False, readonly=False, force=False):
-        CorePackage.__init__(self, url, create, readonly, force)
+    def __init__(self, url, create=False, readonly=False, force=False,
+                 parser=None):
+        CorePackage.__init__(self, url, create, readonly, force, parser)
         if self.url != BOOTSTRAP_URI and self.uri != BOOTSTRAP_URI \
         and self.own.count_imports(uri=BOOTSTRAP_URI) == 0:
             global _bootstrap_ref
