@@ -101,7 +101,6 @@ class Parser(object):
     _XML_PARSER = advene_xml.Parser
 
     def __init__(self, file_, package):
-        assert self.claims_for_parse(file_) > 0
         self.dir = d = mkdtemp()
         tempdir_list.append(d)
 

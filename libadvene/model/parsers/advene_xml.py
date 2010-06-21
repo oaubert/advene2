@@ -109,8 +109,6 @@ class Parser(XmlParserBase):
     _NAMESPACE_URI = ADVENE_XML
 
     def __init__(self, file_, package):
-        _claims = self.__class__.claims_for_parse(file_)
-        assert _claims > 0, "Unclaimed package %d" % _claims
         XmlParserBase.__init__(self, file_, package, self._NAMESPACE_URI,
                                "package")
         self._postponed = []
