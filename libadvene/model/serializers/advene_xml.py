@@ -259,7 +259,8 @@ class _Serializer(object):
         xx = SubElement(xpackage, "external-tag-associations")
         pairs = self.package._backend.iter_external_tagging(self.package._id)
         for e, t in pairs:
-            xxt = SubElement(xx, "association", element=e, tag=t)
+            xxt = SubElement(xx, "association", element=e)
+            xxt.attrib["tag"] = t # can not use kw-argument 'tag' above...
         if len(xx) == 0:
             xpackage.remove(xx)
 
