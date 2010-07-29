@@ -219,5 +219,122 @@ class TestCinelabXml(TestAdveneXml):
 class TestCinelabZip(TestCinelabXml, TestAdveneZip):
     serpar = czip
 
+class TestUnorderedCinelabXml(TestCase):
+    """
+    I check that cinelab XML files can have the subelements of <package> in
+    any order.
+    """
+    def setUp(self):
+        from libadvene.model.parsers.cinelab_xml import Parser
+        fd1, self.filename1 = mkstemp(suffix=".cxp")
+        f = fdopen(fd1, "w")
+        f.write(UNORDERED_XML)
+        f.close()
+        uri = "file:" + pathname2url(self.filename1)
+        self.p1 = CamPackage(uri, parser=Parser)
+
+    def tearDown(self):
+        unlink(self.filename1)
+
+    def test_unordered(self):
+        p1 = self.p1
+        assert len(p1.own.imports) == 2 # counting bootstrap
+        assert len(p1.own.user_tags) == 1
+        assert len(p1.own.annotation_types) == 1
+        assert len(p1.own.relation_types) == 1
+        assert len(p1.own.medias) == 1
+        assert len(p1.own.resources) == 1
+        assert len(p1.own.annotations) == 1
+        assert len(p1.own.relations) == 1
+        assert len(p1.own.views) == 1
+        assert len(p1.own.queries) == 1
+        assert len(p1.own.schemas) == 1
+        assert len(p1.own.user_lists) == 1
+
+UNORDERED_XML = """
+<package xmlns="http://advene.liris.cnrs.fr/ns/cinelab/0.1#"
+         xmlns:dc="http://purl.org/dc/elements/1.1/"
+>
+  <meta>%(meta)s</meta>
+  <resources>
+    <resource id="R">
+      <content mimetype="text/plain">hello world</content>
+      <meta>%(meta)s</meta>
+    </resource>
+  </resources>
+  <queries>
+    <query id="q">
+      <content mimetype="text/plain">hello world</content>
+      <meta>%(meta)s</meta>
+    </query>
+  </queries>
+  <lists>
+    <list id="l1">
+      <meta>%(meta)s</meta>
+    </list>
+  </lists>
+  <schemas>
+    <schema id="s1">
+      <meta>%(meta)s</meta>
+    </schema>
+  </schemas>
+  <views>
+    <view id=":constraint:at1">
+      <content mimetype="text/plain">hello world</content>
+      <meta>%(meta)s</meta>
+    </view>
+  </views>
+  <relations>
+    <relation id="r">
+      <meta>%(meta)s
+        <type id-ref="rt1" />
+      </meta>
+    </relation>
+  </relations>
+  <annotations>
+    <annotation begin="0" end="1000" id="a" media="m1">
+      <content mimetype="text/plain">hello world</content>
+      <meta>%(meta)s
+        <type id-ref="at1" />
+      </meta>
+    </annotation>
+  </annotations>
+  <medias>
+    <media frame-of-reference="http://advene.liris.cnrs.fr/ns/frame_of_reference/ms;o=0" id="m1" url="http://example.com/movie" /> 
+      <meta>%(meta)s
+        <type id-ref="at1" />
+      </meta>
+  </medias>
+  <relation-types>
+    <relation-type id="rt1">
+      <meta>%(meta)s</meta>
+    </relation-type>
+  </relation-types>
+  <annotation-types>
+    <annotation-type id="at1">
+      <meta>%(meta)s</meta>
+    </annotation-type>
+  </annotation-types>
+  <tags>
+    <tag id="t">
+      <meta>%(meta)s</meta>
+    </tag>
+  </tags>
+  <imports>
+    <import id="d" url="http://liris.cnrs.fr/advene/cam/dummy">
+      <meta>%(meta)s</meta>
+    </import>
+  </imports>
+</package>
+""" % {
+  "meta": """
+        <dc:contributor>pa</dc:contributor>
+        <dc:created>2010-07-01T11:07:48.380560</dc:created>
+        <dc:creator>pa</dc:creator>
+        <dc:modified>2010-07-01T11:07:48.380560</dc:modified>
+  """
+}
+        
+
 if __name__ == "__main__":
     main()

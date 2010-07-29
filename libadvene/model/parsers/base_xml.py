@@ -2,7 +2,15 @@
 
 TODO: document the provided classes.
 """
-from xml.etree.ElementTree import iterparse
+try:
+    from lxml.etree import iterparse, XMLSyntaxError as XmlParseError
+    # if python-lxml (libxml binding is available), use it;
+    # the error messages are much more informative
+    print "===", "ok"
+except ImportError:
+    from xml.etree.ElementTree import iterparse
+    from xml.expat import ExpatError as XmlParseError
+    print "===", "ko"
 
 from libadvene.model.consts import _RAISE
 from libadvene.model.parsers.exceptions import ParserError
@@ -136,7 +144,7 @@ class XmlParserBase(object):
     def _handle(self, args, kw, ):
         stream = self.stream
         elem = self.stream.elem
-        assert elem.tag.startswith("{%s}" % self.namespace_uri)
+        assert elem.tag.startswith(self.tag_template[:-2])
         n = t = elem.tag[self.cut:]
         i = n.find("-")
         while i >= 0:

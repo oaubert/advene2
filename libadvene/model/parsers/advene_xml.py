@@ -6,11 +6,10 @@ import base64
 from functools import partial
 from os import path
 from os.path import exists
-from xml.etree.ElementTree import iterparse
-from xml.parsers.expat import ExpatError
 
 from libadvene.model.consts import ADVENE_XML, PARSER_META_PREFIX, PACKAGED_ROOT
-from libadvene.model.parsers.base_xml import XmlParserBase
+from libadvene.model.parsers.base_xml import (iterparse, XmlParseError,
+                                              XmlParserBase)
 from libadvene.model.parsers.exceptions import ParserError
 import libadvene.model.serializers.advene_xml as serializer
 from libadvene.util.files import get_path, is_local
@@ -59,7 +58,7 @@ class Parser(XmlParserBase):
             it = iterparse(file_, events=("start",))
             try:
                 ev, el = it.next()
-            except ExpatError, e:
+            except XmlParseError, e:
                 r /= 5
             else:
                 if el.tag != "{%s}package" % cls._NAMESPACE_URI:
