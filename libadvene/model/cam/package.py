@@ -264,12 +264,12 @@ class _OwnGroup(CamGroupMixin, CoreOwnGroup):
 
     def count_user_lists(self, item=None, position=None):
         o = self._owner
-        return o._backend.count_lists((o._id,), item=item, position=position,
+        return o._backend.count_lists((o._id,), item=item, pos=position,
             meta=[(CAMSYS_TYPE, None, None)])
 
     def count_schemas(self, item=None, position=None):
         o = self._owner
-        return o._backend.count_lists((o._id,), item=item, position=position,
+        return o._backend.count_lists((o._id,), item=item, pos=position,
             meta=[(CAMSYS_TYPE, "schema", False)])
 
 class Package(CorePackage):
