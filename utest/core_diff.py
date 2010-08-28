@@ -49,7 +49,7 @@ def fill_package_step_by_step(p, empty=False):
     for e in sorted_p3_own:
         p.associate_tag(e, t); yield 21, e.id
         p.associate_tag(e, t3); yield 22, e.id
-    p.set_meta(dc_creator, "pchampin"); yield 23, e.id
+    p.set_meta(dc_creator, "John Doe"); yield 23
     p.set_meta(dc_description, "a package used for testing diff"); yield 24
     p.set_meta(PARSER_META_PREFIX+"namespaces",
                "dc http://purl.org/dc/elements/1.1/")

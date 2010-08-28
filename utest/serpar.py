@@ -68,7 +68,9 @@ class TestAdveneXml(TestCase):
         return diff
 
     def fill_package_step_by_step(self):
-        return fill_package_step_by_step(self.p1, empty=True)
+        #return fill_package_step_by_step(self.p1, empty=True):
+        for i in fill_package_step_by_step(self.p1, empty=True):
+            yield i
 
     def test_each_step(self):
         p1 = self.p1
@@ -252,19 +254,18 @@ class TestUnorderedCinelabXml(TestCase):
         assert len(p1.own.user_lists) == 1
 
 UNORDERED_XML = """
-<package xmlns="http://advene.liris.cnrs.fr/ns/cinelab/0.1#"
+<package xmlns="http://advene.org/ns/cinelab/"
          xmlns:dc="http://purl.org/dc/elements/1.1/"
 >
-  <meta>%(meta)s</meta>
   <resources>
     <resource id="R">
-      <content mimetype="text/plain">hello world</content>
+      <content>hello world</content>
       <meta>%(meta)s</meta>
     </resource>
   </resources>
   <queries>
     <query id="q">
-      <content mimetype="text/plain">hello world</content>
+      <content>hello world</content>
       <meta>%(meta)s</meta>
     </query>
   </queries>
@@ -300,7 +301,7 @@ UNORDERED_XML = """
     </annotation>
   </annotations>
   <medias>
-    <media frame-of-reference="http://advene.liris.cnrs.fr/ns/frame_of_reference/ms;o=0" id="m1" url="http://example.com/movie" /> 
+    <media id="m1" url="http://example.com/movie" /> 
       <meta>%(meta)s
         <type id-ref="at1" />
       </meta>
@@ -325,6 +326,7 @@ UNORDERED_XML = """
       <meta>%(meta)s</meta>
     </import>
   </imports>
+  <meta>%(meta)s</meta>
 </package>
 """ % {
   "meta": """

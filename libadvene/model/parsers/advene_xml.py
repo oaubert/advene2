@@ -8,6 +8,7 @@ from os import path
 from os.path import exists
 
 from libadvene.model.consts import ADVENE_XML, PARSER_META_PREFIX, PACKAGED_ROOT
+from libadvene.model.core.media import FOREF_PREFIX
 from libadvene.model.parsers.base_xml import (iterparse, XmlParseError,
                                               XmlParserBase)
 from libadvene.model.parsers.exceptions import ParserError
@@ -176,6 +177,7 @@ class Parser(XmlParserBase):
         self.optional_sequence("lists")
         self.optional_sequence("external-tag-associations",
                                items_name="association")
+        self.optional("meta", self.package)
 
     def handle_package(self):
         """
@@ -190,7 +192,6 @@ class Parser(XmlParserBase):
         uri = self.current.get("uri")
         if uri is not None:
             pa.uri = uri
-        self.optional("meta", pa)
         self.manage_package_subelements()
         for f, id in self._postponed:
             if id.find(":") > 0: # imported
@@ -237,7 +238,11 @@ class Parser(XmlParserBase):
     def handle_media(self):
         id = self.get_attribute("id")
         url = self.get_attribute("url")
-        foref = self.get_attribute("frame-of-reference")
+        foref = self.get_attribute("frame-of-reference", None)
+        if foref is None:
+            unit = self.get_attribute("unit", "ms")
+            origin = self.get_attribute("origin", "0")
+            foref = "%s%s;o=%s" % (FOREF_PREFIX, unit, origin)
         elt = self.package.create_media(id, url, foref)
         elt.enter_no_event_section()
         try:
@@ -362,7 +367,7 @@ class Parser(XmlParserBase):
                 self.do_or_postpone(val, partial(obj.set_meta, key))
 
     def handle_content(self, creation_method, *args):
-        mimetype = self.get_attribute("mimetype")
+        mimetype = self.get_attribute("mimetype", "text/plain")
         url = self.get_attribute("url", "")
         model = self.get_attribute("model", "")
         encoding = self.get_attribute("encoding", "")

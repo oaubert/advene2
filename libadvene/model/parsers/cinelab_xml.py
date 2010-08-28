@@ -28,6 +28,7 @@ from os import path
 from os.path import exists
 
 from libadvene.model.consts import ADVENE_XML, PARSER_META_PREFIX, PACKAGED_ROOT
+from libadvene.model.core.media import FOREF_PREFIX
 from libadvene.model.parsers.base_xml import XmlParserBase
 from libadvene.model.parsers.exceptions import ParserError
 import libadvene.model.serializers.advene_xml as serializer
@@ -63,30 +64,29 @@ class Parser(_AdveneXmlParser):
                 func(i, *args, **kw)
 
     def manage_package_subelements(self):
-        # NB: self.stream.elem is package/meta, we have no access to the root
-        # at this point, 
-        xelt = Element("pseudo-root")
-        for event, elem in self.stream:
-            if event == "start":
-                self.complete_current()
-                xelt.append(elem)
-        # at this point, pseudo_root contains all the children of <package>
+        root = self.stream.elem
+        # parse the whole XML file; we do not use stream functionalities here,
+        # which allows the cinelab format to be very tolerant regarding the
+        # order of the XML elements
+        self.complete_current()
+        # at this point, root contains all the subelements we are interested in
         visit_subsub = self.visit_subsubelements
-        visit_subsub(xelt, "imports", self.manage_import)
-        visit_subsub(xelt, "tags", self.manage_tag)
-        visit_subsub(xelt, "annotation-types", self.manage_tag,
+        visit_subsub(root, "imports", self.manage_import)
+        visit_subsub(root, "tags", self.manage_tag)
+        visit_subsub(root, "annotation-types", self.manage_tag,
                      "annotation_type")
-        visit_subsub(xelt, "relation-types", self.manage_tag, "relation_type")
-        visit_subsub(xelt, "medias", self.manage_media)
-        visit_subsub(xelt, "resources", self.manage_simple, "resource")
-        visit_subsub(xelt, "annotations", self.manage_annotation)
-        visit_subsub(xelt, "relations", self.manage_relation)
-        visit_subsub(xelt, "views", self.manage_simple, "view")
-        visit_subsub(xelt, "queries", "query", self.manage_simple, "query")
-        visit_subsub(xelt, "schemas", self.manage_list, "schema")
-        visit_subsub(xelt, "lists", self.manage_list)
-        visit_subsub(xelt, "external-tag-associations", "association",
+        visit_subsub(root, "relation-types", self.manage_tag, "relation_type")
+        visit_subsub(root, "medias", self.manage_media)
+        visit_subsub(root, "resources", self.manage_simple, "resource")
+        visit_subsub(root, "annotations", self.manage_annotation)
+        visit_subsub(root, "relations", self.manage_relation)
+        visit_subsub(root, "views", self.manage_simple, "view")
+        visit_subsub(root, "queries", "query", self.manage_simple, "query")
+        visit_subsub(root, "schemas", self.manage_list, "schema")
+        visit_subsub(root, "lists", self.manage_list)
+        visit_subsub(root, "external-tag-associations", "association",
                      self.manage_association)
+        self.manage_meta(root, self.package)
 
     def manage_import(self, xelt):
         id_ = xelt.attrib["id"]
@@ -116,7 +116,11 @@ class Parser(_AdveneXmlParser):
     def manage_media(self, xelt):
         id_ = xelt.attrib["id"]
         url = xelt.attrib["url"]
-        foref = xelt.attrib["frame-of-reference"]
+        foref = xelt.get("frame-of-reference")
+        if foref is None:
+            unit = xelt.get("unit", "ms")
+            origin = xelt.get("origin", "0")
+            foref = "%s%s;o=%s" % (FOREF_PREFIX, unit, origin)
         celt = self.package.create_media(id_, url, foref)
         celt.enter_no_event_section()
         try:
@@ -253,7 +257,7 @@ class Parser(_AdveneXmlParser):
         if not required and content_xelt is None:
             return [ "x-advene/none", "", "" ], None, None
 
-        mimetype = content_xelt.attrib["mimetype"]
+        mimetype = content_xelt.get("mimetype", "text/plain")
         url = content_xelt.get("url", "")
         args = [mimetype , "", url]
         content_model = content_xelt.get("model", "")
@@ -290,3 +294,6 @@ class Parser(_AdveneXmlParser):
         c[0] += 1
 
 #
+
+_CAM_PACKAGE = "{%s}package" % CAM_XML
+_CAM_META = "{%s}meta" % CAM_XML

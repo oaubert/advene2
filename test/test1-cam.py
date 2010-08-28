@@ -3,6 +3,7 @@ from os.path import exists, join
 
 import libadvene.model.backends.sqlite as backend_sqlite
 from libadvene.model.cam.package import Package
+from libadvene.model.consts import ADVENE_NS_PREFIX
 
 
 
@@ -11,7 +12,7 @@ base = join(getcwd(), "test")
 
 package_url1 = "file:%s" % (join (base, "test1-cam1.czp"))
 package_url2 = "file:%s" % (join (base, "test1-cam2.czp"))
-advene_ns = "http://advene.liris.cnrs.fr/ns/%s"
+advene_ns = "%s%%s" % ADVENE_NS_PREFIX
 
 
 backend_sqlite._set_module_debug(False)

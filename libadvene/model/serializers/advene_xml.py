@@ -53,8 +53,6 @@ class _Serializer(object):
             root.set("xmlns:%s" % prefix, uri)
         if package.uri:
             root.set("uri", package.uri)
-        # package meta-data
-        self._serialize_meta(package, self.root)
         # imports
         ximports = SubElement(self.root, "imports")
         for i in package.own.imports:
@@ -111,6 +109,8 @@ class _Serializer(object):
             self.root.remove(xlists)
         # external tag associations
         self._serialize_external_tagging(self.root)
+        # package meta-data
+        self._serialize_meta(package, self.root)
 
         _indent(self.root)
         ElementTree(self.root).write(self.file)

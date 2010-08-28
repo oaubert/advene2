@@ -6,11 +6,9 @@ try:
     from lxml.etree import iterparse, XMLSyntaxError as XmlParseError
     # if python-lxml (libxml binding is available), use it;
     # the error messages are much more informative
-    print "===", "ok"
 except ImportError:
     from xml.etree.ElementTree import iterparse
     from xml.expat import ExpatError as XmlParseError
-    print "===", "ko"
 
 from libadvene.model.consts import _RAISE
 from libadvene.model.parsers.exceptions import ParserError

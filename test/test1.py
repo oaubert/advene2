@@ -7,6 +7,7 @@ from libadvene.model.consts import DC_NS_PREFIX
 from libadvene.model.core.content import PACKAGED_ROOT
 from libadvene.model.core.package import Package
 from libadvene.model.exceptions import ModelError
+from libadvene.model.consts import ADVENE_NS_PREFIX
 
 base = split(__file__)[0]
 
@@ -49,7 +50,7 @@ if __name__ == "__main__":
     p = Package(package_url, create=True)
     #trace_wrap_all (p._backend)
 
-    advene_ns = "http://advene.liris.cnrs.fr/ns/%s"
+    advene_ns = "%s%%s" % ADVENE_NS_PREFIX
 
     p.meta[dc_creator] = "pchampin"
     m1 = p.create_media("m1", "http://champin.net/stream.avi",
