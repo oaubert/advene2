@@ -91,7 +91,7 @@ class CamTypeMixin(object):
 
     @autoproperty
     def _get_mimetype(self):
-        return self.element_constraint.content_parsed.get("mimetype", None) or "*/*"
+        return (self.element_constraint and self.element_constraint.content_parsed.get("mimetype", None)) or "*/*"
 
     @autoproperty
     def _set_mimetype(self, mimetype):
