@@ -1,6 +1,5 @@
 from os import curdir
 from os.path import abspath, exists
-from sets import Set
 from urlparse import urljoin, urlparse
 from urllib import pathname2url, url2pathname
 from urllib2 import URLError
@@ -133,7 +132,7 @@ class Package(WithMetaMixin, WithEventsMixin, WithAbsoluteUrlMixin, object):
         self._backend        = backend
         self._id             = package_id
         self._elements       = WeakValueDictionary() # weakref cache
-        self._heavy_elements = Set() # strong refs for heavy elements
+        self._heavy_elements = set() # strong refs for heavy elements
         self._own_wref       = lambda: None
         self._all_wref       = lambda: None
         self._uri            = None
