@@ -525,7 +525,9 @@ def get_filename(title=_("Open a file"),
             # it to unicode.
             filename=unicode(filename, 'utf-8')
         setattr(preview, '_filename', filename)
-        if filename and (filename.endswith('.xml') or filename.endswith('.czp')):
+        if filename and (filename.endswith('.xml') 
+                         or filename.endswith('.czp')
+                         or filename.endswith('.cxp')):
             preview.set_label(_("Press to\ndisplay\ninformation"))
             if alias:
                 alias_entry.set_text(generate_alias(filename))
@@ -571,8 +573,8 @@ def get_filename(title=_("Open a file"),
     for name, descr, exts in (
         ('any', _("Any type of file"), ( '*', ) ),
         ('advene',
-         _("Advene files (.xml, .czp, .apl)"),
-         ('*.xml', '*.czp', '*.apl')),
+         _("Advene files (.xml, .cxp, .czp, .apl)"),
+         ('*.xml', '*.cxp', '*.czp', '*.apl')),
         ('session', _("Advene session (.apl)"), ( '*.apl', ) ),
         ('audio', _("Audio files"), ('*.wav', '*.mp3', '*.ogg')),
         ('video', _("Video files"), [ "*%s" % e for e in config.data.video_extensions ])

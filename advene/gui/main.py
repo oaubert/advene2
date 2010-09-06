@@ -3156,9 +3156,9 @@ class AdveneGUI(object):
                 self.log(_("A video file was selected. Pretend that the user selected 'Select a video file'..."))
                 self.controller.set_default_media(filename)
                 return True
-            if not ext in ('.xml', '.apl', '.czp'):
+            if not ext in ('.xml', '.apl', '.czp', '.cxp'):
                 # Does not look like a valid package
-                if not dialog.message_dialog(_("The file %s does not look like a valid Advene package. It should have a .czp or .xml extension. Try to open anyway?") % filename,
+                if not dialog.message_dialog(_("The file %s does not look like a valid Advene package. It should have a .czp, .cxp or .xml extension. Try to open anyway?") % filename,
                                       icon=gtk.MESSAGE_QUESTION):
                     return True
             if ext == '.apl':
