@@ -1152,12 +1152,14 @@ class AdveneController(object):
                     # And convert it to a pathname (for Windows)
                     if d.startswith('file:'):
                         d=d.replace('file://', '')
-                    d=urllib.url2pathname(d)
-                    d=unicode(os.path.dirname(d), sys.getfilesystemencoding())
+                    d=os.path.dirname(urllib.url2pathname(d))
                 if '~' in d:
                     # Expand userdir
-                    d=unicode(os.path.expanduser(d), sys.getfilesystemencoding())
-
+                    d=os.path.expanduser(d)
+                try:
+                    d=unicode(d)
+                except UnicodeDecodeError:
+                    d=unicode(d, sys.getfilesystemencoding())
                 n=os.path.join(d, name)
                 # FIXME: if d is a URL, use appropriate method (urllib.??)
                 if os.path.exists(n.encode(sys.getfilesystemencoding(), 'ignore')):
