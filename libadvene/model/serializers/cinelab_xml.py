@@ -5,6 +5,7 @@ from bisect import insort
 from xml.etree.ElementTree import Element, ElementTree, SubElement
 
 from libadvene.model.cam.consts import CAM_XML, CAMSYS_NS_PREFIX
+import libadvene.model.cam.util.bookkeeping as bk
 from libadvene.model.serializers.advene_xml import _indent
 from libadvene.model.serializers.advene_xml import _Serializer as \
     _AdveneSerializer
@@ -50,6 +51,8 @@ class _Serializer(_AdveneSerializer):
             root.set("xmlns:%s" % prefix, uri)
         if package.uri:
             root.set("uri", package.uri)
+        # package meta-data
+        self._serialize_meta(package, self.root)
         # imports
         ximports = SubElement(self.root, "imports")
         for i in package.own.imports:
@@ -124,8 +127,6 @@ class _Serializer(_AdveneSerializer):
             self.root.remove(xlists)
         # external tag associations
         self._serialize_external_tagging(self.root)
-        # package meta-data
-        self._serialize_meta(package, self.root)
 
         _indent(self.root)
         ElementTree(self.root).write(self.file)
@@ -137,6 +138,33 @@ class _Serializer(_AdveneSerializer):
         insort(self.unserialized_meta_prefixes, CAMSYS_NS_PREFIX)
         self.default_ns = CAM_XML
 
+    def _serialize_meta(self, obj, xobj):
+        """
+        obj_or_list can be either
+        * an object with a method iter_meta_ids (i.e. package or element)
+        * a list of pairs as yielded by iter_meta_ids
+        This allows subclasses to filter out some pairs from the list
+        """
+        xm = SubElement(xobj, "meta")
+        exclude = set()
+        package = self.package
+        if obj is not package:
+            if obj.creator == package.creator:
+                exclude.add(_CREATOR)
+            if obj.created == package.created:
+                exclude.add(_CREATED)
+            if obj.contributor == obj.creator and _CREATOR not in exclude \
+            or obj.contributor == package.contributor and _CREATOR in exclude:
+                exclude.add(_CONTRIBUTOR)
+            if obj.modified == obj.created and _CREATED not in exclude \
+            or obj.modified == package.modified and _CREATED in exclude:
+                exclude.add(_MODIFIED)
+        self._serialize_meta_pairs(
+            xm, ( (k,v) for k,v in obj.iter_meta_ids() if k not in exclude ),
+            )
+        if len(xm) == 0:
+            xobj.remove(xm)
+        
     # luring methods (cf. comment at top of that class)
     
     def _serialize_element_tags(self, elt, xelt):
@@ -148,3 +176,7 @@ class _Serializer(_AdveneSerializer):
         # restore class level method
         del elt.iter_my_tag_ids
 
+_CREATOR = bk.CREATOR
+_CREATED = bk.CREATED
+_CONTRIBUTOR = bk.CONTRIBUTOR
+_MODIFIED = bk.MODIFIED

@@ -11,7 +11,7 @@ import base64
 from itertools import chain
 from xml.etree.ElementTree import Element, ElementTree, SubElement
 
-from libadvene.model.consts import ADVENE_XML
+from libadvene.model.consts import ADVENE_XML, DC_NS_PREFIX
 from libadvene.model.core.media import FOREF_PREFIX
 from libadvene.model.serializers.unserialized import \
     iter_unserialized_meta_prefix
@@ -216,7 +216,7 @@ class _Serializer(object):
             if elt.content_model_id:
                 xc.set("model", elt.content_model_id)
             if elt.content_url:
-                # TODO manage packaged: URLs
+                # TODO manage packaged contents
                 xc.set("url", elt.content_url)
             else:
                 data = elt.content_data
@@ -226,11 +226,25 @@ class _Serializer(object):
                 xc.text = data
 
     def _serialize_meta(self, obj, xobj):
+        """
+        obj_or_list can be either
+        * an object with a method iter_meta_ids (i.e. package or element)
+        * a list of pairs as yielded by iter_meta_ids
+        This allows subclasses to filter out some pairs from the list
+        """
         xm = SubElement(xobj, "meta")
+        self._serialize_meta_pairs(xm, obj.iter_meta_ids())
+        if len(xm) == 0:
+            xobj.remove(xm)
+            
+    def _serialize_meta_pairs(self, xm, pairs):
+        """
+        Called by _serialize_meta
+        """
         umps = chain(self.unserialized_meta_prefixes, [None,])
         ump = umps.next()
-        for k,v in obj.iter_meta_ids():
 
+        for k,v in pairs:
             while ump and k > ump:
                 if k.startswith(ump):
                     k = None # used below to continue outer loop
@@ -252,8 +266,6 @@ class _Serializer(object):
                 xkeyval.set("id-ref", v)
             else:
                 xkeyval.text = v
-        if len(xm) == 0:
-            xobj.remove(xm)
 
     def _serialize_element_tags(self, elt, xelt):
         xtags = SubElement(xelt, "tags")

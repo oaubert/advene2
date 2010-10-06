@@ -15,6 +15,7 @@ it. However, we subclass it in order to inherit the implementation of the Parser
 from xml.etree.ElementTree import Element
 
 from libadvene.model.cam.consts import CAM_XML
+import libadvene.model.cam.util.bookkeeping as bk
 import libadvene.model.serializers.cinelab_xml as serializer
 from libadvene.model.parsers.advene_xml import Parser as _AdveneXmlParser
 
@@ -70,6 +71,7 @@ class Parser(_AdveneXmlParser):
         # order of the XML elements
         self.complete_current()
         # at this point, root contains all the subelements we are interested in
+        self.manage_meta(root, self.package)
         visit_subsub = self.visit_subsubelements
         visit_subsub(root, "imports", self.manage_import)
         visit_subsub(root, "tags", self.manage_tag)
@@ -86,7 +88,6 @@ class Parser(_AdveneXmlParser):
         visit_subsub(root, "lists", self.manage_list)
         visit_subsub(root, "external-tag-associations", "association",
                      self.manage_association)
-        self.manage_meta(root, self.package)
 
     def manage_import(self, xelt):
         id_ = xelt.attrib["id"]
@@ -222,29 +223,42 @@ class Parser(_AdveneXmlParser):
     def manage_meta(self, xelt, celt):
         meta_tag = self.tag_template % "meta"
         meta_xelt = xelt.find(meta_tag)
-        if meta_xelt is None:
-            return
-        for child in meta_xelt:
-            key = child.tag
-            if key.startswith("{"):
-                cut = key.find("}")
-                key = key[1:cut] + key[cut+1:]
-            val = child.get("id-ref")
-            if val is None:
-                text = child.text or "" # because child.text could be None
-                celt.enter_no_event_section()
-                try:
-                    celt.set_meta(key, text, False)
-                finally:
-                    celt.exit_no_event_section()
-            elif val.find(":") > 0: # imported
-                celt.enter_no_event_section()
-                try:
-                    celt.set_meta(key, val, True)
-                finally:
-                    celt.exit_no_event_section()
-            else:
-                self.do_or_postpone(val, partial(celt.set_meta, key))
+        if meta_xelt is not None:
+            for child in meta_xelt:
+                key = child.tag
+                if key.startswith("{"):
+                    cut = key.find("}")
+                    key = key[1:cut] + key[cut+1:]
+                val = child.get("id-ref")
+                if val is None:
+                    text = child.text or "" # because child.text could be None
+                    celt.enter_no_event_section()
+                    try:
+                        celt.set_meta(key, text, False)
+                    finally:
+                        celt.exit_no_event_section()
+                elif val.find(":") > 0: # imported
+                    celt.enter_no_event_section()
+                    try:
+                        celt.set_meta(key, val, True)
+                    finally:
+                        celt.exit_no_event_section()
+                else:
+                    self.do_or_postpone(val, partial(celt.set_meta, key))
+    
+        package = self.package
+        if celt is not package:
+            creator = celt.get_meta(_CREATOR, None)
+            created = celt.get_meta(_CREATED, None)
+            if creator is None:
+                celt.set_meta(_CREATOR, package.creator)
+            if created is None:
+                celt.set_meta(_CREATED, package.created)
+            if celt.get_meta(_CONTRIBUTOR, None) is None:
+                celt.set_meta(_CONTRIBUTOR, creator or package.contributor)
+            if celt.get_meta(_MODIFIED, None) is None:
+                celt.set_meta(_MODIFIED, created or package.modified)
+                
 
     def manage_tagged_imported(self, imp_xelt, tag_celt):
         id_ = imp_xelt.attrib["id-ref"]
@@ -297,3 +311,7 @@ class Parser(_AdveneXmlParser):
 
 _CAM_PACKAGE = "{%s}package" % CAM_XML
 _CAM_META = "{%s}meta" % CAM_XML
+_CREATOR = bk.CREATOR
+_CREATED = bk.CREATED
+_CONTRIBUTOR = bk.CONTRIBUTOR
+_MODIFIED = bk.MODIFIED
