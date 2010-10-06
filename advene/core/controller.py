@@ -1502,11 +1502,12 @@ class AdveneController(object):
         # First try the 'color' property from the element itself.
         color=None
         try:
-            col=element.color
-            if col is not None:
+            color = element.color
+            if color is not None and '$' in color:
+                # Potentially an embedded TALES expression
                 c=self.build_context(here=element)
                 try:
-                    color=c.evaluate(col)
+                    color=c.evaluate('string:' + color)
                 except Exception:
                     color=None
         except AttributeError:
@@ -1514,11 +1515,11 @@ class AdveneController(object):
 
         if not color and hasattr(element, 'type'):
             # Not found in element. Try element_color from the container.
-            col=element.type.element_color
-            if col:
+            color=element.type.element_color
+            if color and '$' in color:
                 c=self.build_context(here=element)
                 try:
-                    color=c.evaluate(col)
+                    color=c.evaluate('string:' + color)
                 except Exception:
                     color=None
             if not color:
