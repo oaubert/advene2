@@ -20,8 +20,8 @@ m = p.create_media('m1', '/data/video/Nosferatu.avi')
 m.meta[ns_cinelab + 'uri'] = 'http://liris.cnrs.fr/advene/videos/baz.avi'
 
 todo = p.create_user_tag('todo')
-p.title = 'TODO'
-p.description = 'Things to work on'
+todo.title = 'TODO'
+todo.description = 'Things to work on'
 todo.color = '#ff4444'
 
 important = p.create_user_tag('important')
@@ -48,11 +48,14 @@ at.element_constraint.content.data = 'mimetype=application/json'
 a1 = p.create_annotation('a1', m, 1230, 4560, 'text/plain', type=at)
 a1.content.data = "First annotation"
 
-a2 = p.create_annotation('a2', m, 1230, 4560, 'image/png', type=at)
+a2 = p.create_annotation('a2', m, 4560, 7890, 'image/png', type=at)
 datafile = os.path.join( os.path.dirname(os.path.dirname(os.path.abspath(libadvene.__file__))), 'share', 'pixmaps', 'logo_advene.png')
 f = open(datafile, 'r')
 #a2.content.data = f.read()
 f.close()
+
+a3 = p.create_annotation('a3', m, 1230, 4560, 'application/json', type=at2)
+a1.content.data = "{ 'num' : 1, 'title': 'Introduction', 'characters': [ 'john doe', 'jane doe' ] }"
 
 p.save_as('/tmp/example.cxp', erase=True)
 p.save_as('/tmp/example.czp', erase=True)
