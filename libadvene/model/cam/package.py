@@ -11,7 +11,7 @@ a CORE package (see `libadvene.model.events`), include:!
  * ``created::schema``
 """
 
-from libadvene.model.cam.consts import BOOTSTRAP_URI, CAMSYS_TYPE
+from libadvene.model.cam.consts import CAMSYS_TYPE
 from libadvene.model.cam.exceptions import UnsafeUseWarning, SemanticError
 from libadvene.model.cam.group import CamGroupMixin
 from libadvene.model.cam.media import Media
@@ -290,14 +290,6 @@ class Package(CorePackage):
     def __init__(self, url, create=False, readonly=False, force=False,
                  parser=None):
         CorePackage.__init__(self, url, create, readonly, force, parser)
-        if self.url != BOOTSTRAP_URI and self.uri != BOOTSTRAP_URI \
-        and self.own.count_imports(uri=BOOTSTRAP_URI) == 0:
-            global _bootstrap_ref
-            b = _bootstrap_ref()
-            if b is None:
-                b = Package(BOOTSTRAP_URI, readonly=True)
-                _bootstrap_ref = wref(b)
-            self.create_import("cam", b)
 
         ns = self._get_namespaces_as_dict()
         ns.setdefault(DC_NS_PREFIX, "dc")
