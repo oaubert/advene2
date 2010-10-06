@@ -1,6 +1,6 @@
 from os import fdopen, rmdir, unlink
 from os.path import join
-from tempfile import mkdtemp, mkstemp
+from tempfile import mkdtemp as mkdtemp_orig, mkstemp as mkstemp_orig
 from unittest import TestCase, main
 from urllib import pathname2url
 
@@ -11,6 +11,13 @@ from libadvene.model.parsers.advene_xml import ParserError, Parser as XmlParser
 from libadvene.model.parsers.advene_zip import BadZipfile, Parser as ZipParser
 
 _set_module_debug(True) # enable all asserts in backend_sqlite
+
+
+def mkdtemp(suffix="", prefix="advene2_utest_core_element_", dir=None):
+    return mkdtemp_orig(suffix, prefix, dir)
+
+def mkstemp(suffix="", prefix="advene2_utest_core_element_", dir=None, text=False):
+    return mkstemp_orig(suffix, prefix, dir, text)
 
 
 class TestCreation(TestCase):

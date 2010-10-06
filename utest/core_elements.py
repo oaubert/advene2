@@ -1,7 +1,7 @@
 import gc
 from os import path, rmdir, unlink
 from os.path import abspath, exists
-from tempfile import mkdtemp
+from tempfile import mkdtemp as mkdtemp_orig
 from urllib import pathname2url, url2pathname
 from unittest import TestCase, main
 
@@ -21,6 +21,9 @@ _set_module_debug(True) # enable all asserts in backend_sqlite
 dc_creator = "http://purl.org/dc/elements/1.1/creator"
 dc_description = "http://purl.org/dc/elements/1.1/description"
 rdfs_seeAlso = "http://www.w3.org/1999/02/22-rdf-syntax-ns#seeAlso"
+
+def mkdtemp(suffix="", prefix="advene2_utest_core_element_", dir=None):
+    return mkdtemp_orig(suffix, prefix, dir)
 
 class TestElements(TestCase):
     def setUp(self):

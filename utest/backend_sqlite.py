@@ -2,7 +2,7 @@ from sqlite3 import dbapi2 as sqlite
 #from pysqlite2 import dbapi2 as sqlite
 from os        import path, rmdir, unlink
 from os.path   import exists, join
-from tempfile  import mkdtemp
+from tempfile  import mkdtemp as mkdtemp_orig
 from unittest  import TestCase, main
 from urllib    import pathname2url
 
@@ -11,6 +11,9 @@ from libadvene.model.backends.sqlite \
          PackageInUse, InternalError, _set_module_debug
 from libadvene.model.core.element \
   import MEDIA, ANNOTATION, RELATION, VIEW, RESOURCE, TAG, LIST, QUERY, IMPORT
+
+def mkdtemp(suffix="", prefix="advene2_utest_backend_slite_", dir=None):
+    return mkdtemp_orig(suffix, prefix, dir)
 
 # the following may seem redundant, but we do not want the tests to be
 # dependant on the actual values of the type constants

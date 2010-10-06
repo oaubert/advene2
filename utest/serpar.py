@@ -44,8 +44,10 @@ class TestAdveneXml(TestCase):
     serpar = xml
 
     def setUp(self):
-        fd1, self.filename1 = mkstemp(suffix=self.serpar.EXTENSION)
-        fd2 , self.filename2 = mkstemp(suffix=self.serpar.EXTENSION)
+        fd1, self.filename1 = mkstemp(suffix=self.serpar.EXTENSION,
+                                      prefix="advene2_utest_serpar_")
+        fd2 , self.filename2 = mkstemp(suffix=self.serpar.EXTENSION,
+                                       prefix="advene2_utest_serpar_")
         fdopen(fd1).close()
         fdopen(fd2).close()
         self.url = "file:" + pathname2url(self.filename2)
@@ -228,7 +230,8 @@ class TestUnorderedCinelabXml(TestCase):
     """
     def setUp(self):
         from libadvene.model.parsers.cinelab_xml import Parser
-        fd1, self.filename1 = mkstemp(suffix=".cxp")
+        fd1, self.filename1 = mkstemp(suffix=".cxp",
+                                      prefix="advene2_utest_serpar_")
         f = fdopen(fd1, "w")
         f.write(UNORDERED_XML)
         f.close()
@@ -240,7 +243,7 @@ class TestUnorderedCinelabXml(TestCase):
 
     def test_unordered(self):
         p1 = self.p1
-        assert len(p1.own.imports) == 2 # counting bootstrap
+        assert len(p1.own.imports) == 1
         assert len(p1.own.user_tags) == 1
         assert len(p1.own.annotation_types) == 1
         assert len(p1.own.relation_types) == 1

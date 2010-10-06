@@ -11,8 +11,7 @@ from zipfile import BadZipfile, ZipFile
 from libadvene.model.consts import PACKAGED_ROOT
 import libadvene.model.parsers.advene_xml as advene_xml
 import libadvene.model.serializers.advene_zip as serializer
-from libadvene.util.files import get_path, recursive_mkdir
-from libadvene.util.session import tempdir_list
+from libadvene.util.files import get_path, recursive_mkdir, recursive_unlink
 
 class Parser(object):
 
@@ -88,7 +87,12 @@ class Parser(object):
 
         See also `make_parser`.
         """
-        cls(file_, package).parse()
+        parser = cls(file_, package)
+        try:
+            parser.parse()
+        finally:
+            recursive_unlink(parser.dir)
+            
 
     def parse(self):
         "Do the actual parsing."
@@ -105,8 +109,7 @@ class Parser(object):
     _XML_PARSER = advene_xml.Parser
 
     def __init__(self, file_, package):
-        self.dir = d = mkdtemp()
-        tempdir_list.append(d)
+        self.dir = d = mkdtemp(prefix="advene2_zip_")
 
         if hasattr(file_, "seek"):
             g = None

@@ -710,7 +710,7 @@ class ContentDataFile(object):
 
 
 def create_temporary_packaged_root(package):
-    d = mkdtemp()
+    d = mkdtemp(prefix="advene2_pkg_")
     package.set_meta(PACKAGED_ROOT, d)
     package.connect("package-closed", _clean_packaged_root, d)
     return d
