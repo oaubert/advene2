@@ -73,6 +73,15 @@ class Media(PackageElement):
         return self._unit
 
     @autoproperty
+    def _set_unit(self, unit):
+        """Change the frame of reference by setting a new unit.
+
+        If the previous frame of reference was non-standard, the origin is set
+        to 0.
+        """
+        self._set_frame_of_reference(unit_origin(unit, self._origin or 0))
+
+    @autoproperty
     def _get_origin(self):
         """The time-origin of this media if known, else None.
 
@@ -83,6 +92,15 @@ class Media(PackageElement):
         """
         return self._origin
 
+    @autoproperty
+    def _set_origin(self, origin):
+        """Change the frame of reference by setting a new origin.
+
+        If the previous frame of reference was non-standard, the unit is set to
+        'ms'.
+        """
+        self._set_frame_of_reference(unit_origin(self._unit or "ms", origin))
+
     def _update_unit_and_origin(self):
         foref = self._frame_of_reference
         if foref.startswith(FOREF_PREFIX):
@@ -90,6 +108,11 @@ class Media(PackageElement):
             self._unit, params = foref.split(";")
             params = dict( i.split("=") for i in params.split("&") )
             self._origin = params.get("o", 0)
+            try:
+                self._origin = int(self._origin)
+            except ValueError:
+                # TODO warning?
+                self._origin = 0
         else:
             self._unit = None
             self._origin = None
@@ -99,3 +122,15 @@ class Media(PackageElement):
         o = self._owner
         o._backend.update_media(o._id, self.id, self._url,
                                 self._frame_of_reference)
+
+def unit(u):
+    """
+    Helper function to build a standard frame of reference.
+    """
+    return "%s%s;o=0" % (FOREF_PREFIX, u)
+
+def unit_origin(u, o):
+    """
+    Helper function to build a standard frame of reference.
+    """
+    return "%s%s;o=%s" % (FOREF_PREFIX, u, o)

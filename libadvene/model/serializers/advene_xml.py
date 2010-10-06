@@ -12,6 +12,7 @@ from itertools import chain
 from xml.etree.ElementTree import Element, ElementTree, SubElement
 
 from libadvene.model.consts import ADVENE_XML
+from libadvene.model.core.media import FOREF_PREFIX
 from libadvene.model.serializers.unserialized import \
     iter_unserialized_meta_prefix
 
@@ -130,8 +131,14 @@ class _Serializer(object):
     # element serializers
 
     def _serialize_media(self, m, xmedias, tagname="media"):
-        xm = SubElement(xmedias, tagname, id=m.id, url=m.url,
-                        **{"frame-of-reference": m.frame_of_reference})
+        foref = m.frame_of_reference
+        if foref.startswith(FOREF_PREFIX):
+            attr = {"unit": m.unit}
+            if m.origin != 0:
+                attr["origin"] = str(m.origin)
+        else:
+            attr = {"frame-of-reference": foref}
+        xm = SubElement(xmedias, tagname, id=m.id, url=m.url, **attr)
         self._serialize_element_tags(m, xm)
         self._serialize_meta(m, xm)
 

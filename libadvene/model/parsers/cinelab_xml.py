@@ -116,7 +116,7 @@ class Parser(_AdveneXmlParser):
     def manage_media(self, xelt):
         id_ = xelt.attrib["id"]
         url = xelt.attrib["url"]
-        foref = xelt.get("frame-of-reference")
+        foref = xelt.get("frame-of-reference") # for backward compatibility
         if foref is None:
             unit = xelt.get("unit", "ms")
             origin = xelt.get("origin", "0")
