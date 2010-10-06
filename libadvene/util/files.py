@@ -2,7 +2,7 @@
 I contain utility functions to handle local and distant files.
 """
 
-from os import mkdir, path
+from os import mkdir, path, rmdir, unlink, walk
 from os.path import dirname, exists, join
 from urllib import pathname2url, url2pathname
 from urllib2 import urlopen
@@ -25,6 +25,19 @@ def recursive_mkdir(dir, sequence):
         return recursive_mkdir(newdir, sequence[1:])
     else:
         return dir
+
+def recursive_unlink(dir):
+    """
+    Recursively clean up a directory.
+
+    `dir` must be an absolute path.
+    """
+    for dirpath, dirnames, filenames in walk(dir, topdown=False):
+        for name in dirnames:
+            rmdir(join(dirpath, name))
+        for name in filenames:
+            unlink(join(dirpath, name))
+    rmdir(dir)
 
 def smart_urlopen(url):
     """

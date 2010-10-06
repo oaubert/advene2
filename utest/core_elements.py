@@ -7,11 +7,12 @@ from unittest import TestCase, main
 
 from libadvene.model.backends.sqlite import _set_module_debug
 from libadvene.model.consts import DC_NS_PREFIX
-from libadvene.model.core.content import PACKAGED_ROOT
+from libadvene.model.core.content import PACKAGED_ROOT, \
+    create_temporary_packaged_root
 from libadvene.model.core.media import FOREF_PREFIX, DEFAULT_FOREF
 from libadvene.model.core.element import RELATION
 from libadvene.model.core.package import Package, UnreachableImportError, \
-                                      NoSuchElementError
+    NoSuchElementError
 from libadvene.model.exceptions import ModelError
 from libadvene.util.session import session
 
@@ -108,7 +109,7 @@ class TestElements(TestCase):
         f.close()
 
         # a second time, to check that the closing of the synced file
-        # allosw to open it again
+        # allows to open it again
         f = e.content.get_as_synced_file()
         self.assertEqual(lines, f.read())
         f.close()
@@ -138,12 +139,13 @@ class TestElements(TestCase):
         f.close()
 
         # packaged content
-        file_url = "packaged:/data/test"
+        file_url = "data/test"
+        base = e._owner.get_meta(PACKAGED_ROOT, None) \
+            or create_temporary_packaged_root(e._owner)
         e.content_url = file_url
-        base = e._owner.get_meta(PACKAGED_ROOT, None)
-        self.assert_(base) # packaged root automatically created
         filename = path.join(base, url2pathname("data/test"))
         self.assert_(exists(filename), filename) # file automatically created
+        self.assertEqual(filename, e.content_packaged_path)
         # data has not been changed
         self.assertEqual("hello chaps", e.content_data)
         self.assertEqual("hello chaps", e.content.data)

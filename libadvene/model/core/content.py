@@ -14,6 +14,7 @@ deprecated...
 
 from cStringIO import StringIO
 from os import path, tmpfile, unlink
+from os.path import exists, join
 from tempfile import mkdtemp
 from urllib2 import urlopen, url2pathname
 from urlparse import urljoin, urlparse
@@ -25,8 +26,7 @@ from libadvene.model.content.register import iter_content_handlers, \
 from libadvene.model.core.element import RELATION, RESOURCE
 from libadvene.model.exceptions import ModelError
 from libadvene.util.autoproperty import autoproperty
-from libadvene.util.files import recursive_mkdir
-from libadvene.util.session import tempdir_list
+from libadvene.util.files import recursive_mkdir, recursive_unlink
 
 class WithContentMixin:
     """I provide functionality for elements with a content.
@@ -38,13 +38,15 @@ class WithContentMixin:
       backend-stored contents:
         those contents have no URL, and are stored directly in the backend;
         their data can be modified through this class.
+      packaged contents:
+        those contents must fullfil two conditions:
+        * their package must have a PACKAGED_ROOT metadata
+        * their URL must be a relative path without '..' in it
+        Their data is stored in the PACKAGED_ROOT (usually where a zipped
+        package were extracted); their data can be modified through this class.
       external contents:
         they have a URL at which their data is stored; their data can not be
         modified through this class.
-      packaged contents:
-        they have a URL in the special ``packaged:`` scheme, meaning that their
-        data is stored in the local filesystem (usually extracted from a zipped
-        package); their data can be modified through this class.
       empty content:
         only authorized for relations; they are marked by the special mimetype
         "x-advene/none"; neither their model, URL nor data can be modified.
@@ -66,7 +68,7 @@ class WithContentMixin:
     backend for the sake of purity.
 
     Hence, this class provides a method _instantiate_content, to be used as an
-    optimizationin the instantiate class method of element classes.
+    optimization in the instantiate class method of element classes.
     However, the implementation does not rely on the fact that the mixin will
     be initialized with this method.
 
@@ -230,16 +232,11 @@ class WithContentMixin:
             url = self.__url
 
         if url: # non-empty string
-            if url.startswith("packaged:"):
-                # special URL scheme
+            ppath = self._get_content_packaged_path()
+            if ppath:
                 if self.__as_synced_file:
                     raise IOError("content already opened as a file")
-                o = self._owner
-                prefix = o.get_meta(PACKAGED_ROOT, None)
-                assert prefix is not None, "No root is specified for packaged: paths"
-                base = url2pathname(urlparse(prefix).path)
-                filename = path.join(base, url2pathname(url[10:]))
-                f = self.__as_synced_file = PackagedDataFile(filename, self)
+                f = self.__as_synced_file = PackagedDataFile(ppath, self)
             else:
                 abs = urljoin(self._owner._url, url)
                 f = urlopen(abs)
@@ -353,17 +350,13 @@ class WithContentMixin:
     def _get_content_url(self):
         """This property holds the URL of the content, or an empty string.
 
-        Its value determines whether the content is backend-stored, external
-        or packaged.
+        Its value determines whether the content is backend-stored, packaged or
+        external.
 
-        Note that setting a standard URL (i.e. not in the ``packaged:`` scheme)
+        Note that setting an external URL (i.e. not in the ``packaged:`` scheme)
         to a backend-stored or packaged URL will discard its data. On the
         other hand, changing from backend-store to packaged and vice-versa
         keeps the data.
-
-        Finally, note that setting the URL to one in the ``packaged:`` model
-        will automatically create a temporary directory and set the
-        PACKAGED_ROOT metadata of the package to that directory.
         """
         r = self.__url
         if r is None: # should not happen, but that's safer
@@ -373,39 +366,39 @@ class WithContentMixin:
 
     @autoproperty
     def _set_content_url(self, url):
-        """See `_get_content_url`."""
+        """
+        The doc is in `_get_content_url` in order to be inherited by the
+        property 'content_url' (see `autoproperty` decorator).
+        """
         if self.__url is None: # should not happen, but safer
             self._load_content_info()
         if url == self.__url:
             return # no need to perform the complicate things below
         self._check_content(url=url)
-        oldurl = self.__url
-        if oldurl.startswith("packaged:"):
+
+        old_ppath = self._get_content_packaged_path()
+        new_ppath = url and self._get_content_packaged_path(url)
+        if old_ppath:
             # delete packaged data
             f = self.__as_synced_file
             if f:
                 f.close()
                 del self.__as_synced_file
-            rootdir = self._owner.get_meta(PACKAGED_ROOT)
-            pname = url2pathname(oldurl[10:])
-            fname = path.join(rootdir, pname)
-            if not url or url.startswith("packaged:"):
-                f = open(fname)
+            if not url or new_ppath:
+                f = open(old_ppath)
                 self.__data = f.read()
                 f.close()
-            unlink(fname)
+            unlink(old_ppath)
 
-        if url.startswith("packaged:"):
-            rootdir = self._owner.get_meta(PACKAGED_ROOT, None)
-            if rootdir is None:
-                rootdir = create_temporary_packaged_root(self._owner)
+        if new_ppath:
             if self.__data:
-                seq = url.split("/")[1:]
-                dir = recursive_mkdir(rootdir, seq[:-1])
-                fname = path.join(dir, seq[-1])
-                f = open(fname, "w")
+                rootdir = self._owner.get_meta(PACKAGED_ROOT)
+                seq = url.split("/")
+                recursive_mkdir(rootdir, seq[:-1])
+                f = open(new_ppath, "w")
                 f.write(self.__data)
                 f.close()
+
         if url:
             if self.__data:
                 del self.__data
@@ -436,7 +429,7 @@ class WithContentMixin:
             self._load_content_info()
             url = self.__url
         f = self.__as_synced_file
-        if f: # backend data or "packaged:" url
+        if f: # backend data or packaged content
             # NB: this is not threadsafe
             pos = f.tell()
             f.seek(0)
@@ -456,14 +449,18 @@ class WithContentMixin:
 
     @autoproperty
     def _set_content_data(self, data):
-        """ See `_get_content_data`."""
+        """
+        The doc is in `_get_content_data` in order to be inherited by the
+        property 'content_data' (see `autoproperty` decorator).
+        """
         url = self.__url
         if url is None: # should not happen, but that's safer
             self._load_content_info()
             url = self.__url
         if self.__mimetype == "x-advene/none":
             raise ModelError("Can not set data of empty content")
-        if url.startswith("packaged:"):
+        ppath = self._get_content_packaged_path()
+        if ppath:
             f = self.get_content_as_synced_file()
             diff = None # TODO make a diff object
             f.truncate()
@@ -471,9 +468,9 @@ class WithContentMixin:
             f.close()
         else:
             if url:
-                raise AttributeError("content has a url, can not set data")
+                raise AttributeError("content is external, can not set data")
             elif self.__as_synced_file:
-                raise IOError("content already opened as a file")
+                raise IOError("content already opened as a synced file")
             diff = None # TODO make a diff object
             self.__data = data
             self.__store_data()
@@ -504,12 +501,33 @@ class WithContentMixin:
         Note that the returned file-like object may be writable, but the
         written data will *not* be reflected back to the content. Also, if the
         content data is modified between the moment where this method is called
-        and the moment the file-like object is actually read, thoes changes
+        and the moment the file-like object is actually read, those changes
         will not be included in the read data.
 
         For a synchronized file-like object, see `get_content_as_synced_file`.
         """
         return StringIO(self.content_data)
+
+    @autoproperty
+    def _get_content_packaged_path(self, _new_url=None):
+        """
+        Return the path of the content data if it is packaged, else None.
+        """
+
+        #If `_new_url` is provided, it is used instead of the current
+        #`content_url` (useful when changing URL).
+
+        p_root = self._owner.get_meta(PACKAGED_ROOT, None)        
+        if p_root is None:
+            return None
+        url = _new_url or self.content_url
+        split_path = url.split("/")
+        if "" in split_path:
+            # happens when URL contains '//' or starts or ends with "/"
+            return None
+        if ".." in split_path:
+            return None
+        return join(p_root, url)
 
     @autoproperty
     def _get_content(self):
@@ -519,6 +537,7 @@ class WithContentMixin:
             c = Content(self)
             self.__cached_content = ref(c)
         return c
+
 
 
 class Content(object):
@@ -603,11 +622,15 @@ class Content(object):
     def _get_as_file(self):
         return self._owner_elt._get_content_as_file()
 
+    @autoproperty
+    def _get_packaged_path(self):
+        return self._owner_elt._get_content_packaged_path()
+
 
 class PackagedDataFile(file):
     __slots__ = ["_element",]
     def __init__(self, filename, element):
-        if path.exists(filename):
+        if exists(filename):
             file.__init__ (self, filename, "r+")
         else:
             file.__init__ (self, filename, "w+")
@@ -688,7 +711,9 @@ class ContentDataFile(object):
 
 def create_temporary_packaged_root(package):
     d = mkdtemp()
-    tempdir_list.append(d)
     package.set_meta(PACKAGED_ROOT, d)
-    # TODO use notification to clean it when package is closed
+    package.connect("package-closed", _clean_packaged_root, d)
     return d
+
+def _clean_packaged_root(pkg, url, uri, dirpath):
+    recursive_unlink(dirpath)
