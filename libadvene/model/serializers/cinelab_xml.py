@@ -129,7 +129,7 @@ class _Serializer(_AdveneSerializer):
         self._serialize_external_tagging(self.root)
 
         _indent(self.root)
-        ElementTree(self.root).write(self.file)
+        ElementTree(self.root).write(self.file, encoding='utf-8')
 
     # end of the public interface
 

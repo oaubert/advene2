@@ -114,7 +114,7 @@ class _Serializer(object):
         self._serialize_meta(package, self.root)
 
         _indent(self.root)
-        ElementTree(self.root).write(self.file)
+        ElementTree(self.root).write(self.file, encoding='utf-8')
 
     # end of the public interface
 
