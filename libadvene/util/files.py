@@ -26,19 +26,6 @@ def recursive_mkdir(dir, sequence):
     else:
         return dir
 
-def recursive_unlink(dir):
-    """
-    Recursively clean up a directory.
-
-    `dir` must be an absolute path.
-    """
-    for dirpath, dirnames, filenames in walk(dir, topdown=False):
-        for name in dirnames:
-            rmdir(join(dirpath, name))
-        for name in filenames:
-            unlink(join(dirpath, name))
-    rmdir(dir)
-
 def smart_urlopen(url):
     """
     Opens a URL, using builtin `open` for local files

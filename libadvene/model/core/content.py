@@ -15,6 +15,7 @@ deprecated...
 from cStringIO import StringIO
 from os import path, tmpfile, unlink
 from os.path import exists, join
+from shutil import rmtree
 from tempfile import mkdtemp
 from urllib2 import urlopen, url2pathname
 from urlparse import urljoin, urlparse
@@ -26,7 +27,7 @@ from libadvene.model.content.register import iter_content_handlers, \
 from libadvene.model.core.element import RELATION, RESOURCE
 from libadvene.model.exceptions import ModelError
 from libadvene.util.autoproperty import autoproperty
-from libadvene.util.files import recursive_mkdir, recursive_unlink
+from libadvene.util.files import recursive_mkdir
 
 class WithContentMixin:
     """I provide functionality for elements with a content.
@@ -716,4 +717,4 @@ def create_temporary_packaged_root(package):
     return d
 
 def _clean_packaged_root(pkg, url, uri, dirpath):
-    recursive_unlink(dirpath)
+    rmtree(dirpath, ignore_errors=True)

@@ -6,12 +6,12 @@ See `libadvene.model.parsers.advene_xml` for the reference implementation.
 
 from tempfile import mkdtemp
 from os import path, tmpfile
+from shutil import rmtree
 from zipfile import BadZipfile, ZipFile
 
 from libadvene.model.consts import PACKAGED_ROOT
 import libadvene.model.parsers.advene_xml as advene_xml
 import libadvene.model.serializers.advene_zip as serializer
-from libadvene.util.files import get_path, recursive_mkdir, recursive_unlink
 
 class Parser(object):
 
@@ -91,7 +91,7 @@ class Parser(object):
         try:
             parser.parse()
         finally:
-            recursive_unlink(parser.dir)
+            rmtree(parser.dir, ignore_errors=True)
             
 
     def parse(self):
