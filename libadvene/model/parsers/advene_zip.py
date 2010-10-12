@@ -6,7 +6,6 @@ See `libadvene.model.parsers.advene_xml` for the reference implementation.
 
 from tempfile import mkdtemp
 from os import path, tmpfile
-from shutil import rmtree
 from zipfile import BadZipfile, ZipFile
 
 from libadvene.model.consts import PACKAGED_ROOT
@@ -88,12 +87,7 @@ class Parser(object):
 
         See also `make_parser`.
         """
-        parser = cls(file_, package)
-        try:
-            parser.parse()
-        finally:
-            rmtree(parser.dir, ignore_errors=True)
-            
+        cls(file_, package).parse()            
 
     def parse(self):
         "Do the actual parsing."

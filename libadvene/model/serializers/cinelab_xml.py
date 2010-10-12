@@ -16,23 +16,29 @@ EXTENSION = ".cxp" # Cinelab Xml Package
 
 MIMETYPE = "application/x-cinelab-package+xml"
 
-def make_serializer(package, file_):
+def make_serializer(package, file_, _standalone_xml=True):
     """Return a serializer that will serialize `package` to `file_`.
 
     `file_` is a writable file-like object. It is the responsibility of the
     caller to close it.
 
+    NB: `_standalone_xml` is an internal parameter which is not part of the
+    public interface of serializers.
+
     The returned object must implement the interface for which
     :class:`_Serializer` is the reference implementation.
     """
-    return _Serializer(package, file_)
+    return _Serializer(package, file_, _standalone_xml)
 
-def serialize_to(package, file_):
+def serialize_to(package, file_, _standalone_xml=True):
     """A shortcut for ``make_serializer(package, file_).serialize()``.
+
+    NB: `_standalone_xml` is an internal parameter which is not part of the
+    public interface of serializers.
 
     See also `make_serializer`.
     """
-    return _Serializer(package, file_).serialize()
+    return _Serializer(package, file_, _standalone_xml).serialize()
 
 
 class _Serializer(_AdveneSerializer):
@@ -133,8 +139,8 @@ class _Serializer(_AdveneSerializer):
 
     # end of the public interface
 
-    def __init__(self, package, file_):
-        _AdveneSerializer.__init__(self, package, file_)
+    def __init__(self, package, file_, _standalone_xml=True):
+        _AdveneSerializer.__init__(self, package, file_, _standalone_xml)
         insort(self.unserialized_meta_prefixes, CAMSYS_NS_PREFIX)
         self.default_ns = CAM_XML
 

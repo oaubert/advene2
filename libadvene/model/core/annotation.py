@@ -50,7 +50,7 @@ class Annotation(PackageElement, WithContentMixin):
         begin = int(begin)
         end = int(end)
         model_id = PackageElement._check_reference(owner, model, RESOURCE)
-        cls._check_content_cls(mimetype, model_id, url)
+        cls._check_content_cls(mimetype, model_id, url, owner)
         owner._backend.create_annotation(owner._id, id, media_id, begin, end,
                                          mimetype, model_id, url)
         r = cls.instantiate(owner, id, media_id, begin, end,

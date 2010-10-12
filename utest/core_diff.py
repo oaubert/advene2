@@ -1,8 +1,9 @@
 from unittest import TestCase, main
 from urllib import pathname2url
+from tempfile import mkdtemp
 
-from libadvene.model.consts import PARSER_META_PREFIX, DC_NS_PREFIX, \
-    RDFS_NS_PREFIX
+from libadvene.model.consts import DC_NS_PREFIX, PACKAGED_ROOT, \
+    PARSER_META_PREFIX, RDFS_NS_PREFIX
 from libadvene.model.core.diff import diff_packages
 from libadvene.model.core.package import Package
 
@@ -71,23 +72,29 @@ class TestDiffPackage(TestCase):
 
     def test_step_by_step(self):
         p1, p2 = self.p1, self.p2
+        p1.set_meta(PACKAGED_ROOT, mkdtemp(prefix="advene2_core_diff_"))
+        p2.set_meta(PACKAGED_ROOT, mkdtemp(prefix="advene2_core_diff_"))
         fill_p2 = fill_package_step_by_step(p2)
         for i in fill_package_step_by_step(p1):
             diff = diff_packages(p1, p2)
-            self.assertEqual(1, len(diff), (i, diff))
+            self.assertEqual(1, len(fix_diff(diff)), (i, diff))
             diff = diff_packages(p2, p1)
-            self.assertEqual(1, len(diff), (i, diff))
+            self.assertEqual(1, len(fix_diff(diff)), (i, diff))
             fill_p2.next()
             diff = diff_packages(p1, p2)
-            self.assertEqual([], diff, "%s\n%r" % (i, diff))
+            self.assertEqual([], fix_diff(diff), "%s\n%r" % (i, diff))
             diff = diff_packages(p2, p1)
-            self.assertEqual([], diff, "%s\n%r" % (i, diff))
+            self.assertEqual([], fix_diff(diff), "%s\n%r" % (i, diff))
 
     def test_several_steps(self):
         p1, p2 = self.p1, self.p2
         for i in fill_package_step_by_step(p1):
             self.assertNotEqual([], diff_packages(p1, p2), i)
             self.assertNotEqual([], diff_packages(p2, p1), i)
+
+def fix_diff(diff):
+    return [ d for d in diff
+             if not ( d[0] == "set_meta" and d[3] ==  PACKAGED_ROOT ) ]
 
 if __name__ == "__main__":
     main()

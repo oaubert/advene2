@@ -1,5 +1,6 @@
 from os import curdir
 from os.path import abspath, exists
+from shutil import rmtree
 from urlparse import urljoin, urlparse
 from urllib import pathname2url, url2pathname
 from urllib2 import URLError
@@ -23,6 +24,7 @@ from libadvene.model.core.import_ import Import
 from libadvene.model.core.all_group import AllGroup
 from libadvene.model.core.own_group import OwnGroup
 from libadvene.model.core.meta import WithMetaMixin
+from libadvene.model.core.content import PACKAGED_ROOT
 from libadvene.model.exceptions import \
     NoClaimingError, NoSuchElementError, UnreachableImportError
 from libadvene.model.events import PackageEventDelegate, WithEventsMixin
@@ -295,6 +297,11 @@ class Package(WithMetaMixin, WithEventsMixin, WithAbsoluteUrlMixin, object):
                 p._finish_close()
 
     def _do_close(self):
+        # clean data from the filesystem, if any
+        packaged_root = self.get_meta(PACKAGED_ROOT, None)
+        if packaged_root:
+            rmtree(packaged_root)
+        # clean or close data from the backend
         if self._transient:
             self._backend.delete(self._id)
         else:
@@ -680,6 +687,16 @@ class Package(WithMetaMixin, WithEventsMixin, WithAbsoluteUrlMixin, object):
         self._backend.create_import(self._id, id, url, uri)
         r = self.get(id)
         return r
+
+    def should_package_content(self, element):
+        """
+        This method implements the criteria for deciding to store the content
+        as a packaged content rather than in memory.
+
+        It can be overridden.
+        """
+        return (not element.content_is_textual
+                or len(element.content_data) > 256)
 
     # tags management
 

@@ -18,7 +18,7 @@ class Query(PackageElement, WithContentMixin):
     @classmethod
     def create_new(cls, owner, id, mimetype, model, url):
         model_id = PackageElement._check_reference(owner, model, RESOURCE)
-        cls._check_content_cls(mimetype, model_id, url)
+        cls._check_content_cls(mimetype, model_id, url, owner)
         owner._backend.create_query(owner._id, id, mimetype, model_id, url)
         r = cls.instantiate(owner, id, mimetype, model_id, url)
         return r

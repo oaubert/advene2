@@ -42,7 +42,7 @@ class _Serializer(object):
         """Perform the actual serialization."""
         #print "=== serializing directory", self.dir
         f = open(path.join(self.dir, "content.xml"), "w")
-        self._xml_serializer.serialize_to(self.package, f)
+        self._xml_serializer.serialize_to(self.package, f, False)
         f.close()
 
         z = ZipFile(self.file, "w", self.compression)
@@ -54,30 +54,30 @@ class _Serializer(object):
             self.compression = ZIP_DEFLATED
         else:
             self.compression = compression
-        self.dir = dir = package.get_meta(PACKAGED_ROOT, None)
-        if dir is None:
-            self.dir = dir = create_temporary_packaged_root(package)
+        self.dir = dir_ = package.get_meta(PACKAGED_ROOT, None)
+        if dir_ is None:
+            self.dir = dir_ = create_temporary_packaged_root(package)
 
-        if not exists(path.join(dir, "mimetype")):
-            f = open(path.join(dir, "mimetype"), "w")
+        if not exists(path.join(dir_, "mimetype")):
+            f = open(path.join(dir_, "mimetype"), "w")
             f.write(self.mimetype)
             f.close()
-        if not exists(path.join(dir, "data")):
-            mkdir(path.join(dir, "data"))
+        if not exists(path.join(dir_, "data")):
+            mkdir(path.join(dir_, "data"))
 
             
         self.package = package
         self.file = file_
 
 
-def _recurse(z, dir, base=""):
-    for f in listdir(dir):
-        abs = path.join(dir, f)
-        if isdir(abs):
-            _recurse(z, abs, path.join(base, f))
+def _recurse(z, dirname, base=""):
+    for f in listdir(dirname):
+        abspath = path.join(dirname, f)
+        if isdir(abspath):
+            _recurse(z, abspath, path.join(base, f))
         else:
-            #print "=== zipping", path.join(base, f)
-            z.write(abs, path.join(base, f).encode('utf-8'))
+            #print "=== zipping", abspath, path.join(base, f)
+            z.write(abspath, path.join(base, f).encode('utf-8'))
 
 
 if __name__ == "__main__":

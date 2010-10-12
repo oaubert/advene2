@@ -14,8 +14,7 @@ deprecated...
 
 from cStringIO import StringIO
 from os import path, tmpfile, unlink
-from os.path import exists, join
-from shutil import rmtree
+from os.path import dirname, exists, join, sep
 from tempfile import mkdtemp
 from urllib2 import urlopen, url2pathname
 from urlparse import urljoin, urlparse
@@ -34,23 +33,21 @@ class WithContentMixin:
 
     I assume that I will be mixed in subclasses of PackageElement.
 
-    Note that there are 4 kinds of contents:
+    Internal / external contents
+    ============================
 
-      backend-stored contents:
-        those contents have no URL, and are stored directly in the backend;
-        their data can be modified through this class.
-      packaged contents:
-        those contents must fullfil two conditions:
-        * their package must have a PACKAGED_ROOT metadata
-        * their URL must be a relative path without '..' in it
-        Their data is stored in the PACKAGED_ROOT (usually where a zipped
-        package were extracted); their data can be modified through this class.
-      external contents:
-        they have a URL at which their data is stored; their data can not be
-        modified through this class.
-      empty content:
-        only authorized for relations; they are marked by the special mimetype
-        "x-advene/none"; neither their model, URL nor data can be modified.
+    At the most abstract levels, there are 3 kinds of contents:
+
+    internal contents
+      they are stored in the package, and can be modified.
+    external contents
+      they are referenced by the package with a URL, and can not be modified.
+    empty contents
+      only authorized for relations; they are marked by the special mimetype
+      "x-advene/none"; neither their model, URL nor data can be modified.
+
+    This is the only distinction the end-user (or the casual developer) should
+    be aware of.
 
     It follows that content-related properties are not independant from one
     another. Property `content_mimetype` has higher priority, as it is used to
@@ -58,6 +55,27 @@ class WithContentMixin:
     properties can be set or not). Then `content_url` is used to decide between
     the three other kinds of content, in order to decide whether `content_data`
     can be set or not. See the documentation of each property for more detail.
+
+    In memory / packaged contents
+    =============================
+
+    For packages store in a transient backend (typically those loaded from and
+    saved to a file), there are actually two kinds of internal contents:
+
+    in-memory contents
+      are stored in the transient backend, i.e. in memory.
+    packaged contents
+      are stored in the local file systems; they have a special URL starting
+      with 'packaged:'.
+
+    This distinction is useful at runtime (to prevent loading big contents in
+    memory) and for serialization: in ZIP formats, packaged contents will not
+    be stored in the XML file but in additional files in the archive.
+
+    The package automatically decides whether a content should be in-memory or
+    packaged through its method `should_package_content`. This can be manually
+    overriden by manually setting the content URL, but note that the package
+    may reset this each time the mimetype or data is modified.
 
     Content initialization
     ======================
@@ -105,7 +123,8 @@ class WithContentMixin:
         self.__url = url
         self._update_content_handler()
 
-    def _check_content(self, mimetype=None, model_id=None, url=None):
+    def _check_content(self, mimetype=None, model_id=None, url=None,
+                       _package=None):
         """
         Check that the provided values (assumed to be the future values of
         the corresponding attributes) are valid and consistent (with each other
@@ -114,6 +133,10 @@ class WithContentMixin:
         NB: we do *not* check that model_id identifies a resource. Use
         _check_reference for that.
         """
+        # the _package parameter is useful for _check_content_cls (the
+        # classmethod version of this method)
+        if _package is None:
+            _package = self._owner
         if mimetype is not None:
             if len(mimetype.split("/")) != 2:
                 raise ModelError("%r does not look like a mimetype" % mimetype)
@@ -134,6 +157,9 @@ class WithContentMixin:
                 if mimetype == "x-advene/none" \
                 or mimetype is None and self.__mimetype == "x-advene/none":
                     raise ModelError("Can not set URL of empty content")
+                if url.startswith("packaged:") and not _package._transient:
+                    raise ModelError("Can not use packaged contents with "
+                                     "persistent backend")
 
     def _update_caches(self, old_idref, new_idref, element, relation):
         """
@@ -146,7 +172,8 @@ class WithContentMixin:
                 ._update_caches(old_idref, new_idref, element, relation)
 
     @classmethod
-    def _check_content_cls(cls, mimetype, model, url, _func=_check_content):
+    def _check_content_cls(cls, mimetype, model, url, package,
+                           _func=_check_content):
         """
         This is a classmethod variant of _check_content, to be use in
         _instantiate (note that all parameters must be provided in this
@@ -154,7 +181,7 @@ class WithContentMixin:
         """
         # it happens that luring _check_content into using cls as self works
         # and prevents us from writing redundant code
-        _func(cls, mimetype, model, url)
+        _func(cls, mimetype, model, url, package)
 
     def _update_content_handler(self):
         """See :class:`WithContentMixin` documentation."""
@@ -233,11 +260,13 @@ class WithContentMixin:
             url = self.__url
 
         if url: # non-empty string
-            ppath = self._get_content_packaged_path()
-            if ppath:
+            if url.startswith("packaged:"):
+                # special URL scheme
                 if self.__as_synced_file:
                     raise IOError("content already opened as a file")
-                f = self.__as_synced_file = PackagedDataFile(ppath, self)
+                filename = self._get_content_packaged_path()
+                assert filename, "Could not guess packaged path (no root?)"
+                f = self.__as_synced_file = PackagedDataFile(filename, self)
             else:
                 abs = urljoin(self._owner._url, url)
                 f = urlopen(abs)
@@ -246,6 +275,25 @@ class WithContentMixin:
                 raise IOError("content already opened as a file")
             f = self.__as_synced_file = ContentDataFile(self)
         return f
+
+    def _automanage_storage(self):
+        """
+        Switch the way the content of this element is stored.
+
+        If parameter yes is not provided, ask owner package.
+
+        This should only be used with a non-empty, internal content.
+
+        @see-also Package.should_package_content
+        """
+        if (self._owner._transient is False or
+            self.__mimetype == "x-advene/none" or
+            self.__url and self.__url[:9] != "packaged:"):
+            return
+        if self._owner.should_package_content(self):
+            self._set_content_url("packaged:/data/%s" % self.id)
+        else:
+            self._set_content_url("")
 
     @autoproperty
     def _get_content_mimetype(self):
@@ -267,14 +315,17 @@ class WithContentMixin:
         if mimetype == "x-advene/none":
             self._check_content(mimetype, "", "")
             self._set_content_model(None)
-            self._set_content_url("")
             self._set_content_data("")
+            # it is important to set the URL last, because _automanage_storage
+            # will re-set it when setting data
+            self._set_content_url("")
         else:
             self._check_content(mimetype)
         self.emit("pre-modified::content_mimetype", "content_mimetype", mimetype)
         self.__mimetype = mimetype
         self.__store_info()
         self.emit("modified::content_mimetype", "content_mimetype", mimetype)
+        self._automanage_storage()
         self._update_content_handler()
 
     @autoproperty
@@ -351,13 +402,17 @@ class WithContentMixin:
     def _get_content_url(self):
         """This property holds the URL of the content, or an empty string.
 
-        Its value determines whether the content is backend-stored, packaged or
-        external.
+        Its value determines whether the content is backend-stored, external
+        or packaged.
 
-        Note that setting an external URL (i.e. not in the ``packaged:`` scheme)
+        Note that setting a standard URL (i.e. not in the ``packaged:`` scheme)
         to a backend-stored or packaged URL will discard its data. On the
         other hand, changing from backend-store to packaged and vice-versa
         keeps the data.
+
+        Finally, note that setting the URL to one in the ``packaged:`` model
+        will automatically create a temporary directory and set the
+        PACKAGED_ROOT metadata of the package to that directory.
         """
         r = self.__url
         if r is None: # should not happen, but that's safer
@@ -376,29 +431,27 @@ class WithContentMixin:
         if url == self.__url:
             return # no need to perform the complicate things below
         self._check_content(url=url)
-
-        old_ppath = self._get_content_packaged_path()
-        new_ppath = url and self._get_content_packaged_path(url)
-        if old_ppath:
+        oldurl = self.__url
+        if oldurl.startswith("packaged:"):
             # delete packaged data
-            f = self.__as_synced_file
-            if f:
-                f.close()
-                del self.__as_synced_file
-            if not url or new_ppath:
-                f = open(old_ppath)
-                self.__data = f.read()
-                f.close()
-            unlink(old_ppath)
+            fname = self._get_content_packaged_path()
+            f = self.__as_synced_file or PackagedDataFile(fname, self)
+            f.seek(0)
+            self.__data = f.read()
+            f.close()
+            del self.__as_synced_file
+            unlink(fname)
+        elif not oldurl:
+            self.content_data # ensure self.__data contains the data
 
-        if new_ppath:
-            if self.__data:
-                rootdir = self._owner.get_meta(PACKAGED_ROOT)
-                seq = url.split("/")
-                recursive_mkdir(rootdir, seq[:-1])
-                f = open(new_ppath, "w")
-                f.write(self.__data)
-                f.close()
+        if url.startswith("packaged:"):
+            rootdir = self._owner.get_meta(PACKAGED_ROOT, None)
+            if rootdir is None:
+                rootdir = create_temporary_packaged_root(self._owner)
+            fname = self._get_content_packaged_path(url)
+            f = PackagedDataFile(fname, self)
+            f.write(self.__data)
+            f.close()
 
         if url:
             if self.__data:
@@ -430,7 +483,7 @@ class WithContentMixin:
             self._load_content_info()
             url = self.__url
         f = self.__as_synced_file
-        if f: # backend data or packaged content
+        if f: # backend data or "packaged:" url
             # NB: this is not threadsafe
             pos = f.tell()
             f.seek(0)
@@ -460,8 +513,7 @@ class WithContentMixin:
             url = self.__url
         if self.__mimetype == "x-advene/none":
             raise ModelError("Can not set data of empty content")
-        ppath = self._get_content_packaged_path()
-        if ppath:
+        if url.startswith("packaged:"):
             f = self.get_content_as_synced_file()
             diff = None # TODO make a diff object
             f.truncate()
@@ -476,6 +528,7 @@ class WithContentMixin:
             self.__data = data
             self.__store_data()
         self.emit("modified-content-data", diff)
+        self._automanage_storage()
 
     @autoproperty
     def _get_content_parsed(self):
@@ -518,17 +571,13 @@ class WithContentMixin:
         #If `_new_url` is provided, it is used instead of the current
         #`content_url` (useful when changing URL).
 
+        url = _new_url or self.content_url
+        if not url or url[:9] != "packaged:":
+            return None
         p_root = self._owner.get_meta(PACKAGED_ROOT, None)        
         if p_root is None:
             return None
-        url = _new_url or self.content_url
-        split_path = url.split("/")
-        if "" in split_path:
-            # happens when URL contains '//' or starts or ends with "/"
-            return None
-        if ".." in split_path:
-            return None
-        return join(p_root, url)
+        return join(p_root, url2pathname(url[10:]))
 
     @autoproperty
     def _get_content(self):
@@ -629,11 +678,21 @@ class Content(object):
 
 
 class PackagedDataFile(file):
+    """
+    This class fulfils two purposes:
+
+    * create the packaged file when it does not exist (useful because ZIP
+      archives do not store empty files)
+    * notify the content when the file is closed
+    """
     __slots__ = ["_element",]
     def __init__(self, filename, element):
         if exists(filename):
             file.__init__ (self, filename, "r+")
         else:
+            base, seq = dirname(filename).split(sep, 1)
+            seq.split(sep)
+            recursive_mkdir(base+sep, seq.split(sep))
             file.__init__ (self, filename, "w+")
         self._element = element
 
@@ -713,8 +772,4 @@ class ContentDataFile(object):
 def create_temporary_packaged_root(package):
     d = mkdtemp(prefix="advene2_pkg_")
     package.set_meta(PACKAGED_ROOT, d)
-    package.connect("package-closed", _clean_packaged_root, d)
     return d
-
-def _clean_packaged_root(pkg, url, uri, dirpath):
-    rmtree(dirpath, ignore_errors=True)

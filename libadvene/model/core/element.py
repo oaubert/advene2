@@ -317,6 +317,10 @@ class PackageElement(WithMetaMixin, WithEventsMixin, WithAbsUrlMixin, object):
                     e = o._elements.get(eid) # only update *instantiated* elts
                     if e is not None:
                         e._update_caches(old_idref, new_idref, None, rel)
+        # this is a dirty dependancy on content.py, but it is easier to do it
+        # that way than in a cleaner way
+        if hasattr(self, "_automanage_storage"):
+            self._automanage_storage()
         self.emit("renamed")
 
     def _update_caches(self, old_idref, new_idref, element, relation):

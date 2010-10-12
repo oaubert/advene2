@@ -22,23 +22,29 @@ EXTENSION = ".bxp" # Advene-2 Xml Package
 
 MIMETYPE = "application/x-advene-bxp"
 
-def make_serializer(package, file_):
+def make_serializer(package, file_, _standalone_xml=True):
     """Return a serializer that will serialize `package` to `file_`.
 
     `file_` is a writable file-like object. It is the responsability of the
     caller to close it.
 
+    NB: `_standalone_xml` is an internal parameter which is not part of the
+    public interface of serializers.
+
     The returned object must implement the interface for which
     :class:`_Serializer` is the reference implementation.
     """
-    return _Serializer(package, file_)
+    return _Serializer(package, file_, _standalone_xml)
 
-def serialize_to(package, file_):
+def serialize_to(package, file_, _standalone_xml=True):
     """A shortcut for ``make_serializer(package, file_).serialize()``.
+
+    NB: `_standalone_xml` is an internal parameter which is not part of the
+    public interface of serializers.
 
     See also `make_serializer`.
     """
-    return _Serializer(package, file_).serialize()
+    return _Serializer(package, file_, _standalone_xml).serialize()
 
 
 class _Serializer(object):
@@ -118,7 +124,7 @@ class _Serializer(object):
 
     # end of the public interface
 
-    def __init__(self, package, file_):
+    def __init__(self, package, file_, _standalone_xml=True):
 
         # this will be ugly, because ElementTree in python 2.5 does not handle
         # custom namespace prefix, so we just handle them ourselves
@@ -127,6 +133,7 @@ class _Serializer(object):
         self.file = file_
         self.unserialized_meta_prefixes = list(iter_unserialized_meta_prefix())
         self.default_ns = ADVENE_XML
+        self.standalone_xml = _standalone_xml
 
     # element serializers
 
@@ -215,12 +222,12 @@ class _Serializer(object):
                            mimetype=elt.content_mimetype)
             if elt.content_model_id:
                 xc.set("model", elt.content_model_id)
-            if elt.content_url:
-                # TODO manage packaged contents
+            if elt.content_url and (elt.content_url[:9] != "packaged:"
+                                    or not self.standalone_xml):
                 xc.set("url", elt.content_url)
             else:
                 data = elt.content_data
-                if not elt.content_is_textual:
+                if not elt.content_is_textual and len(data):
                     data = base64.encodestring(data)
                     xc.set("encoding", "base64")
                 xc.text = data

@@ -7,8 +7,7 @@ from unittest import TestCase, main
 
 from libadvene.model.backends.sqlite import _set_module_debug
 from libadvene.model.consts import DC_NS_PREFIX
-from libadvene.model.core.content import PACKAGED_ROOT, \
-    create_temporary_packaged_root
+from libadvene.model.core.content import PACKAGED_ROOT
 from libadvene.model.core.media import FOREF_PREFIX, DEFAULT_FOREF
 from libadvene.model.core.element import RELATION
 from libadvene.model.core.package import Package, UnreachableImportError, \
@@ -81,9 +80,15 @@ class TestElements(TestCase):
         e.content.mimetype = "application/binary"
         self.assert_(not e.content_is_textual)
         self.assert_(not e.content.is_textual)
+        # the package must have automatically switched to packaged
+        self.assert_(e.content_url)
+        self.assert_(e.content_url.startswith("packaged:"))
+        e.content_data # check that data is accessible
         e.content.mimetype = "image/svg"
         self.assert_(e.content_is_textual)
         self.assert_(e.content.is_textual)
+        # the package must have automaticcaly switched back to in-memory
+        self.assert_(not e.content_url)
         e.content.mimetype = "text/plain"
         self.assertEqual("text/plain", e.content_mimetype)
         self.assertEqual("text/plain", e.content.mimetype)
@@ -142,13 +147,12 @@ class TestElements(TestCase):
         f.close()
 
         # packaged content
-        file_url = "data/test"
-        base = e._owner.get_meta(PACKAGED_ROOT, None) \
-            or create_temporary_packaged_root(e._owner)
-        e.content_url = file_url
-        filename = path.join(base, url2pathname("data/test"))
+        e.content_mimetype = "application/binary" # ensure it will be packaged
+        base = e._owner.get_meta(PACKAGED_ROOT, None)
+        self.assert_(base) # packaged root automatically created
+        self.assertEqual(e.content_url, "packaged:/data/%s" % e.id)
+        filename = path.join(base, url2pathname("data/%s" % e.id))
         self.assert_(exists(filename), filename) # file automatically created
-        self.assertEqual(filename, e.content_packaged_path)
         # data has not been changed
         self.assertEqual("hello chaps", e.content_data)
         self.assertEqual("hello chaps", e.content.data)
@@ -158,6 +162,7 @@ class TestElements(TestCase):
         f.close()
         self.assertEqual("packaged data", e.content_data)
         self.assertEqual("packaged data", e.content.data)
+        long_data = "still packaged data"
         e.content_data = "still packaged data"
         f = open(filename, "r")
         self.assertEqual("still packaged data", f.read())

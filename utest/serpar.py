@@ -19,7 +19,7 @@ import libadvene.model.serializers.advene_zip as zip
 import libadvene.model.serializers.cinelab_xml as cxml
 import libadvene.model.serializers.cinelab_zip as czip
 
-from core_diff import fill_package_step_by_step
+from core_diff import fill_package_step_by_step, fix_diff
 
 warnings.filterwarnings("ignore", category=UnsafeUseWarning,
                         module="libadvene.model.core.diff")
@@ -36,9 +36,6 @@ class TestAdveneXml(TestCase):
     This TestCase is not specific to AdveneXml. It can be reused for other
     serializer-parser pairs by simply overriding its class attributes: `serpar`,
     `pkgcls`.
-
-    It may also be necessary to override the `fix_diff` and
-    `fill_package_step_by_step` methods.
     """
     pkgcls = Package
     serpar = xml
@@ -53,21 +50,17 @@ class TestAdveneXml(TestCase):
         self.url = "file:" + pathname2url(self.filename2)
         self.p1 = self.pkgcls("file:" + pathname2url(self.filename1),
                               create=True)
+        self.p2 = None
 
     def tearDown(self):
         self.p1.close()
+        if self.p2 and self.p2._backend:
+            self.p2.close()
         unlink(self.filename1)
         try:
             unlink(self.filename2)
         except OSError:
             pass
-
-    def fix_diff(self, diff):
-        """
-        Used to remove differences that are not relevant to the test.
-        """
-        # nothing to do here
-        return diff
 
     def fill_package_step_by_step(self):
         #return fill_package_step_by_step(self.p1, empty=True):
@@ -81,12 +74,14 @@ class TestAdveneXml(TestCase):
             self.serpar.serialize_to(p1, f)
             f.close()
             try:
-                p2 = self.pkgcls(self.url)
+                p2 = self.p2 = self.pkgcls(self.url)
             except ParserError, e:
                 self.fail("ParserError: %s (%s)" % (e.args[0], self.filename2))
-            diff = self.fix_diff(diff_packages(p1, p2))
+
+            diff = fix_diff(diff_packages(p1, p2))
             self.assertEqual([], diff, (i, diff, self.filename2))
             p2.close()
+            
 
     def test_forward_reference_in_list_items(self):
         p1 = self.p1
@@ -103,13 +98,11 @@ class TestAdveneXml(TestCase):
         self.serpar.serialize_to(p1, f)
         f.close()
         try:
-            p2 = self.pkgcls(self.url)
+            p2 = self.p2 = self.pkgcls(self.url)
         except ParserError, e:
             self.fail("ParserError: %s (%s)" % (e.args[0], self.filename2))
-        diff = self.fix_diff(diff_packages(p1, p2))
+        diff = fix_diff(diff_packages(p1, p2))
         self.assertEqual([], diff, (diff, self.filename2))
-        p2.close()
-        unlink(self.filename2)
 
     def test_forward_reference_in_tagged_imports(self):
         p1 = self.p1
@@ -124,40 +117,33 @@ class TestAdveneXml(TestCase):
         self.serpar.serialize_to(p1, f)
         f.close()
         try:
-            p2 = self.pkgcls(self.url)
+            p2 = self.p2 = self.pkgcls(self.url)
         except ParserError, e:
             self.fail("ParserError: %s (%s)" % (e.args[0], self.filename2))
-        diff = self.fix_diff(diff_packages(p1, p2))
+        diff = fix_diff(diff_packages(p1, p2))
         self.assertEqual([], diff, (diff, self.filename2))
-        p2.close()
-        unlink(self.filename2)
 
     def test_base64(self):
         p1 = self.p1
         r = p1.create_resource("r", "application/binary")
         r.content_data = "\x01\x02\x03"
+        r.content_url = "" # force content to be in the XML
 
         f = open(self.filename2, "w")
         self.serpar.serialize_to(p1, f)
         f.close()
         try:
-            p2 = self.pkgcls(self.url)
+            p2 = self.p2 = self.pkgcls(self.url)
         except ParserError, e:
             self.fail("ParserError: %s (%s)" % (e.args[0], self.filename2))
-        diff = self.fix_diff(diff_packages(p1, p2))
-        self.assertEqual([], diff, (diff, self.filename2))
-        p2.close()
-        unlink(self.filename2)
+        diff = fix_diff(diff_packages(p1, p2))
+        self.assertEqual([('<setattr>', 'r', 'content_url', '')],
+                         diff, (diff, self.filename2))
 
 
 class TestAdveneZip(TestAdveneXml):
     serpar = zip
 
-    def fix_diff(self, diff):
-        # the packages do not have the same package_root,
-        # hence we remove that metadata
-        return [ d for d in diff
-                 if not ( d[0] == "set_meta" and d[3] ==  PACKAGED_ROOT ) ]
 
 class TestCinelabXml(TestAdveneXml):
     pkgcls = CamPackage

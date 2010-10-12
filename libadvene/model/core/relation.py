@@ -41,7 +41,7 @@ class Relation(PackageElement, WithContentMixin, GroupMixin):
     @classmethod
     def create_new(cls, owner, id, mimetype, model, url, members=()):
         model_id = PackageElement._check_reference(owner, model, RESOURCE)
-        cls._check_content_cls(mimetype, model_id, url)
+        cls._check_content_cls(mimetype, model_id, url, owner)
         owner._backend.create_relation(owner._id, id, mimetype, model_id, url)
         r = cls.instantiate(owner, id, mimetype, model_id, url)
         if members:
