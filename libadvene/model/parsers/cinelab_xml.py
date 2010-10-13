@@ -12,6 +12,7 @@ it. However, we subclass it in order to inherit the implementation of the Parser
 # - 'xelt' is the abbreviation of XML element
 # - 'celt' is the abbreviation of Cinelab package element
 
+from urlparse import urlparse
 from xml.etree.ElementTree import Element
 
 from libadvene.model.cam.consts import CAM_XML
@@ -273,6 +274,14 @@ class Parser(_AdveneXmlParser):
 
         mimetype = content_xelt.get("mimetype", "text/plain")
         url = content_xelt.get("url", "")
+        if url and not self.standalone_xml:
+            purl = urlparse(url)
+            scheme, netloc, path = purl[:3]
+            if scheme == '' and netloc == '':
+                if path.startswith("../"):
+                    url = path[3:] # make URL relative to package URI
+                elif not path.startswith("/"):
+                    url = "packaged:/%s" % path
         args = [mimetype , "", url]
         content_model = content_xelt.get("model", "")
         encoding = content_xelt.get("encoding", "")

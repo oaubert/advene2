@@ -6,6 +6,7 @@ import base64
 from functools import partial
 from os import path
 from os.path import exists
+from urlparse import urlparse
 
 from libadvene.model.consts import ADVENE_XML, PARSER_META_PREFIX, PACKAGED_ROOT
 from libadvene.model.core.media import FOREF_PREFIX
@@ -104,6 +105,8 @@ class Parser(XmlParserBase):
                 f.close()
                 if mimetype == self.MIMETYPE:
                     self.package.set_meta(PACKAGED_ROOT, dirname)
+        # NB: PACKAGED_ROOT may have been set elsewhere, so:
+        self.standalone_xml = not self.package.get_meta(PACKAGED_ROOT, None)
         XmlParserBase.parse(self)
 
     # end of public interface
@@ -369,6 +372,14 @@ class Parser(XmlParserBase):
     def handle_content(self, creation_method, *args):
         mimetype = self.get_attribute("mimetype", "text/plain")
         url = self.get_attribute("url", "")
+        if url and not self.standalone_xml:
+            purl = urlparse(url)
+            scheme, netloc, path = purl[:3]
+            if scheme == '' and netloc == '':
+                if path.startswith("../"):
+                    url = path[3:] # make URL relative to package URI
+                elif not path.startswith("/"):
+                    url = "packaged:/%s" % path
         model = self.get_attribute("model", "")
         encoding = self.get_attribute("encoding", "")
         elt = creation_method(*args + (mimetype, "", url))

@@ -9,6 +9,7 @@ Forward references are nevetheless still possible in meta-data, tag associated t
 
 import base64
 from itertools import chain
+from urlparse import urlparse
 from xml.etree.ElementTree import Element, ElementTree, SubElement
 
 from libadvene.model.consts import ADVENE_XML, DC_NS_PREFIX
@@ -222,9 +223,30 @@ class _Serializer(object):
                            mimetype=elt.content_mimetype)
             if elt.content_model_id:
                 xc.set("model", elt.content_model_id)
-            if elt.content_url and (elt.content_url[:9] != "packaged:"
-                                    or not self.standalone_xml):
-                xc.set("url", elt.content_url)
+    
+
+            url = elt.content_url
+            if url:
+                if self.standalone_xml:
+                    is_link = (url[:9] != 'packaged:')
+                else:
+                    is_link = True
+                    purl = urlparse(url)
+                    scheme, netloc, path = purl[:3]
+                    if scheme == 'packaged':
+                        url = path[1:]
+                    elif scheme == '' and netloc == '' and path[0] != "/":
+                        url = "../%s" % url
+            else:
+                is_link = False
+
+            # if elt.content_url and (elt.content_url[:9] != "packaged:"
+            #                         or not self.standalone_xml):
+            #     xc.set("url", elt.content_url)
+            # else:
+
+            if is_link:
+                xc.set("url", url)
             else:
                 data = elt.content_data
                 if not elt.content_is_textual and len(data):
