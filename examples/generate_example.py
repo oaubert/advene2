@@ -51,6 +51,7 @@ a1.content.data = "First annotation"
 a2 = p.create_annotation('a2', m, 4560, 7890, 'image/png', type=at)
 datafile = os.path.join( os.path.dirname(os.path.dirname(os.path.abspath(libadvene.__file__))), 'share', 'pixmaps', 'logo_advene.png')
 f = open(datafile, 'r')
+a2.content_url = "" # force in-backend storage to test with binary data
 #a2.content.data = f.read()
 f.close()
 
