@@ -23,6 +23,12 @@ EXTENSION = ".bxp" # Advene-2 Xml Package
 
 MIMETYPE = "application/x-advene-bxp"
 
+DEFAULTS = { # default values
+  "media@unit": "ms",
+  "media@origin": 0,
+  "content@mimetype": "text/plain",
+}
+
 def make_serializer(package, file_, _standalone_xml=True):
     """Return a serializer that will serialize `package` to `file_`.
 
@@ -141,8 +147,10 @@ class _Serializer(object):
     def _serialize_media(self, m, xmedias, tagname="media"):
         foref = m.frame_of_reference
         if foref.startswith(FOREF_PREFIX):
-            attr = {"unit": m.unit}
-            if m.origin != 0:
+            attr = {}
+            if m.unit != DEFAULTS["media@unit"]:
+                attr["unit"] = str(m.unit)
+            if m.origin != DEFAULTS["media@origin"]:
                 attr["origin"] = str(m.origin)
         else:
             attr = {"frame-of-reference": foref}
@@ -218,13 +226,14 @@ class _Serializer(object):
     # common methods
 
     def _serialize_content(self, elt, xelt):
-        if elt.content_mimetype != "x-advene/none":
-            xc = SubElement(xelt, "content",
-                           mimetype=elt.content_mimetype)
+        mimetype = elt.content_mimetype
+        if mimetype != "x-advene/none":
+            xc = SubElement(xelt, "content")
+            if mimetype != DEFAULTS["content@mimetype"]:
+                xc.set("mimetype", mimetype)
             if elt.content_model_id:
                 xc.set("model", elt.content_model_id)
     
-
             url = elt.content_url
             if url:
                 if self.standalone_xml:

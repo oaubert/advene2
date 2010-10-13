@@ -37,9 +37,11 @@ import libadvene.model.serializers.advene_xml as serializer
 from libadvene.util.files import get_path, is_local
 
 class Parser(_AdveneXmlParser):
+
     NAME = serializer.NAME
     EXTENSION = serializer.EXTENSION
     MIMETYPE = serializer.MIMETYPE
+    DEFAULTS = serializer.DEFAULTS
     SERIALIZER = serializer # may be None for some parsers
 
     # this implementation tries to maximize the reusing of code from 
@@ -120,8 +122,8 @@ class Parser(_AdveneXmlParser):
         url = xelt.attrib["url"]
         foref = xelt.get("frame-of-reference") # for backward compatibility
         if foref is None:
-            unit = xelt.get("unit", "ms")
-            origin = xelt.get("origin", "0")
+            unit = xelt.get("unit", self.DEFAULTS["media@unit"])
+            origin = xelt.get("origin", self.DEFAULTS["media@origin"])
             foref = "%s%s;o=%s" % (FOREF_PREFIX, unit, origin)
         celt = self.package.create_media(id_, url, foref)
         celt.enter_no_event_section()
@@ -272,7 +274,8 @@ class Parser(_AdveneXmlParser):
         if not required and content_xelt is None:
             return [ "x-advene/none", "", "" ], None, None
 
-        mimetype = content_xelt.get("mimetype", "text/plain")
+        mimetype = content_xelt.get("mimetype",
+                                    self.DEFAULTS["content@mimetype"])
         url = content_xelt.get("url", "")
         if url and not self.standalone_xml:
             purl = urlparse(url)

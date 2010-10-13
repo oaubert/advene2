@@ -21,6 +21,7 @@ class Parser(XmlParserBase):
     NAME = serializer.NAME
     EXTENSION = serializer.EXTENSION
     MIMETYPE = serializer.MIMETYPE
+    DEFAULTS = serializer.DEFAULTS
     SERIALIZER = serializer # may be None for some parsers
 
     @classmethod
@@ -243,8 +244,8 @@ class Parser(XmlParserBase):
         url = self.get_attribute("url")
         foref = self.get_attribute("frame-of-reference", None)
         if foref is None:
-            unit = self.get_attribute("unit", "ms")
-            origin = self.get_attribute("origin", "0")
+            unit = self.get_attribute("unit", self.DEFAULTS["media@unit"])
+            origin = self.get_attribute("origin", self.DEFAULTS["media@origin"])
             foref = "%s%s;o=%s" % (FOREF_PREFIX, unit, origin)
         elt = self.package.create_media(id, url, foref)
         elt.enter_no_event_section()
@@ -370,7 +371,8 @@ class Parser(XmlParserBase):
                 self.do_or_postpone(val, partial(obj.set_meta, key))
 
     def handle_content(self, creation_method, *args):
-        mimetype = self.get_attribute("mimetype", "text/plain")
+        mimetype = self.get_attribute("mimetype",
+                                      self.DEFAULTS["content@mimetype"])
         url = self.get_attribute("url", "")
         if url and not self.standalone_xml:
             purl = urlparse(url)
