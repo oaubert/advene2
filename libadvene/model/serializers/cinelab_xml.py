@@ -145,12 +145,6 @@ class _Serializer(_AdveneSerializer):
         self.default_ns = CAM_XML
 
     def _serialize_meta(self, obj, xobj):
-        """
-        obj_or_list can be either
-        * an object with a method iter_meta_ids (i.e. package or element)
-        * a list of pairs as yielded by iter_meta_ids
-        This allows subclasses to filter out some pairs from the list
-        """
         xm = SubElement(xobj, "meta")
         exclude = set()
         package = self.package

@@ -15,7 +15,7 @@ it. However, we subclass it in order to inherit the implementation of the Parser
 from urlparse import urlparse
 from xml.etree.ElementTree import Element
 
-from libadvene.model.cam.consts import CAM_XML
+from libadvene.model.cam.consts import CAM_NS_PREFIX, CAM_XML, _DELAY
 import libadvene.model.cam.util.bookkeeping as bk
 import libadvene.model.serializers.cinelab_xml as serializer
 from libadvene.model.parsers.advene_xml import Parser as _AdveneXmlParser
@@ -171,7 +171,8 @@ class Parser(_AdveneXmlParser):
         if end < begin:
             raise ParserError("end is before begin in %s" % id_)
         args, content_model, content_data = self.manage_content(xelt)
-        celt = self.package.create_annotation(id_, media, begin, end, *args)
+        celt = self.package.create_annotation(id_, media, begin, end, *args,
+                                              type=_DELAY)
         celt.enter_no_event_section()
         try:
             if content_model:
@@ -186,7 +187,7 @@ class Parser(_AdveneXmlParser):
     def manage_relation(self, xelt):
         id_ = xelt.attrib["id"]
         args, content_model, content_data = self.manage_content(xelt, False)
-        celt = self.package.create_relation(id_, *args)
+        celt = self.package.create_relation(id_, *args, type=_DELAY)
         celt.enter_no_event_section()
         try:
             if content_model:
@@ -321,8 +322,6 @@ class Parser(_AdveneXmlParser):
 
 #
 
-_CAM_PACKAGE = "{%s}package" % CAM_XML
-_CAM_META = "{%s}meta" % CAM_XML
 _CREATOR = bk.CREATOR
 _CREATED = bk.CREATED
 _CONTRIBUTOR = bk.CONTRIBUTOR

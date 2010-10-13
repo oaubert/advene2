@@ -10,6 +10,10 @@ class UnsafeUseWarning(Warning):
     unsafe way w.r.t. the Cinelab Application Model. This means that the CAM
     prescribes a specific way to use the method, and provides secialized
     method complying with those prescriptions.
+
+    E.g. a_package.iter_tags is unsafe, as it will mix user tags with
+    annotation types and relations types. a_package.iter_user_tags should be
+    used instead.
     """
     pass
 

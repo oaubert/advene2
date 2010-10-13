@@ -13,3 +13,9 @@ CAM_TYPE = "%stype" % CAM_NS_PREFIX
 CAMSYS_TYPE = "%stype" % CAMSYS_NS_PREFIX
 
 register_textual_mimetype('application/x-advene-type-constraint')
+
+
+# internal constants
+
+# _DELAY is used to delay the typing of annotations and relations in parsers
+_DELAY = object()

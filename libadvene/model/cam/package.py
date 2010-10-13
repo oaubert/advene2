@@ -11,7 +11,7 @@ a CORE package (see `libadvene.model.events`), include:!
  * ``created::schema``
 """
 
-from libadvene.model.cam.consts import CAMSYS_TYPE
+from libadvene.model.cam.consts import CAMSYS_TYPE, _DELAY
 from libadvene.model.cam.exceptions import UnsafeUseWarning, SemanticError
 from libadvene.model.cam.group import CamGroupMixin
 from libadvene.model.cam.media import Media
@@ -368,10 +368,17 @@ class Package(CorePackage):
     def create_annotation(self, id, media, begin, end,
                                 mimetype, model=None, url="", type=None):
         """FIXME: missing docstring.
+       
+        type has a default value because it comes after optional arguments
+        (to be consistent with the core model), but it is required.
         """
-        assert type is None or hasattr(type, "ADVENE_TYPE") \
-            or type.find(":") > 0 # strict ID-ref
-
+        if type is None:
+            raise SemanticError("annotations must have a type")
+        assert (type is _DELAY # delayed by parser
+                or hasattr(type, "ADVENE_TYPE") # actual element
+                or type.find(":") > 0 # strict ID-ref
+                )
+            
         # NB: we inhibit the emission of created::annotation until the type
         # of the annotation is set
         self.enter_no_event_section()
@@ -380,8 +387,8 @@ class Package(CorePackage):
                                                        mimetype, model, url)
         finally:
             self.exit_no_event_section()
-
-        if type:
+        
+        if type is not _DELAY:
             type_is_element = hasattr(type, "ADVENE_TYPE")
             a.enter_no_event_section()
             if type_is_element: type.enter_no_event_section()
@@ -397,9 +404,16 @@ class Package(CorePackage):
     def create_relation(self, id, mimetype="x-advene/none", model=None,
                         url="", members=(), type=None):
         """FIXME: missing docstring.
+       
+        type has a default value because it comes after optional arguments
+        (to be consistent with the core model), but it is required.
         """
-        assert type is None or hasattr(type, "ADVENE_TYPE") \
-            or type.find(":") > 0 # strict ID-ref
+        if type is None:
+            raise SemanticError("relations must have a type")
+        assert (type is _DELAY # delayed by parser
+                or hasattr(type, "ADVENE_TYPE") # actual element
+                or type.find(":") > 0 # strict ID-ref
+                )
 
         # NB: we inhibit the emission of created::relation until the type
         # of the relation is set
@@ -410,7 +424,7 @@ class Package(CorePackage):
         finally:
             self.exit_no_event_section()
 
-        if type:
+        if type is not _DELAY:
             type_is_element = hasattr(type, "ADVENE_TYPE")
             r.enter_no_event_section()
             if type_is_element: type.enter_no_event_section()
