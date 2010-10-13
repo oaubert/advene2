@@ -69,7 +69,7 @@ class Parser(XmlParserBase):
                 else:
                     r = max(70, r)
             file_.seek(old_pos)
-            
+
         return r
 
     @classmethod

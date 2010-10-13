@@ -33,7 +33,7 @@ from libadvene.model.consts import ADVENE_XML, PARSER_META_PREFIX, PACKAGED_ROOT
 from libadvene.model.core.media import FOREF_PREFIX
 from libadvene.model.parsers.base_xml import XmlParserBase
 from libadvene.model.parsers.exceptions import ParserError
-import libadvene.model.serializers.advene_xml as serializer
+import libadvene.model.serializers.cinelab_xml as serializer
 from libadvene.util.files import get_path, is_local
 
 class Parser(_AdveneXmlParser):

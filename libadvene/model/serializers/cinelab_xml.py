@@ -7,8 +7,8 @@ from xml.etree.ElementTree import Element, ElementTree, SubElement
 from libadvene.model.cam.consts import CAM_XML, CAMSYS_NS_PREFIX
 import libadvene.model.cam.util.bookkeeping as bk
 from libadvene.model.serializers.advene_xml import _indent
-from libadvene.model.serializers.advene_xml import _Serializer as \
-    _AdveneSerializer
+from libadvene.model.serializers.advene_xml import DEFAULTS, \
+    _Serializer as _AdveneSerializer
 
 NAME = "Cinelab Advene XML"
 
