@@ -532,8 +532,11 @@ class Package(CorePackage):
         Callback invoked on 'created::tag' to automatically create the
         type-constraint view associated with annotation/relation types.
         """
+        prefix = ":constraint"
+        if type._id[0] != ":":
+            prefix += ":"
         c = self.create_view(
-                ":constraint:%s" % type._id,
+                "%s%s" % (prefix, type._id),
                 "application/x-advene-type-constraint",
         )
         type.enter_no_event_section()

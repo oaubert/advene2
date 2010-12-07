@@ -57,7 +57,10 @@ class CamTypeMixin(object):
 
     def set_meta(self, key, value, val_is_idref=False):
         if key == CAM_ELEMENT_CONSTRAINT:
-            expected_id = ":constraint:" + self._id
+            prefix = ":constraint"
+            if self._id[0] != ":":
+                prefix += ":"
+            expected_id = prefix + self._id
             if val_is_idref:
                 got_id = value
                 got = self._owner.get(value, None)
