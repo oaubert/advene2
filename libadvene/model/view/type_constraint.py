@@ -44,6 +44,14 @@ def apply_to(view, obj):
                   uri = obj.uriref, expected = v,
                   mimetype = obj.content_mimetype,
                 )
+        elif k == "model":
+            model = getattr(obj, "content_model_id")
+            if model != v:
+                r.append(
+                  "%(uri)s: model %(model)s does not match %(expected)s",
+                  uri = obj.uriref, expected = v,
+                  model = obj.content_model_id or "''",
+                )
         else:
             raise ContentHandlingError(
                     "unknown type-constraint parameter: %s" % k
