@@ -1,4 +1,5 @@
 import libadvene.model.content.avpairs as avpairs
+import libadvene.model.content.json as json
 import libadvene.model.content.values as values
 
 # content_handler register functions
@@ -22,6 +23,7 @@ _content_handlers = []
 # default registration
 
 register_content_handler(avpairs)
+register_content_handler(json)
 register_content_handler(values)
 
 ################################################################
