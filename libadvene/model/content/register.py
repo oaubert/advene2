@@ -48,5 +48,6 @@ _textual_mimetypes = []
 
 # default registration
 
+register_textual_mimetype("application/json")
 register_textual_mimetype("application/xml")
 register_textual_mimetype("image/svg")
