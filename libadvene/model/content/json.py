@@ -24,6 +24,7 @@ def claims_for_handle(mimetype):
     """
     if loads is not None and mimetype in [
         "application/json",
+        "application/schema+json",
     ]:
         return 99
     else:
