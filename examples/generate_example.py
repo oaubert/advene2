@@ -56,7 +56,7 @@ a2.content_url = "" # force in-backend storage to test with binary data
 f.close()
 
 a3 = p.create_annotation('a3', m, 1230, 4560, 'application/json', type=at2)
-a1.content.data = "{ 'num' : 1, 'title': 'Introduction', 'characters': [ 'john doe', 'jane doe' ] }"
+a3.content.data = "{ 'num' : 1, 'title': 'Introduction', 'characters': [ 'john doe', 'jane doe' ] }"
 
 p.save_as('/tmp/example.cxp', erase=True)
 p.save_as('/tmp/example.czp', erase=True)
