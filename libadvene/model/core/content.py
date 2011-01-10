@@ -53,13 +53,13 @@ class WithContentMixin:
     another. Property `content_mimetype` has higher priority, as it is used to
     decide whether the content is empty or not (hence whether the other
     properties can be set or not). Then `content_url` is used to decide between
-    the three other kinds of content, in order to decide whether `content_data`
+    the two other kinds of content, in order to decide whether `content_data`
     can be set or not. See the documentation of each property for more detail.
 
     In memory / packaged contents
     =============================
 
-    For packages store in a transient backend (typically those loaded from and
+    For packages stored in a transient backend (typically those loaded from and
     saved to a file), there are actually two kinds of internal contents:
 
     in-memory contents
@@ -76,6 +76,15 @@ class WithContentMixin:
     packaged through its method `should_package_content`. This can be manually
     overriden by manually setting the content URL, but note that the package
     may reset this each time the mimetype or data is modified.
+
+    Note that the special 'packaged:' URLs will never appear in the saved
+    packaged; the different serializer will convert them according to the
+    specification of the file format. For example, the CXP (xml) serializer
+    will serialize both in-memory and packaged contents in the XML file, while
+    the CZP (zipped) serializer will only put in-memory content in the XML
+    file, while packaged contents will be stored as separate files in the zip
+    archive, and reference by a relative URL (relative to the file hierarchy
+    inside the archive).
 
     Content initialization
     ======================
@@ -403,17 +412,17 @@ class WithContentMixin:
     def _get_content_url(self):
         """This property holds the URL of the content, or an empty string.
 
-        Its value determines whether the content is backend-stored, external
-        or packaged.
+        Its value determines whether the content is external, in-memory or
+        packaged.
 
         Note that setting a standard URL (i.e. not in the ``packaged:`` scheme)
-        to a backend-stored or packaged URL will discard its data. On the
-        other hand, changing from backend-store to packaged and vice-versa
-        keeps the data.
+        to an in-memory or packaged URL will discard its data. On the
+        other hand, changing in-memory to packaged and vice-versa keeps the
+        data.
 
-        Finally, note that setting the URL to one in the ``packaged:`` model
-        will automatically create a temporary directory and set the
-        PACKAGED_ROOT metadata of the package to that directory.
+        Finally, note that setting the URL to one in the ``packaged:`` scheme
+        will, if needed,  automatically create a temporary directory and set
+        the PACKAGED_ROOT metadata of the package to that directory.
         """
         r = self.__url
         if r is None: # should not happen, but that's safer
