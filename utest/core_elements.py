@@ -100,10 +100,11 @@ class TestElements(TestCase):
         self.assertEqual("I shall say this only once", e.content.data)
 
         # external content (url)
-        url = "file:" + pathname2url(abspath(__file__))
-        if url[-1] == "c": url = url[:-1]  # take .py file, not .pyc (binary)
+        filename = __file__
+        if filename[-1] == "c": filename = filename[:-1] # use .py, not .pyc
+        url = "file:" + pathname2url(abspath(filename))
         e.content_url = url
-        f = open(__file__); lines = f.read(); f.close()
+        f = open(filename); lines = f.read(); f.close()
         self.assertEqual(url, e.content_url)
         self.assertEqual(url, e.content.url)
         self.assertEqual(lines, e.content_data)
