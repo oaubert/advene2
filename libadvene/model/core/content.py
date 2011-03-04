@@ -334,7 +334,15 @@ class WithContentMixin:
         self.emit("pre-modified::content_mimetype", "content_mimetype", mimetype)
         self.__mimetype = mimetype
         self.__store_info()
+        if self._get_content_is_textual():
+            if not self.__as_synced_file and isinstance(self.__data, str):
+                self.__data = self.__data.decode("utf8")
+        else: # not textual
+            if not self.__as_synced_file and isinstance(self.__data, unicode):
+                self.__data = self.__data.encode("utf8")
+            
         self.emit("modified::content_mimetype", "content_mimetype", mimetype)
+        # TODO shouldn't the following lines appear *before* the event is sent?
         self._automanage_storage()
         self._update_content_handler()
 
@@ -507,8 +515,10 @@ class WithContentMixin:
             r = self.__data
             if r is None:
                 op = self._owner
-                r = self.__data = op._backend. \
-                    get_content_data(op._id, self._id, self.ADVENE_TYPE)
+                r = self.__data = safe_decode(
+                    op._backend.get_content_data(op._id, self._id,
+                                                 self.ADVENE_TYPE),
+                    self)
         return r
 
     @autoproperty
@@ -535,7 +545,7 @@ class WithContentMixin:
             elif self.__as_synced_file:
                 raise IOError("content already opened as a synced file")
             diff = None # TODO make a diff object
-            self.__data = data
+            self.__data = safe_decode(data, self)
             self.__store_data()
         self.emit("modified-content-data", diff)
         self._automanage_storage()
@@ -793,7 +803,7 @@ def safe_encode(data):
         return data
 
 def safe_decode(data, element):
-    if element.content_is_textual:
+    if isinstance(data, str) and element.content_is_textual:
         return data.decode("utf8")
     else:
         return data

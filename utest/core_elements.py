@@ -101,6 +101,7 @@ class TestElements(TestCase):
 
         # external content (url)
         url = "file:" + pathname2url(abspath(__file__))
+        if url[-1] == "c": url = url[:-1]  # take .py file, not .pyc (binary)
         e.content_url = url
         f = open(__file__); lines = f.read(); f.close()
         self.assertEqual(url, e.content_url)
@@ -147,6 +148,8 @@ class TestElements(TestCase):
         f.close()
         # test accents in backend-stored content
         e.content_data = u"\xe9"
+        self.assertEqual(u"\xe9", e.content_data)
+        self.assertEqual(u"\xe9", e.content.data)
         e.content_data = "hello chaps" # back to old value, used below
 
         # packaged content
@@ -187,8 +190,18 @@ class TestElements(TestCase):
         self.assertRaises(IOError, e.get_content_as_synced_file)
         self.assertRaises(IOError, e.content.get_as_synced_file)
         f.close()
-        # test accents in packaged content
+        # test binary data in packaged content
+        e.content_data = "\x01\x02\x03"
+        self.assertEqual("\x01\x02\x03", e.content_data)
+        self.assertEqual("\x01\x02\x03", e.content.data)
+        # test unicode in packaged content
+        e.content_mimetype = "text/plain"
         e.content_data = u"\xe9"
+        e.content_url = "packaged:/data/%s" % e.id # force again packaged:
+        self.assertEqual(u"\xe9", e.content_data)
+        self.assertEqual(u"\xe9", e.content.data)
+        # back to previous values, used in the following
+        e.content_mimetype = "application/binary"
         e.content_data = "hello chaps" # back to old value, used below
 
         # back to backend-stored
