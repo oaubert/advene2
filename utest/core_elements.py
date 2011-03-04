@@ -145,6 +145,9 @@ class TestElements(TestCase):
         self.assertRaises(IOError, e.get_content_as_synced_file)
         self.assertRaises(IOError, e.content.get_as_synced_file)
         f.close()
+        # test accents in backend-stored content
+        e.content_data = u"\xe9"
+        e.content_data = "hello chaps" # back to old value, used below
 
         # packaged content
         e.content_mimetype = "application/binary" # ensure it will be packaged
@@ -184,6 +187,9 @@ class TestElements(TestCase):
         self.assertRaises(IOError, e.get_content_as_synced_file)
         self.assertRaises(IOError, e.content.get_as_synced_file)
         f.close()
+        # test accents in packaged content
+        e.content_data = u"\xe9"
+        e.content_data = "hello chaps" # back to old value, used below
 
         # back to backend-stored
         e.content_url = ""

@@ -447,7 +447,7 @@ class WithContentMixin:
             fname = self._get_content_packaged_path()
             f = self.__as_synced_file or PackagedDataFile(fname, self)
             f.seek(0)
-            self.__data = f.read()
+            self.__data = safe_decode(f.read(), self)
             f.close()
             del self.__as_synced_file
             unlink(fname)
@@ -460,7 +460,7 @@ class WithContentMixin:
                 rootdir = create_temporary_packaged_root(self._owner)
             fname = self._get_content_packaged_path(url)
             f = PackagedDataFile(fname, self)
-            f.write(self.__data)
+            f.write(safe_encode(self.__data))
             f.close()
 
         if url:
@@ -497,11 +497,11 @@ class WithContentMixin:
             # NB: this is not threadsafe
             pos = f.tell()
             f.seek(0)
-            r = f.read()
+            r = safe_decode(f.read(), self)
             f.seek(pos)
         elif url: # non-empty string
             f = self.get_content_as_synced_file()
-            r = f.read()
+            r = safe_decode(f.read(), self)
             f.close()
         else:
             r = self.__data
@@ -527,7 +527,7 @@ class WithContentMixin:
             f = self.get_content_as_synced_file()
             diff = None # TODO make a diff object
             f.truncate()
-            f.write(data)
+            f.write(safe_encode(data))
             f.close()
         else:
             if url:
@@ -570,7 +570,7 @@ class WithContentMixin:
 
         For a synchronized file-like object, see `get_content_as_synced_file`.
         """
-        return StringIO(self.content_data)
+        return StringIO(safe_encode(self.content_data))
 
     @autoproperty
     def _get_content_packaged_path(self, _new_url=None):
@@ -708,7 +708,8 @@ class PackagedDataFile(file):
 
     def close(self):
         self.seek(0)
-        self._element._WithContentMixin__data = self.read()
+        self._element._WithContentMixin__data = safe_decode(self.read(),
+                                                            self._element)
         self._element._WithContentMixin__as_synced_file = None
         file.close(self)
         self._element = None
@@ -731,7 +732,7 @@ class ContentDataFile(object):
         self.seek = f.seek
         self.tell = f.tell
 
-        f.write(element._WithContentMixin__data or "")
+        f.write(safe_encode(element._WithContentMixin__data or ""))
         f.seek(0)
 
     def info(self):
@@ -740,7 +741,8 @@ class ContentDataFile(object):
 
     def close(self):
         self.seek(0)
-        self._element._WithContentMixin__data = self.read()
+        self._element._WithContentMixin__data = safe_decode(self.read(),
+                                                            self._element)
         self._element._WithContentMixin__as_synced_file = None
         self._file.close()
         self._element = None
@@ -783,3 +785,15 @@ def create_temporary_packaged_root(package):
     d = mkdtemp(prefix="advene2_pkg_")
     package.set_meta(PACKAGED_ROOT, d)
     return d
+
+def safe_encode(data):
+    if isinstance(data, unicode):
+        return data.encode("utf8")
+    else:
+        return data
+
+def safe_decode(data, element):
+    if element.content_is_textual:
+        return data.decode("utf8")
+    else:
+        return data
