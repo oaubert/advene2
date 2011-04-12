@@ -28,6 +28,12 @@ def init(package, obj):
 def update(obj, *args):
     d,u = _make_bookkeeping_data()
     #d = "%s %s" % (d, args) # debug
+    if len(args) == 2:
+        # setting CONTRIBUTOR or MODIFIED should work anyway
+        if args[0] == CONTRIBUTOR:
+            u = args[1]
+        elif args[0] == MODIFIED:
+            d = args[1]
     obj.enter_no_event_section(); \
         obj.set_meta(CONTRIBUTOR, u); \
         obj.set_meta(MODIFIED, d)
@@ -49,12 +55,18 @@ def update_element(obj, *args):
     d,u = _make_bookkeeping_data()
     #d = "%s %s" % (d, args) # debug
     #if obj._id == "at": import pydb; pydb.set_trace()
-    obj.enter_no_event_section(); \
-        obj.set_meta(CONTRIBUTOR, u); \
-        obj.set_meta(MODIFIED, d)
-    obj.exit_no_event_section()
     package = obj._owner
     package.enter_no_event_section(); \
         package.set_meta(CONTRIBUTOR, u); \
         package.set_meta(MODIFIED, d)
     package.exit_no_event_section()
+    if len(args) == 2:
+        # setting CONTRIBUTOR or MODIFIED should work anyway
+        if args[0] == CONTRIBUTOR:
+            u = args[1]
+        elif args[0] == MODIFIED:
+            d = args[1]
+    obj.enter_no_event_section(); \
+        obj.set_meta(CONTRIBUTOR, u); \
+        obj.set_meta(MODIFIED, d)
+    obj.exit_no_event_section()
