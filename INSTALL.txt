@@ -1,0 +1,10 @@
+Dependencies
+============
+
+The libadvene module depends on the following python libs:
+  * pygobject, from http://pygtk.org/downloads.html
+  * SimpleTAL, from http://www.owlfish.com/software/simpleTAL/
+
+Additionnaly, the following modules are recommended, but optional:
+  * python-lxml, from http://lxml.de/
+
