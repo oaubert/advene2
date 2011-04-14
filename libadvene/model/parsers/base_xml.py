@@ -8,7 +8,7 @@ try:
     # the error messages are much more informative
 except ImportError:
     from xml.etree.ElementTree import iterparse
-    from xml.expat import ExpatError as XmlParseError
+    from xml.parsers.expat import ExpatError as XmlParseError
 
 from libadvene.model.consts import _RAISE
 from libadvene.model.parsers.exceptions import ParserError
