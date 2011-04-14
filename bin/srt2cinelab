@@ -112,8 +112,8 @@ def convert(source, dest):
         a = p.create_annotation("a%d" % index,
                                 media,
                                 data['begin'], data['end'], 
-                                'text/plain')
-        a.type = at
+                                'text/plain',
+                                type=at)
         a.content.data = data['content']
         index += 1
     p.save()
