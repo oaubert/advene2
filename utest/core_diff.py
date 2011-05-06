@@ -9,6 +9,7 @@ from libadvene.model.core.package import Package
 
 dc_creator = DC_NS_PREFIX + "creator"
 dc_description = DC_NS_PREFIX + "description"
+dc_modified = DC_NS_PREFIX + "modified"
 rdfs_seeAlso = RDFS_NS_PREFIX + "seeAlso"
 
 def fill_package_step_by_step(p, empty=False):
@@ -93,8 +94,9 @@ class TestDiffPackage(TestCase):
             self.assertNotEqual([], diff_packages(p2, p1), i)
 
 def fix_diff(diff):
+    ignored_meta = frozenset([PACKAGED_ROOT, dc_modified])
     return [ d for d in diff
-             if not ( d[0] == "set_meta" and d[3] ==  PACKAGED_ROOT ) ]
+             if not ( d[0] == "set_meta" and d[3] in ignored_meta ) ]
 
 if __name__ == "__main__":
     main()
