@@ -11,7 +11,7 @@ from libadvene.model.consts import ADVENE_NS_PREFIX
 
 base = split(__file__)[0]
 
-package_url = "sqlite:%s" % (join (base, "test1.db"))
+package_filename = join(base, "test1.bzp")
 
 dc_creator = DC_NS_PREFIX + "creator"
 
@@ -40,14 +40,13 @@ def trace_wrap_all (obj):
 def print_elements(p):
     print [(k,id(v)) for k,v in p._elements.items()]
 
+
+
 if __name__ == "__main__":
 
+    if exists (package_filename): unlink (package_filename)
 
-    if exists (package_url[7:]): unlink (package_url[7:])
-    content_file = join(base, "a1.txt")
-    if exists (content_file): unlink (content_file)
-
-    p = Package(package_url, create=True)
+    p = Package(package_filename, create=True)
     #trace_wrap_all (p._backend)
 
     advene_ns = "%s%%s" % ADVENE_NS_PREFIX
@@ -69,8 +68,8 @@ if __name__ == "__main__":
 
     a1.begin += 1
     a1.duration += 1
-    p.set_meta(PACKAGED_ROOT, base)
-    a1.content_url = "packaged:/a1.txt"
+    a1.content_mimetype = "application/binary"
+    print a1.content_url # mimetype above forced packaged content
     a1.content_data = "You, stupid woman!"
     a1.meta[dc_creator] = "rartois"
 
@@ -93,11 +92,12 @@ if __name__ == "__main__":
     r1.insert(1, p.get("aa1"))
 
     bw = ref(p._backend)
+    p.save()
     p.close()
     print
 
     print "about to re-load package"
-    p = Package(package_url)
+    p = Package(package_filename)
     # ensure that backend has changed
     assert p._backend is not bw()
     print "package loaded"
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     p.create_resource("eraseme", "text/plain").delete()
     print list(p.own.resources)
 
-    fname=join(base, 'test1.bzp')
+    fname=join(base, 'test1.bxp')
     print "Saving as ", fname
     if exists (fname): unlink (fname)
     p.save_as(fname)
