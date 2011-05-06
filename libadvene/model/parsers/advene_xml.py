@@ -14,7 +14,7 @@ from libadvene.model.parsers.base_xml import (iterparse, XmlParseError,
                                               XmlParserBase)
 from libadvene.model.parsers.exceptions import ParserError
 import libadvene.model.serializers.advene_xml as serializer
-from libadvene.util.files import get_path, is_local
+from libadvene.util.files import get_path, is_local, clone_filelike
 
 class Parser(XmlParserBase):
 
@@ -50,15 +50,14 @@ class Parser(XmlParserBase):
             elif fpath.endswith(".xml"):
                 r += 20
 
-        if hasattr(file_, "seek"):
+        clone = clone_filelike(file_)
+        if clone:
             # If possible, inspect XML file to adjust the claim-score.
             # NB: if those tests fail, we do not drop the claim-score to 0,
             # but merely reduce it. This is because, if no other parser claims
             # that file, a ParseError will be more informative than a
             # NoClaimError.
-            old_pos = file_.tell()
-            file_.seek(0)
-            it = iterparse(file_, events=("start",))
+            it = iterparse(clone, events=("start",))
             try:
                 ev, el = it.next()
             except XmlParseError, e:
@@ -68,7 +67,8 @@ class Parser(XmlParserBase):
                     r /= 2
                 else:
                     r = max(70, r)
-            file_.seek(old_pos)
+            finally:
+                clone.close()
 
         return r
 

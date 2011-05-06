@@ -167,12 +167,14 @@ class Package(WithMetaMixin, WithEventsMixin, WithAbsoluteUrlMixin, object):
             except NoClaimingError:
                 if uri:
                     try:
-                        p = package_class(url)
+                        p = package_class(uri)
                     except NoClaimingError:
                         pass
             except PackageInUse, e:
                 if isinstance(e.message, package_class):
                     p = e.message
+            except: # any other error while parsing import
+                pass
             if p is None:
                 pass # TODO: issue a warning, may be change automatically...
                      # I think a hook function would be the good solution

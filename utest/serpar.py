@@ -242,6 +242,27 @@ class TestUnorderedCinelabXml(TestCase):
         assert len(p1.own.schemas) == 1
         assert len(p1.own.user_lists) == 1
 
+
+class TestClaimChain(TestCase):
+    """
+    I check that pr
+    """
+    def setUp(self):
+        fd1, self.filename1 = mkstemp(suffix=".czp",
+                                      prefix="advene2_utest_serpar_")
+        fdopen(fd1).close()
+        self.url1 = "file:" + pathname2url(self.filename1)
+        p1 = CamPackage(self.url1, create=True)
+        p1.save()
+        p1.close()
+
+    def tearDown(self):
+        unlink(self.filename1)
+
+    def testCzp(self):
+        p = CamPackage(self.filename1)
+        p.close()
+
 UNORDERED_XML = """
 <package xmlns="http://advene.org/ns/cinelab/"
          xmlns:dc="http://purl.org/dc/elements/1.1/"

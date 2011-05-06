@@ -4,6 +4,7 @@ I contain utility functions to handle local and distant files.
 
 from os import mkdir, path, rmdir, unlink, walk
 from os.path import dirname, exists, join
+from StringIO import StringIO
 from urllib import pathname2url, url2pathname
 from urllib2 import urlopen
 from urlparse import urlparse
@@ -80,3 +81,21 @@ def is_local(f):
     else:
         return isinstance(f, file)
  
+def clone_filelike(f):
+    """Try to open a copy of a filelike object.
+    
+    Depending on the type of f, uses different methods; return None if fail.
+    It is the responsability of the caller to close the returned file.
+    """
+    if hasattr(f, "name"):
+        return open(f.name)
+    elif hasattr(f, "geturl"):
+        return urlopen(f.geturl())
+    elif hasattr(f, "seek"):
+        old_pos = f.tell()
+        f.seek(0)
+        ret = StringIO(f.read())
+        f.seek(old_pos)
+        return ret
+    else:
+        return None
