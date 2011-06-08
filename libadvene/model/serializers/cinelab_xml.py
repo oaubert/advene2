@@ -26,7 +26,7 @@ def make_serializer(package, file_, _standalone_xml=True):
     public interface of serializers.
 
     The returned object must implement the interface for which
-    :class:`_Serializer` is the reference implementation.
+    :class:`advene_xml._Serializer` is the reference implementation.
     """
     return _Serializer(package, file_, _standalone_xml)
 
