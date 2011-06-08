@@ -18,6 +18,7 @@ import libadvene.model.serializers.advene_xml as xml
 import libadvene.model.serializers.advene_zip as zip
 import libadvene.model.serializers.cinelab_xml as cxml
 import libadvene.model.serializers.cinelab_zip as czip
+import libadvene.model.serializers.cinelab_json as cjson
 
 from core_diff import fill_package_step_by_step, fix_diff
 
@@ -79,6 +80,7 @@ class TestAdveneXml(TestCase):
                 self.fail("ParserError: %s (%s)" % (e.args[0], self.filename2))
 
             diff = fix_diff(diff_packages(p1, p2))
+            if (diff != []): import pdb; pdb.set_trace()
             self.assertEqual([], diff, (i, diff, self.filename2))
             p2.close()
             
@@ -208,6 +210,26 @@ class TestCinelabXml(TestAdveneXml):
 
 class TestCinelabZip(TestCinelabXml, TestAdveneZip):
     serpar = czip
+
+class TestCinelabJson(TestCinelabXml):
+    serpar = cjson
+
+    def fill_package_step_by_step(self):
+        for i in TestCinelabXml.fill_package_step_by_step(self):
+            if i != "done":
+                yield i
+        p = self.p1
+        jv = p.create_resource("jv", "application/json")
+        jv.content_data = '{"a": "b"}' # valid json
+        yield 100, "valid json"
+        ji = p.create_resource("ji", "application/json")
+        ji.content_data = '{"a": "b"' # invalid json
+        yield 101, "invalid json"
+        jd = p.create_resource("jd", "application/toto+json")
+        jd.content_data = '{"a": "b"}' # valid json in a derived mimetype
+        yield 102, "derived json mimetype"
+
+        yield "done"
 
 class TestUnorderedCinelabXml(TestCase):
     """

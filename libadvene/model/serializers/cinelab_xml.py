@@ -5,7 +5,7 @@ from bisect import insort
 from xml.etree.ElementTree import Element, ElementTree, SubElement
 
 from libadvene.model.cam.consts import CAM_XML, CAMSYS_NS_PREFIX
-import libadvene.model.cam.util.bookkeeping as bk
+from libadvene.model.cam.util.bookkeeping import iter_filtered_meta_ids
 from libadvene.model.serializers.advene_xml import _indent
 from libadvene.model.serializers.advene_xml import DEFAULTS, \
     _Serializer as _AdveneSerializer
@@ -146,22 +146,7 @@ class _Serializer(_AdveneSerializer):
 
     def _serialize_meta(self, obj, xobj):
         xm = SubElement(xobj, "meta")
-        exclude = set()
-        package = self.package
-        if obj is not package:
-            if obj.creator == package.creator:
-                exclude.add(_CREATOR)
-            if obj.created == package.created:
-                exclude.add(_CREATED)
-            if obj.contributor == obj.creator and _CREATOR not in exclude \
-            or obj.contributor == package.contributor and _CREATOR in exclude:
-                exclude.add(_CONTRIBUTOR)
-            if obj.modified == obj.created and _CREATED not in exclude \
-            or obj.modified == package.modified and _CREATED in exclude:
-                exclude.add(_MODIFIED)
-        self._serialize_meta_pairs(
-            xm, ( (k,v) for k,v in obj.iter_meta_ids() if k not in exclude ),
-            )
+        self._serialize_meta_pairs(xm, iter_filtered_meta_ids(obj))
         if len(xm) == 0:
             xobj.remove(xm)
         
@@ -175,8 +160,3 @@ class _Serializer(_AdveneSerializer):
         _AdveneSerializer._serialize_element_tags(self, elt, xelt)
         # restore class level method
         del elt.iter_my_tag_ids
-
-_CREATOR = bk.CREATOR
-_CREATED = bk.CREATED
-_CONTRIBUTOR = bk.CONTRIBUTOR
-_MODIFIED = bk.MODIFIED

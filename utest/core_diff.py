@@ -94,7 +94,7 @@ class TestDiffPackage(TestCase):
             self.assertNotEqual([], diff_packages(p2, p1), i)
 
 def fix_diff(diff):
-    ignored_meta = frozenset([PACKAGED_ROOT, dc_modified])
+    ignored_meta = frozenset([PACKAGED_ROOT])
     return [ d for d in diff
              if not ( d[0] == "set_meta" and d[3] in ignored_meta ) ]
 

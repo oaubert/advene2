@@ -1,5 +1,6 @@
 import libadvene.model.parsers.advene_xml as advene_xml_parser
 import libadvene.model.parsers.advene_zip as advene_zip_parser
+import libadvene.model.parsers.cinelab_json as cinelab_json_parser
 import libadvene.model.parsers.cinelab_xml as cinelab_xml_parser
 import libadvene.model.parsers.cinelab_zip as cinelab_zip_parser
 
@@ -26,5 +27,6 @@ _parsers = []
 
 register_parser(advene_xml_parser.Parser)
 register_parser(advene_zip_parser.Parser)
+register_parser(cinelab_json_parser.Parser)
 register_parser(cinelab_xml_parser.Parser)
 register_parser(cinelab_zip_parser.Parser)

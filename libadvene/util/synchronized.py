@@ -22,7 +22,9 @@ def enter_cs(obj):
     try:
         L = obj.__rlock
     except AttributeError:
-        L = obj.__rlock = RLock()
+        L = obj.__dict__["__rlock"] = RLock()
+        # NB we set through __dict__ in order to prevent Advene element from
+        # getting heavier with the lock (see core.Element._weight)
     finally:
         _sync_lock.release()
     L.acquire()

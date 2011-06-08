@@ -12,7 +12,7 @@ class Annotation(CoreAnnotation, CamElementMixin):
             if advene_type:
                 if advene_type is not TAG \
                 or value.get_meta(CAMSYS_TYPE, None) != "annotation-type":
-                    raise SemanticError("not an annotation type")
+                    raise SemanticError("not an annotation type: %s" % value)
             else:
                 if not val_is_idref:
                     raise SemanticError("not an annotation type")

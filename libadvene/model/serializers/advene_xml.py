@@ -285,7 +285,7 @@ class _Serializer(object):
                     ump = umps.next()
             if k is None: continue
 
-            ns, tag = _split_uri_ref(k)
+            ns, tag = split_uri_ref(k)
             if ns == self.default_ns:
                 xkeyval = SubElement(xm, tag)
             else:
@@ -332,7 +332,10 @@ def _indent(elem, level=0):
         if level and (not elem.tail or not elem.tail.strip()):
             elem.tail = i
 
-def _split_uri_ref(uriref):
+def split_uri_ref(uriref):
+    """
+    Split a URI into the namespace and the suffix parts.
+    """
     sharp = uriref.rfind("#")
     slash = uriref.rfind("/")
     cut = max(sharp, slash)

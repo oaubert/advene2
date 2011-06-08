@@ -16,7 +16,7 @@ from urlparse import urlparse
 from xml.etree.ElementTree import Element
 
 from libadvene.model.cam.consts import CAM_NS_PREFIX, CAM_XML, _DELAY
-import libadvene.model.cam.util.bookkeeping as bk
+from libadvene.model.cam.util.bookkeeping import inherit_bk_metadata
 import libadvene.model.serializers.cinelab_xml as serializer
 from libadvene.model.parsers.advene_xml import Parser as _AdveneXmlParser
 
@@ -250,19 +250,7 @@ class Parser(_AdveneXmlParser):
                 else:
                     self.do_or_postpone(val, partial(celt.set_meta, key))
     
-        package = self.package
-        if celt is not package:
-            creator = celt.get_meta(_CREATOR, None)
-            created = celt.get_meta(_CREATED, None)
-            if creator is None:
-                celt.set_meta(_CREATOR, package.creator)
-            if created is None:
-                celt.set_meta(_CREATED, package.created)
-            if celt.get_meta(_CONTRIBUTOR, None) is None:
-                celt.set_meta(_CONTRIBUTOR, creator or package.contributor)
-            if celt.get_meta(_MODIFIED, None) is None:
-                celt.set_meta(_MODIFIED, created or package.modified)
-                
+        inherit_bk_metadata(celt, self.package)
 
     def manage_tagged_imported(self, imp_xelt, tag_celt):
         id_ = imp_xelt.attrib["id-ref"]
@@ -321,8 +309,3 @@ class Parser(_AdveneXmlParser):
         c[0] += 1
 
 #
-
-_CREATOR = bk.CREATOR
-_CREATED = bk.CREATED
-_CONTRIBUTOR = bk.CONTRIBUTOR
-_MODIFIED = bk.MODIFIED

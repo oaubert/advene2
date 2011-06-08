@@ -15,6 +15,7 @@ from libadvene.model.tales import tales_property, tales_use_as_context,\
 from libadvene.util.alias import alias
 from libadvene.util.autoproperty import autoproperty
 from libadvene.util.session import session
+from libadvene.util.synchronized import enter_cs, exit_cs, synchronized
 
 # the following constants must be used as values of a property ADVENE_TYPE
 # in all subclasses of PackageElement
@@ -104,9 +105,10 @@ class PackageElement(WithMetaMixin, WithEventsMixin, WithAbsUrlMixin, object):
         """
         Make instance heavier when a new custom attribute is created.
         """
+        enter_cs(self)
         if name not in self.__dict__ and not hasattr(self.__class__, name):
-            #print "=== weightening", self.id, "because of", name
             self._increase_weight()
+        exit_cs(self)
         super(PackageElement, self).__setattr__(name, value)
 
     def __delattr__(self, name):
@@ -461,6 +463,7 @@ class PackageElement(WithMetaMixin, WithEventsMixin, WithAbsUrlMixin, object):
 
     # reference management
 
+    @synchronized
     def _increase_weight(self):
         """
         Elements are created with weight 0. Increasing its weight is equivalent
@@ -468,16 +471,15 @@ class PackageElement(WithMetaMixin, WithEventsMixin, WithAbsUrlMixin, object):
         reason for keeping the element is gone, the weight should be decreased
         again with `_decrease_weight`.
         """
-        # FIXME: this is not threadsafe !
         self._weight += 1
         if self._weight == 1:
             self._owner._heavy_elements.add(self)
 
+    @synchronized
     def _decrease_weight(self):
         """
         :see: _increase_weight
         """
-        # FIXME: this is not threadsafe !
         self._weight -= 1
         if self._weight == 0:
             self._owner._heavy_elements.remove(self)

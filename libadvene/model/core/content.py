@@ -131,7 +131,9 @@ class WithContentMixin:
         self.__model_id = model
         self.__url = url
         self._update_content_handler()
+        self.enter_no_event_section()
         self._automanage_storage()
+        self.exit_no_event_section()
 
     def _check_content(self, mimetype=None, model_id=None, url=None,
                        _package=None):

@@ -11,7 +11,7 @@ a CORE package (see `libadvene.model.events`), include:!
  * ``created::schema``
 """
 
-from libadvene.model.cam.consts import CAMSYS_TYPE, _DELAY
+from libadvene.model.cam.consts import CAM_TYPE, CAMSYS_TYPE, _DELAY
 from libadvene.model.cam.exceptions import UnsafeUseWarning, SemanticError
 from libadvene.model.cam.group import CamGroupMixin
 from libadvene.model.cam.media import Media
@@ -391,11 +391,16 @@ class Package(CorePackage):
         if type is not _DELAY:
             type_is_element = hasattr(type, "ADVENE_TYPE")
             a.enter_no_event_section()
-            if type_is_element: type.enter_no_event_section()
             try:
-                a.type = type
+                if type_is_element:
+                    type.enter_no_event_section()
+                    try:
+                        a.type = type
+                    finally:
+                        if type_is_element: type.exit_no_event_section()
+                else:
+                    a.set_meta(CAM_TYPE, type, True)
             finally:
-                if type_is_element: type.exit_no_event_section()
                 a.exit_no_event_section()
 
         self.emit("created::annotation", a)
@@ -427,11 +432,16 @@ class Package(CorePackage):
         if type is not _DELAY:
             type_is_element = hasattr(type, "ADVENE_TYPE")
             r.enter_no_event_section()
-            if type_is_element: type.enter_no_event_section()
             try:
-                r.type = type
+                if type_is_element:
+                    type.enter_no_event_section()
+                    try:
+                        r.type = type
+                    finally:
+                        if type_is_element: type.exit_no_event_section()
+                else:
+                    r.set_meta(CAM_TYPE, type, True)
             finally:
-                if type_is_element: type.exit_no_event_section()
                 r.exit_no_event_section()
 
         self.emit("created::relation", r)
