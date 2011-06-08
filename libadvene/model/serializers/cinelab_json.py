@@ -250,7 +250,8 @@ class _Serializer(object):
                  ]
 
 def _clean_json(obj):
-    todelete = [ key for key, val in obj.items() if not val and key != "data" ]
+    todelete = [ key for key, val in obj.items()
+                 if val is None or (val == "" and key != "data") ]
     for key in todelete:
         del obj[key]
             
