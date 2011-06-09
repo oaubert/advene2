@@ -120,6 +120,7 @@ class _Serializer(object):
             ret["frame_of_reference"] = foref
         ret["tags"] = self._serialize_element_tags(m)
         ret["meta"] = self._serialize_meta(m)
+        _clean_json(ret)
         return ret
 
     def _serialize_annotation(self, a):
@@ -252,11 +253,10 @@ class _Serializer(object):
                  ]
 
 def _clean_json(obj):
-    todelete = [ key for key, val in obj.items()
-                 if val is None or (val == "" and key != "data") ]
+    todelete = [ key for key, val in obj.items() if not val
+                 and val != 0 and key != "data" ]
     for key in todelete:
         del obj[key]
 
-            
 UNPREFIXED_DC = frozenset(["creator", "created", "contributor", "modified",
                            "description", "title"])

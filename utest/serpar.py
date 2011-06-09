@@ -80,7 +80,7 @@ class TestAdveneXml(TestCase):
                 self.fail("ParserError: %s (%s)" % (e.args[0], self.filename2))
 
             diff = fix_diff(diff_packages(p1, p2))
-            if (diff != []): import pdb; pdb.set_trace()
+            #if (diff != []): import pdb; pdb.set_trace()
             self.assertEqual([], diff, (i, diff, self.filename2))
             p2.close()
             
