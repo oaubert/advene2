@@ -56,7 +56,7 @@ class _Serializer(object):
 
         package = self.package
         self.namespaces = package._get_namespaces_as_dict()
-        root = self.json = { "format": "http://advebe.org/ns/cinelab/" }
+        root = self.json = { "format": "http://advene.org/ns/cinelab/" }
         context = dict( (v, k) for k, v in self.namespaces.items() )
         if context:
             root["@context"] = context
