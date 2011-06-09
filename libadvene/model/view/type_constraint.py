@@ -45,6 +45,13 @@ def apply_to(view, obj):
                   mimetype = obj.content_mimetype,
                 )
         elif k == "model":
+            # TODO wouldn't it be better just to check that the content
+            # *satisfies* the model, without forcing it to be explicitly
+            # attached to the model.
+            # This would make serializations lighter (removing redundant
+            # informations) and would even make the architecture more
+            # flexible -- as a particular content could point to a more
+            # specific model.
             model = getattr(obj, "content_model_id")
             if model != v:
                 r.append(
