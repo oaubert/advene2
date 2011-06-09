@@ -219,15 +219,18 @@ class TestCinelabJson(TestCinelabXml):
             if i != "done":
                 yield i
         p = self.p1
+        p.title = "title should be serialized without any prefix"
+        p.description = "description as well"
+        yield 100
         jv = p.create_resource("jv", "application/json")
         jv.content_data = '{"a": "b"}' # valid json
-        yield 100, "valid json"
+        yield 101
         ji = p.create_resource("ji", "application/json")
         ji.content_data = '{"a": "b"' # invalid json
-        yield 101, "invalid json"
+        yield 102
         jd = p.create_resource("jd", "application/toto+json")
         jd.content_data = '{"a": "b"}' # valid json in a derived mimetype
-        yield 102, "derived json mimetype"
+        yield 103
 
         yield "done"
 

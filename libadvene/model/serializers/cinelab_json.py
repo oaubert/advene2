@@ -8,6 +8,7 @@ from json import dump, loads
 from libadvene.model.cam.consts import CAM_NS_PREFIX, CAM_TYPE, CAMSYS_TYPE
 import libadvene.model.cam.util.bookkeeping as bk
 from libadvene.model.cam.util.bookkeeping import iter_filtered_meta_ids
+from libadvene.model.consts import DC_NS_PREFIX
 from libadvene.model.core.media import FOREF_PREFIX
 from libadvene.model.serializers.advene_xml import DEFAULTS, split_uri_ref
 from libadvene.model.serializers.unserialized import \
@@ -228,7 +229,8 @@ class _Serializer(object):
                 continue
 
             ns, tag = split_uri_ref(k)
-            if k in _STD_META or ns == CAM_NS_PREFIX:
+            if (ns == DC_NS_PREFIX and tag in UNPREFIXED_DC) \
+            or ns == CAM_NS_PREFIX:
                 k = tag
             else:
                 prefix = self.namespaces.get(ns)
@@ -254,10 +256,7 @@ def _clean_json(obj):
                  if val is None or (val == "" and key != "data") ]
     for key in todelete:
         del obj[key]
-            
 
-_CREATOR = bk.CREATOR
-_CREATED = bk.CREATED
-_CONTRIBUTOR = bk.CONTRIBUTOR
-_MODIFIED = bk.MODIFIED
-_STD_META = frozenset([_CREATOR, _CREATED, _CONTRIBUTOR, _MODIFIED])
+            
+UNPREFIXED_DC = frozenset(["creator", "created", "contributor", "modified",
+                           "description", "title"])

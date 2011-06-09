@@ -8,6 +8,7 @@ from libadvene.model.consts import DC_NS_PREFIX, PARSER_META_PREFIX
 from libadvene.model.core.media import FOREF_PREFIX
 from libadvene.model.parsers.exceptions import ParserError
 import libadvene.model.serializers.cinelab_json as serializer
+from libadvene.model.serializers.cinelab_json import UNPREFIXED_DC
 from libadvene.util.files import get_path
 
 import base64
@@ -240,7 +241,7 @@ class Parser(object):
         meta = json.get("meta")
         if meta:
             for key, val in meta.iteritems():
-                if key in ("creator", "created", "contributor", "modified"):
+                if key in UNPREFIXED_DC:
                     key = DC_NS_PREFIX + key
                 elif _SUFFIX.match(key):
                     key = CAM_NS_PREFIX + key
