@@ -33,7 +33,14 @@ def get_output_mimetype(view):
     # diagnosis can be added (as well as added to an empty string).
 
 def apply_to(view, obj):
-    params = view.content_parsed
+    """
+    In addition to the standard protocol for views, I accept a dict in place of
+    view, corresponding to the parameters of an advene-type-constraint.
+    """
+    if isinstance(view, dict):
+        params = view
+    else:
+        params = view.content_parsed
     r = Diagnosis()
     for k,v in params.iteritems():
         if k == "mimetype":
@@ -93,7 +100,7 @@ class Diagnosis(object):
     def __and__(self, rho):
         if isinstance(rho, Diagnosis):
             return Diagnosis(self._v + rho._v)
-        elif not rho:
+        elif self:
             return rho
         else:
             return self
@@ -101,10 +108,10 @@ class Diagnosis(object):
     def __rand__(self, lho):
         if isinstance(lho, Diagnosis):
             return Diagnosis(lho + self._v)
-        elif lho:
-            return self
-        else:
+        elif not lho:
             return lho
+        else:
+            return self
 
     def append(self, template, **args):
         self._v.append((template, args))

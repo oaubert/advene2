@@ -4,14 +4,17 @@ from libadvene.model.cam.consts import CAMSYS_TYPE, CAM_NS_PREFIX
 from libadvene.model.cam.element import CamElementMixin
 from libadvene.model.cam.exceptions import LikelyMistake
 from libadvene.model.cam.group import CamGroupMixin
-from libadvene.model.core.element import LIST, ElementCollection
+from libadvene.model.core.element import LIST, RESOURCE, ElementCollection
 from libadvene.model.core.tag import Tag as CoreTag
 from libadvene.model.tales import tales_property, tales_use_as_context
+from libadvene.model.view.type_constraint import apply_to
 from libadvene.util.alias import alias
 from libadvene.util.autoproperty import autoproperty
 from libadvene.util.session import session
 
 
+CAM_CONTENT_MIMETYPE = CAM_NS_PREFIX + "content-mimetype"
+CAM_CONTENT_MODEL = CAM_NS_PREFIX + "content-model"
 CAM_ELEMENT_CONSTRAINT = CAM_NS_PREFIX + "element-constraint"
 
 class Tag(CoreTag, CamElementMixin, CamGroupMixin):
@@ -56,21 +59,16 @@ class CamTypeMixin(object):
     # constraint related
 
     def set_meta(self, key, value, val_is_idref=False):
-        if key == CAM_ELEMENT_CONSTRAINT:
-            prefix = ":constraint"
-            if self._id[0] != ":":
-                prefix += ":"
-            expected_id = prefix + self._id
-            if val_is_idref:
-                got_id = value
-                got = self._owner.get(value, None)
-            else:
-                got_id = getattr(value, "_id", None)
-                got = value
-            if got_id != expected_id \
-            or got is None \
-            or got.content_mimetype != "application/x-advene-type-constraint":
-                raise TypeError("element-constraint can not be changed")
+        if key == CAM_CONTENT_MODEL:
+            advene_type = getattr(value, "ADVENE_TYPE", None)
+            if advene_type is None and not val_is_idref \
+            or advene_type is not None and advene_type != RESOURCE:
+                raise TypeError("content-model must be a content model")
+        elif key == CAM_ELEMENT_CONSTRAINT:
+            advene_type = getattr(value, "ADVENE_TYPE", None)
+            if advene_type is None and not val_is_idref \
+            or advene_type is not None and advene_type != VIEW:
+                raise TypeError("element-constraint must be a test view")
 
         super(CamTypeMixin, self).set_meta(key, value, val_is_idref)
 
@@ -79,29 +77,42 @@ class CamTypeMixin(object):
         Applies the element_constraint to the given element and returns the
         result.
         """
-        return self.element_constraint.apply_to(e)
+        my_view = {}
+        if self.content_mimetype is not None:
+            my_view["mimetype"] = self.content_mimetype
+        if self.content_model is not None:
+            my_view["model"] = self.content_model
 
-    def check_all(self, package=None):
+        if self.element_constraint is not None:
+            ret = self.element_constraint.apply_to(e)
+        else:
+            ret = True
+        return ret & apply_to(my_view, e)
+
+    def check_all(self, package=None, _true=lambda *a: True):
         """
         Applies the element_constraint to all the elements in the given
         package (session.package) if None, and return the aggregated result.
         """
-        check = self.element_constraint.apply_to
+        if self.element_constraint:
+            check1 = self.element_constraint.apply_to
+        else:
+            check1 = _true
+
+        my_view = {}
+        if self.content_mimetype is not None:
+            my_view["mimetype"] = self.content_mimetype
+        if self.content_model is not None:
+            my_view["model"] = self.content_model
+        if my_view:
+            check2 = lambda e: apply_to(my_view, e)
+        else:
+            check2 = _true
+
         r = True
         for e in self.iter_elements(package):
-            r = r & check(e)
+            r = r & check1(e) & check2(e)
         return r
-
-    @autoproperty
-    def _get_mimetype(self):
-        return (self.element_constraint and self.element_constraint.content_parsed.get("mimetype", None)) or "*/*"
-
-    @autoproperty
-    def _set_mimetype(self, mimetype):
-        c = self.element_constraint
-        p = c.content_parsed
-        p["mimetype"] = mimetype
-        c.content_parsed = p
 
     # schema related
 
@@ -192,3 +203,24 @@ Tag.make_metadata_property(CAM_NS_PREFIX + "element-color",
                            "element_color", default=None)
 Tag.make_metadata_property(CAM_ELEMENT_CONSTRAINT,
                            "element_constraint", default=None)
+Tag.make_metadata_property(CAM_CONTENT_MIMETYPE,
+                           "content_mimetype", default=None)
+Tag.make_metadata_property(CAM_CONTENT_MODEL,
+                           "content_model", default=None)
+
+def _create_type_constraint(type_elt):
+    """
+    TODO: is this still used?
+    """
+    prefix = ":constraint"
+    if type_elt._id[0] != ":":
+        prefix += ":"
+    c = self.create_view(
+            "%s%s" % (prefix, type_elt._id),
+            "application/x-advene-type-constraint",
+    )
+    type_elt.enter_no_event_section()
+    try:
+        type_elt.element_constraint = c
+    finally:
+        type_elt.exit_no_event_section()

@@ -300,8 +300,6 @@ class Package(CorePackage):
         self.connect("created", bk.init)
         self.connect("tag::added", bk.update)
         self.connect("tag::removed", bk.update)
-        self.connect("created::annotation-type", self._create_type_constraint)
-        self.connect("created::relation-type", self._create_type_constraint)
 
     def create_tag(self, id):
         """
@@ -339,7 +337,6 @@ class Package(CorePackage):
             at.exit_no_event_section()
 
         self.emit("created::annotation-type", at)
-        # ^ this would create the associated type-constraint
         self.emit("created::tag", at)
         return at
 
@@ -361,7 +358,6 @@ class Package(CorePackage):
             rt.exit_no_event_section()
 
         self.emit("created::relation-type", rt)
-        # ^ this would create the associated type-constraint
         self.emit("created::tag", rt)
         return rt
 
@@ -536,24 +532,6 @@ class Package(CorePackage):
         if systemtype is not None:
             raise SemanticError("Tag %s is not simple: %s", tag._id, systemtype)
         super(Package, self).dissociate_tag(element, tag)
-
-    def _create_type_constraint(self, package, type):
-        """
-        Callback invoked on 'created::tag' to automatically create the
-        type-constraint view associated with annotation/relation types.
-        """
-        prefix = ":constraint"
-        if type._id[0] != ":":
-            prefix += ":"
-        c = self.create_view(
-                "%s%s" % (prefix, type._id),
-                "application/x-advene-type-constraint",
-        )
-        type.enter_no_event_section()
-        try:
-            type.element_constraint = c
-        finally:
-            type.exit_no_event_section()
 
 
     # TALES shortcuts

@@ -61,8 +61,8 @@ def main():
     a1 = p1.create_annotation("a1", m1, 0, 100, "text/plain", type=at1)
     a2 = p1.create_annotation("a2", m1, 10, 20, "text/plain", type=at1)
     a3 = p1.create_annotation("a3", m1, 20, 30, "text/plain", type=at2)
-    r1 = p1.create_relation("r1", members=(a1, a2))
-    r2 = p1.create_relation("r2", members=(a3, a2))
+    r1 = p1.create_relation("r1", members=(a1, a2), type=rt1)
+    r2 = p1.create_relation("r2", members=(a3, a2), type=rt2)
 
     p1.associate_user_tag(m1, t1)
     p1.associate_user_tag(a1, t1)
@@ -75,10 +75,10 @@ def main():
 
     i1 = p2.create_import("i1", p1)
     a4 = p2.create_annotation("a4", m1, 30, 40, "text/plain", type=at2)
-    r3 = p2.create_relation("r3", members=(a4, a1))
+    r3 = p2.create_relation("r3", members=(a4, a1), type=rt1)
     m2 = p2.create_media("m2", "http://example.com/bar.avi")
     a5 = p2.create_annotation("a5", m1, 40, 50, "text/plain", type=at2)
-    r4 = p2.create_relation("r4", members=(a5, a2))
+    r4 = p2.create_relation("r4", members=(a5, a2), type=rt2)
 
     t3 = p2.create_user_tag("t3")
     p2.associate_user_tag(a1, t3)
@@ -122,9 +122,9 @@ def main():
                  [ e.id for e in t3.iter_elements(p2) ]
     print
 
-    at1.mimetype = "text/plain"
-    print at1.mimetype
-    print at1.element_constraint.content_data
+    at1.content_mimetype = "text/plain"
+    print at1.content_mimetype
+    #print at1.element_constraint.content_data
     #at1.element_constraint = None
 
     #print "NB: the following warnings are normal when serializing CAM "\

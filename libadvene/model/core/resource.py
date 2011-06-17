@@ -24,4 +24,14 @@ class Resource(PackageElement, WithContentMixin):
         r = cls.instantiate(owner, id, mimetype, model_id, url)
         return r
 
+    def validate_content(self, element):
+        """
+        Return True if element.content_data satisfies this content model.
+
+        If this resource can not be interpreted as a content model, False
+        will be returned.
+        """
+        # TODO implement this
+        return False
+
 #
