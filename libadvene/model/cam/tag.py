@@ -4,7 +4,7 @@ from libadvene.model.cam.consts import CAMSYS_TYPE, CAM_NS_PREFIX
 from libadvene.model.cam.element import CamElementMixin
 from libadvene.model.cam.exceptions import LikelyMistake
 from libadvene.model.cam.group import CamGroupMixin
-from libadvene.model.core.element import LIST, RESOURCE, ElementCollection
+from libadvene.model.core.element import LIST, RESOURCE, VIEW, ElementCollection
 from libadvene.model.core.tag import Tag as CoreTag
 from libadvene.model.tales import tales_property, tales_use_as_context
 from libadvene.model.view.type_constraint import apply_to
@@ -63,12 +63,14 @@ class CamTypeMixin(object):
             advene_type = getattr(value, "ADVENE_TYPE", None)
             if advene_type is None and not val_is_idref \
             or advene_type is not None and advene_type != RESOURCE:
-                raise TypeError("content-model must be a content model")
+                raise TypeError("content-model must be a content model (%r)"
+                                %  value)
         elif key == CAM_ELEMENT_CONSTRAINT:
             advene_type = getattr(value, "ADVENE_TYPE", None)
             if advene_type is None and not val_is_idref \
             or advene_type is not None and advene_type != VIEW:
-                raise TypeError("element-constraint must be a test view")
+                raise TypeError("element-constraint must be a test view (%r)"
+                                % value)
 
         super(CamTypeMixin, self).set_meta(key, value, val_is_idref)
 
