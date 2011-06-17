@@ -74,6 +74,16 @@ class CamTypeMixin(object):
 
         super(CamTypeMixin, self).set_meta(key, value, val_is_idref)
 
+    @autoproperty
+    def _get_mimetype(self):
+        "kept for backward-compatibility"
+        return self.content_mimetype or "*/*"
+
+    @autoproperty
+    def _set_mimetype(self, mimetype):
+        "kept for backward-compatibility"
+        self.content_mimetype = mimetype
+
     def check_element(self, e):
         """
         Applies the element_constraint to the given element and returns the
