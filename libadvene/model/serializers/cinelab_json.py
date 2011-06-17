@@ -232,7 +232,7 @@ class _Serializer(object):
             ns, tag = split_uri_ref(k)
             if (ns == DC_NS_PREFIX and tag in UNPREFIXED_DC) \
             or ns == CAM_NS_PREFIX:
-                k = tag
+                k = tag.replace("-", "_")
             else:
                 prefix = self.namespaces.get(ns)
                 if prefix is not None:

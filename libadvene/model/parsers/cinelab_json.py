@@ -244,7 +244,7 @@ class Parser(object):
                 if key in UNPREFIXED_DC:
                     key = DC_NS_PREFIX + key
                 elif _SUFFIX.match(key):
-                    key = CAM_NS_PREFIX + key
+                    key = CAM_NS_PREFIX + key.replace("_", "-")
                 elif _CURIE.match(key):
                     prefix, suffix = key.split(":")
                     key = self.namespaces.get(prefix, prefix+":") + suffix
