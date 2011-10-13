@@ -8,8 +8,8 @@ import os
 import re
 from libadvene.model.cam.package import Package
 
-small_time_regexp=re.compile('(?P<m>\d+):(?P<s>\d+)[.,]?(?P<ms>\d+)?$')
-time_regexp=re.compile('(?P<h>\d+):(?P<m>\d+):(?P<s>\d+)[.,]?(?P<ms>\d+)?$')
+small_time_regexp=re.compile('(?P<m>\d+):(?P<s>\d+)[.,:]?(?P<ms>\d+)?$')
+time_regexp=re.compile('(?P<h>\d+):(?P<m>\d+):(?P<s>\d+)[.,:]?(?P<ms>\d+)?$')
 float_regexp = re.compile('(?P<s>\d*)\.(?P<ms>\d*)')
 def parse_time(s):
     """Convert a time string as long.
@@ -56,7 +56,7 @@ class SRTReader(object):
         self.encoding=encoding
 
     def srt_iterator(self, f):
-        base=r'\d+:\d+:\d+[,\.]\d+'
+        base=r'\d+:\d+:\d+[,\.:]\d+'
         pattern=re.compile('(' + base + ').+(' + base + ')')
         tc=None
         content=[]
@@ -72,13 +72,13 @@ class SRTReader(object):
                     if content:
                         print "Strange error: no timestamp was found for content ", "".join(content)
                         content = []
-                    break
-                d={'begin': parse_time(tc[0]),
-                   'end': parse_time(tc[1]),
-                   'content': u"\n".join(content)}
-                tc=None
-                content=[]
-                yield d
+                else:
+                    d={'begin': parse_time(tc[0]),
+                       'end': parse_time(tc[1]),
+                       'content': u"\n".join(content)}
+                    tc=None
+                    content=[]
+                    yield d
             else:
                 if tc is not None:
                     if self.encoding is not None:
@@ -92,7 +92,7 @@ class SRTReader(object):
                             # sometimes fail
                             data=unicode(line, 'latin1')
                     content.append(data)
-                    # else We could check line =~ /^\d+$/
+                # else We could check line =~ /^\d+$/
 
     def process_file(self, filename):
         f=open(filename, 'r')
