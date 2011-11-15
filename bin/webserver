@@ -1,0 +1,58 @@
+#! /usr/bin/env python
+#
+# This file is part of Advene.
+#
+# Advene is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# Advene is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Foobar; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+import sys
+import os
+import time
+import StringIO
+import shutil
+
+logfile = None
+# Try to find if we are in a development tree.
+(maindir, subdir) = os.path.split(os.path.dirname(os.path.abspath(sys.argv[0])))
+if subdir == 'bin' and  os.path.exists(os.path.join(maindir, "share")):
+    print "You seem to have a development tree at:\n%s." % maindir
+    sys.path.insert (0, maindir)    
+    import advene.core.config as config
+    config.data.fix_paths(maindir)
+else:
+    try:
+        import advene.core.config as config
+    except ImportError, e:
+        print """Cannot guess a valid directory.
+        Please check your installation or set the PYTHONPATH environment variable."""
+        print str(e)
+        sys.exit(1)
+
+print config.data.version_string, "run at", time.strftime("%d/%m/%y %H:%M:%S %Z"), "on", sys.platform
+
+if __name__ == '__main__':
+    if not sys.argv[1:]:
+        print "Syntax: %s package.(cjp|czp|cxp)" % sys.argv[0]
+        sys.exit(1)
+
+    from advene.server.webcherry import BasicController, AdveneWebServer
+    import cherrypy
+
+    controller=BasicController()
+    controller.load_main_package('file:' + sys.argv[1])
+    controller.server=AdveneWebServer(controller)
+    
+    controller.server.start()
+    cherrypy.engine.block()
