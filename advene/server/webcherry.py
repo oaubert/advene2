@@ -728,11 +728,7 @@ class Packages(Common):
 
         tales = "/".join (args[1:])
 
-        if cherrypy.request.method == 'PUT':
-            return self.handle_put_request(*args, **query)
-        elif cherrypy.request.method == 'POST':
-            return self.handle_post_request(*args, **query)
-        elif cherrypy.request.method != 'GET':
+        if cherrypy.request.method != 'GET':
             return self.send_error(400, 'Unknown method: %s' % cherrypy.request.method)
 
         try:
