@@ -573,8 +573,8 @@ def get_filename(title=_("Open a file"),
     for name, descr, exts in (
         ('any', _("Any type of file"), ( '*', ) ),
         ('advene',
-         _("Advene files (.xml, .cxp, .czp, .apl)"),
-         ('*.xml', '*.cxp', '*.czp', '*.apl')),
+         _("Advene files (.xml, .cxp, .czp, .cjp, .apl)"),
+         ('*.xml', '*.cxp', '*.czp', '*.cjp', '*.apl')),
         ('session', _("Advene session (.apl)"), ( '*.apl', ) ),
         ('audio', _("Audio files"), ('*.wav', '*.mp3', '*.ogg')),
         ('video', _("Video files"), [ "*%s" % e for e in config.data.video_extensions ])
