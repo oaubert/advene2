@@ -1,6 +1,6 @@
 #
 # Advene: Annotate Digital Videos, Exchange on the NEt
-# Copyright (C) 2008 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
+# Copyright (C) 2008-2012 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
 #
 # Advene is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -36,6 +36,14 @@ from optparse import OptionParser
 import mimetypes
 import operator
 import time
+
+APP='advene'
+
+def init_gettext():
+    import gettext
+    gettext.bindtextdomain(APP, data.path['locale'])
+    gettext.textdomain(APP)
+    gettext.install(APP, localedir=data.path['locale'], unicode=True)
 
 def find_in_path(name):
     """Return the fullpath of the filename name if found in $PATH
@@ -98,7 +106,7 @@ class Config(object):
 
         if os.sys.platform in ( 'win32', 'darwin' ):
             self.os=os.sys.platform
-        elif 'linux' in os.sys.platform:
+        elif 'linux2' in os.sys.platform:
             self.os='linux'
         else:
             print "Warning: undefined platform: ", os.sys.platform
@@ -211,6 +219,9 @@ class Config(object):
             'windowposition': {},
             'remember-window-size': True,
             'gui': { 'popup-textwidth': 40 },
+            # Timestamp format. Extended notation with %.S to display
+            # seconds as floating-point data, with milliseconds.
+            'timestamp-format': '%H:%M:%.S',
             # Scroll increment in ms (for Control-Scroll)
             'scroll-increment': 100,
             # Scroll increment in ms (for Control-Shift-Scroll)
@@ -221,6 +232,9 @@ class Config(object):
             'second-time-increment': 5000,
             # Time increment (Control-Shift-Up/Down)
             'third-time-increment': 1,
+            # Custom up/down: use third-time-increment for up/down, do
+            # not require Shift
+            'custom-updown-keys': False,
             'timeline': {
                 'font-size': 10,
                 'button-height': 20,
@@ -258,8 +272,8 @@ class Config(object):
             'slave-player-sync-delay': 3000,
             # Interface language. '' means system default.
             'language': '',
-            'save-default-workspace': 'never',
-            'restore-default-workspace': 'ask',
+            'save-default-workspace': 'always',
+            'restore-default-workspace': 'always',
             # Weekly check for updates on the Advene website ?
             'update-check': True,
             # Last update time
@@ -275,17 +289,30 @@ class Config(object):
             # Language used for TTS. Standard 2 char. specification
             # (in fact, we use the espeak notation for simplicity).
             'tts-language': 'en',
+            # Encoding for data sent to the TTS engine.
+            'tts-encoding': 'utf8',
+            # Engine
+            'tts-engine': 'auto',
             'edition-history-size': 5,
             # popup views may be forced into a specific viewbook,
             # instead of default popup
             'popup-destination': 'popup',
             'embedded': True,
+            'abbreviation-mode': True,
+            'completion-mode': True,
+            'text-abbreviations': '',
+            # Automatically start the player when loading a media file
+            # (either directly or through a package)
+            'player-autostart': True,
+            'prefer-wysiwyg': True,
+            'player-shortcuts-in-edit-windows': True,
+            # Default FPS, used for smpte-style timestamp display
+            'default-fps': 25,
             }
 
         # Player options
         self.player_preferences = {
             'default_caption_duration': 3000,
-            'time_increment': 2000,
             }
 
         # Player options
@@ -301,6 +328,10 @@ class Config(object):
             'caption': True,
             'snapshot-width': 160,
             'dvd-device': '/dev/dvd',
+            'fullscreen-timestamp': False,
+            # Name of audio device for gstrecorder
+            'audio-record-device': 'default',
+            'record-video': True,
             }
 
         self.webserver = {
@@ -373,20 +404,31 @@ class Config(object):
             self.drag_type[name] = [ ( mime, 0, typ) ]
 
         self.video_extensions = (
+            '.264',
+            '.3gp',
             '.asf',
             '.avi',
+            '.dv',
             '.flv',
-            '.mov',
-            '.mpg', '.mpeg',  '.mp4',
-            '.ogm',
-            '.ogg',
-            '.ogv',
-            '.rm',
-            '.vob',
+            '.m4v',
+            '.mjpg', '.mjpg',
             '.mkv',
-            '.wmv',
+            '.mov',
             '.mp3',
+            '.mpg', '.mpeg',  '.mp4', '.mp4v',
+            '.mts',
+            '.ogg', '.ogm', '.ogv', '.ogx',
+            '.ps',
+            '.qt', '.qtm',
+            '.rm', '.rmd', '.rmvb', '.rv',
+            '.ts',
+            '.vfw',
+            '.vob',
+            '.vp6', '.vp7', '.vp8',
             '.wav',
+            '.webm',
+            '.wmv',
+            '.xvid',
             )
 
         self.color_palette = (

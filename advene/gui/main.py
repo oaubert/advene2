@@ -27,6 +27,7 @@ import sys
 import time
 import os
 import subprocess
+import signal
 import shutil
 import tempfile
 import StringIO
@@ -40,6 +41,9 @@ import Queue
 import advene.core.config as config
 import advene.core.version
 
+if config.data.os == 'win32':
+    import win32process
+
 import gtk
 import gobject
 import pango
@@ -50,16 +54,13 @@ import locale
 
 print "Using localedir %s" % config.data.path['locale']
 
-APP='advene'
 # Locale initialisation
 try:
     locale.setlocale(locale.LC_ALL, '')
 except locale.Error:
     print "Error in locale initialization. Interface translation may be incorrect."
     pass
-gettext.bindtextdomain(APP, config.data.path['locale'])
-gettext.textdomain(APP)
-gettext.install(APP, localedir=config.data.path['locale'], unicode=True)
+config.init_gettext()
 # The following line is useless, since gettext.install defines _ as a
 # builtin. However, code checking applications need to be explicitly
 # told that _ is imported.
@@ -82,15 +83,16 @@ import advene.core.mediacontrol
 from advene.core.imagecache import ImageCache
 import advene.util.helper as helper
 import xml.etree.ElementTree as ET
+from advene.util.odict import odict
 
 #import advene.util.importer
 from advene.gui.util.completer import Indexer, Completer
 
 # GUI elements
 from advene.gui.util import get_pixmap_button, get_small_stock_button, image_from_position, dialog, encode_drop_parameters, overlay_svg_as_png, name2color, predefined_content_mimetypes
-#import advene.gui.plugins.actions
-#import advene.gui.plugins.contenthandlers
-#import advene.gui.views.tree
+from advene.gui.util.playpausebutton import PlayPauseButton
+import advene.gui.plugins.actions
+import advene.gui.plugins.contenthandlers
 from advene.gui.views import AdhocViewParametersParser
 import advene.gui.views.timeline
 #import advene.gui.views.table
@@ -104,7 +106,6 @@ from advene.gui.edit.dvdselect import DVDSelect
 from advene.gui.edit.elements import get_edit_popup
 from advene.gui.edit.create import CreateElementPopup
 from advene.gui.edit.merge import Merger
-from advene.gui.edit.importer import ExternalImporter
 from advene.gui.evaluator import Evaluator
 from advene.gui.views.accumulatorpopup import AccumulatorPopup
 from advene.gui.views.logwindow import LogWindow
@@ -115,7 +116,6 @@ from advene.gui.edit.timeadjustment import TimeAdjustment
 from advene.gui.edit.frameselector import FrameSelector
 from advene.gui.views.viewbook import ViewBook
 from advene.gui.views.html import HTMLView
-from advene.gui.views.caption import CaptionView
 
 class DummyGlade:
     """Transition class.
@@ -132,21 +132,22 @@ class DummyGlade:
         self.build_menubar(menu_definition, self.menubar)
         v.pack_start(self.menubar, expand=False)
 
-        hb=gtk.HBox()
+        self.toolbar_container=gtk.HBox()
 
         self.fileop_toolbar=gtk.Toolbar()
         self.fileop_toolbar.set_style(gtk.TOOLBAR_ICONS)
-        hb.pack_start(self.fileop_toolbar, expand=True)
+        self.fileop_toolbar.set_show_arrow(False)
+        self.toolbar_container.pack_start(self.fileop_toolbar, expand=True)
 
         self.adhoc_hbox=gtk.HBox()
-        hb.pack_start(self.adhoc_hbox, expand=True)
+        self.toolbar_container.pack_start(self.adhoc_hbox, expand=True)
 
         self.traces_switch=gtk.HBox()
-        hb.pack_start(self.traces_switch, expand=False)
+        self.toolbar_container.pack_start(self.traces_switch, expand=False)
 
         self.search_hbox=gtk.HBox()
-        hb.pack_start(self.search_hbox, expand=False)
-        v.pack_start(hb, expand=False)
+        self.toolbar_container.pack_start(self.search_hbox, expand=False)
+        v.pack_start(self.toolbar_container, expand=False)
 
         self.application_space = gtk.VBox()
         v.add(self.application_space)
@@ -196,6 +197,8 @@ class DummyGlade:
             elif name == _("Packages"):
                 self.package_list_menu=gtk.Menu()
                 i.set_submenu(self.package_list_menu)
+            elif name == _("Open recent"):
+                self.recent_menuitem = i
             menu.append(i)
         return menu
 
@@ -227,16 +230,21 @@ class AdveneGUI(object):
         """Initializes the GUI and other attributes.
         """
         self.logbuffer = gtk.TextBuffer()
+        self.busy_cursor = gtk.gdk.Cursor(gtk.gdk.WATCH)
 
         self.controller = advene.core.controller.AdveneController()
         self.controller.register_gui(self)
+        # The KeyboardInput event has a 'keyname' parameter ("F1" to "F12")
+        # available through the request/keyname TALES expression
+        self.controller.register_event('KeyboardInput', _("Input from the keyboard (function keys)"))
 
         # FIXME: we should use gtk.UIManager 
         menu_definition=(
             (_("_File"), (
                     ( _("_New package"), self.on_new1_activate, _("Create a new package")),
                     ( _("_Open package"), self.on_open1_activate, _("Open a package") ),
-                    ( _("_Save package"), self.on_save1_activate, _("Save the package") ),
+                    ( _("Open recent"), None, _("Show recently opened packages") ),
+                    ( _("_Save package") + " [Ctrl-S]", self.on_save1_activate, _("Save the package") ),
                     ( _("Save package as..."), self.on_save_as1_activate, _("Save the package as...") ),
                     ( _("Close package"), self.on_close1_activate, _("Close the package") ),
                     ( "", None, "" ),
@@ -250,20 +258,19 @@ class AdveneGUI(object):
                     ( _("Associate a _Video stream"), self.on_select_a_video_stream1_activate, _("Enter a video stream address") ),
                     ( "", None, "" ),
                     ( _("_Import File"), self.on_import_file1_activate, _("Import data from an external source") ),
+                    ( _("_Process video"), self.on_process_video_activate, _("Import data from video processing algorithms")),
                     ( "", None, "" ),
                     ( _("Merge package"), self.on_merge_package_activate, _("Merge elements from another package") ),
-                    ( _("Import _DVD chapters"), self.on_import_dvd_chapters1_activate, _("Create annotations based on DVD chapters") ),
                     ( "", None, "" ),
                     ( _("_Export..."), self.on_export_activate, _("Export data to another format") ),
                     ( _("_Website export..."), self.on_website_export_activate, _("Export views to a website") ),
                     ( "", None, "" ),
                     ( _("_Quit"), self.on_exit, "" ),
-                    ( "", None, "" ),
                     ), "" ),
             (_("_Edit"), (
-                    ( _("_Undo"), self.on_undo1_activate, "" ),
+                    ( _("_Undo") + " [Ctrl-Z]", self.undo, "" ),
                     ( _("_Find"), self.on_find1_activate, "" ),
-                    ( _("_Delete"), self.on_delete1_activate, "" ),
+                    ( _("_Delete") + " [Del]", self.on_delete1_activate, "" ),
                     ( _("Create"), (
                             ( _("Schema"), self.on_create_schema_activate, "" ),
                             ( _("View"), self.on_create_view_activate, "" ),
@@ -271,7 +278,7 @@ class AdveneGUI(object):
                             ( _("Annotation Type"), self.on_create_annotation_type_activate, "" ),
                             ( _("Relation Type"), self.on_create_relation_type_activate, "" ),
                             ), "" ),
-                    ( _("Package _Imports"), self.on_package_imports1_activate, _("Edit imported element from other packages") ),
+#                    ( _("Package _Imports"), self.on_package_imports1_activate, _("Edit imported element from other packages") ),
 #                    ( _("_Standard Ruleset"), self.on_edit_ruleset1_activate, _("Edit the standard rules") ),
                     ( _("P_ackage properties"), self.on_package_properties1_activate, _("Edit package properties") ),
                     ( _("P_references"), self.on_preferences1_activate, _("Interface preferences") ),
@@ -280,14 +287,17 @@ class AdveneGUI(object):
                     # Note: this will be populated from registered_adhoc_views
                     ( _("_Start Web Browser"), self.on_adhoc_web_browser_activate, _("Start the web browser") ),
                     ( "", None, "" ),
-                    ( _("Evaluator"), self.on_evaluator2_activate, _("Open python evaluator window") ),
+                    ( _("Simplify interface"), self.on_simplify_interface_activate, _("Simplify the application interface (toggle)")),
+                    ( _("Evaluator") + " [Ctrl-e]", self.on_evaluator2_activate, _("Open python evaluator window") ),
                     ( _("Webserver log"), self.on_webserver_log1_activate, "" ),
-                    ( _("_MediaInformation"), self.on_view_mediainformation_activate, _("Display information about the media") ),
+                    #( _("_MediaInformation"), self.on_view_mediainformation_activate, _("Display information about the media") ),
                     ), "" ),
             (_("_Player"), (
+                    ( _("Go to _Time"), self.goto_time_dialog, _("Goto a specified time code") ),
                     ( _("Save _ImageCache"), self.on_save_imagecache1_activate, _("Save the contents of the ImageCache to disk") ),
+                    ( _("Reset ImageCache"), self.on_reset_imagecache_activate, _("Reset the ImageCache") ),
                     ( _("_Restart player"), self.on_restart_player1_activate, _("Restart the player") ),
-                    ( _("Capture screenshots"), self.generate_screenshots, _("Generate screenshots for the current video") ),
+                    #( _("Capture screenshots"), self.generate_screenshots, _("Generate screenshots for the current video") ),
                     ( _("Update annotation screenshots"), self.update_annotation_screenshots, _("Update screenshots for annotation bounds") ),
                     ( _("Detect shots"), self.on_shotdetect_activate, _("Automatically detect shots")),
                     ( _("_Select player"), None, _("Select the player plugin") ),
@@ -300,24 +310,60 @@ class AdveneGUI(object):
                     ( _("Get support"), self.on_support1_activate, "" ),
                     ( _("Check for updates"), self.check_for_update, "" ),
                     ( _("Display shortcuts"), self.on_helpshortcuts_activate, "" ),
-                    ( _("Display logfile"), self.on_advene_log_display, "Display log file"),
+                    ( _("Display logfile"), self.on_advene_log_display, _("Display log file")),
+                    ( _("Open logfile folder"), self.on_advene_log_folder_display, _("Display logfile folder. It can help when sending the advene.log file by e-mail.")),
                     ( _("_About"), self.on_about1_activate, "" ),
                     ), "" ),
             )
 
         self.gui = DummyGlade(menu_definition)
-        for (stock, callback, tip) in (
-            (gtk.STOCK_OPEN, self.on_open1_activate, _("Open a package file")),
-            (gtk.STOCK_SAVE, self.on_save1_activate, _("Save the current package")),
-            (gtk.STOCK_SAVE_AS, self.on_save_as1_activate, _("Save the package with a new name")),
-            ('moviefile.png', self.on_b_addfile_clicked, _("Select movie file...")),
-            (gtk.STOCK_CDROM, self.on_b_selectdvd_clicked, _("Select DVD")),
-            (gtk.STOCK_QUIT, self.on_exit, _("Quit")),
-            (None, None, None),
-            (gtk.STOCK_UNDO, self.undo, _("Undo")),
+
+        f = gtk.RecentFilter()
+        f.add_application(gobject.get_application_name())
+        recent = gtk.RecentChooserMenu()
+        recent.add_filter(f)
+        recent.set_show_icons(False)
+        recent.set_sort_type(gtk.RECENT_SORT_MRU)
+        self.gui.recent_menuitem.set_submenu(recent)
+        def open_history_file(rec):
+            fname = rec.get_current_uri()
+            try:
+                self.set_busy_cursor(True)
+                self.controller.load_package (uri=fname)
+            except (OSError, IOError), e:
+                self.set_busy_cursor(False)
+                dialog.message_dialog(_("Cannot load package %(filename)s:\n%(error)s") % {
+                        'filename': fname,
+                        'error': unicode(e)}, gtk.MESSAGE_ERROR)
+            return True
+        recent.connect('item-activated', open_history_file)
+
+        self.toolbuttons = {}
+        for (ident, stock, callback, tip) in (
+            ('open', gtk.STOCK_OPEN, self.on_open1_activate, _("Open a package file")),
+            ('save', gtk.STOCK_SAVE, self.on_save1_activate, _("Save the current package")),
+            ('save_as', gtk.STOCK_SAVE_AS, self.on_save_as1_activate, _("Save the package with a new name")),
+            ('select_file', 'moviefile.png', self.on_b_addfile_clicked, _("Select movie file...")),
+            ('select_dvd', gtk.STOCK_CDROM, self.on_b_selectdvd_clicked, _("Select DVD")),
+            (None, None, None, None),
+            ('undo', gtk.STOCK_UNDO, self.undo, _("Undo")),
+            (None, None, None, None),
+            ('create_text_annotation', 'text_annotation.png', self.on_create_text_annotation, _("Create a text annotation")),
+            ('create_svg_annotation', 'svg_annotation.png', self.on_create_svg_annotation, _("Create a graphical annotation")),
             ):
             if stock is None:
                 b=gtk.SeparatorToolItem()
+            elif ident == 'open':
+                b = gtk.MenuToolButton(stock)
+                b.set_arrow_tooltip_text(_("List recently opened packages"))
+                f = gtk.RecentFilter()
+                f.add_application(gobject.get_application_name())
+                recent = gtk.RecentChooserMenu()
+                recent.add_filter(f)
+                recent.set_show_icons(False)
+                recent.set_sort_type(gtk.RECENT_SORT_MRU)
+                b.set_menu(recent)
+                recent.connect('item-activated', open_history_file)
             elif stock.startswith('gtk-'):
                 b=gtk.ToolButton(stock)
             else:
@@ -329,9 +375,60 @@ class AdveneGUI(object):
             if callback is not None:
                 b.connect('clicked', callback)
             self.gui.fileop_toolbar.insert(b, -1)
-            if stock == gtk.STOCK_SAVE:
-                self.save_toolbutton = b
+            if ident is not None:
+                self.toolbuttons[ident] = b
         self.gui.fileop_toolbar.show_all()
+
+        # Snapshotter activity monitor
+        def display_snapshot_monitor_menu(v):
+            s = getattr(self.controller.player, 'snapshotter', None)
+
+            m = gtk.Menu()
+            if s:
+                m.append(gtk.MenuItem(_("Snapshotter activity")))
+                m.append(gtk.SeparatorMenuItem())
+                m.append(gtk.MenuItem(_("%d queued requests") % s.timestamp_queue.qsize()))
+                i = gtk.MenuItem(_("Cancel all requests"))
+                i.connect('activate', lambda i: s.clear() or True)
+                m.append(i)
+
+            else:
+                m.append(gtk.MenuItem(_("No snapshotter")))
+            m.show_all()
+            m.popup(None, None, None, 0, gtk.get_current_event_time())
+            return True
+
+        self.snapshotter_image = {
+            'idle': gtk.image_new_from_file( config.data.advenefile( ( 'pixmaps', 'snapshotter-idle.png') )),
+            'running': gtk.image_new_from_file( config.data.advenefile( ( 'pixmaps', 'snapshotter-running.png') )),
+            }
+
+        def set_state(b, state=None):
+            """Set the state of the snapshotter icon.
+
+            state can be either None (no snapshotter), 'idle', 'running'
+            """
+            if state == b._state:
+                return True
+            b._state = state
+            if state is None:
+                b.hide()
+            elif state == 'idle':
+                b.set_image(self.snapshotter_image[state])
+                b.set_tooltip_text(_("No snapshotting activity"))
+                b.show()
+            elif state == 'running':
+                b.set_image(self.snapshotter_image[state])
+                b.set_tooltip_text(_("Snapshotting"))
+                b.show()
+            return True
+
+        b = get_pixmap_button('snapshotter-idle.png', display_snapshot_monitor_menu)
+        b._state = None
+        b.set_relief(gtk.RELIEF_NONE)
+        self.gui.bottombar.pack_start(b, expand=False)
+        self.snapshotter_monitor_icon = b
+        b.set_state=set_state.__get__(b)
 
         # Log messages button
         def display_log_messages(v):
@@ -339,6 +436,7 @@ class AdveneGUI(object):
             v.autoscroll()
             return True
         b=get_pixmap_button('logmessages.png', display_log_messages)
+        b.set_tooltip_text(_("Display application log messages"))
         b.set_relief(gtk.RELIEF_NONE)        
         self.gui.bottombar.pack_start(b, expand=False)
         b.show()
@@ -373,32 +471,9 @@ class AdveneGUI(object):
                         os.path.dirname(advene.__file__), 'gui', n),
                                                prefix="advene_gui_%s" % n)
                 self.gui_plugins.extend(l)
-            except OSError, e:
-                print "OSerror", str(e)
+            except OSError:
+                print "OSerror"
                 pass
-        # Adhoc view toolbuttons signal handling
-        def adhoc_view_drag_sent(widget, context, selection, targetType, eventTime, name):
-            if targetType == config.data.target_type['adhoc-view']:
-                selection.set(selection.target, 8, encode_drop_parameters(name=name))
-                return True
-            return False
-
-        def adhoc_view_drag_begin(widget, context, pixmap, view_name):
-            w=gtk.Window(gtk.WINDOW_POPUP)
-            w.set_decorated(False)
-            hb=gtk.HBox()
-            i=gtk.Image()
-            i.set_from_file(config.data.advenefile( ( 'pixmaps', pixmap) ))
-            hb.pack_start(i, expand=False)
-            hb.pack_start(gtk.Label(view_name), expand=False)
-            w.add(hb)
-            w.show_all()
-            context.set_icon_widget(w, 16, 16)
-            return True
-
-        def open_view(widget, name, destination='default'):
-            self.open_adhoc_view(name, destination=destination)
-            return True
 
         def update_quicksearch_sources(mi):
             """Display a dialog allowing to edit quicksearch-sources setting.
@@ -432,103 +507,6 @@ class AdveneGUI(object):
                 self.quicksearch_entry.set_tooltip_text(_('String to search in %s') % label)
             d.destroy()
             return True
-
-        def open_view_menu(widget, name):
-            """Open the view menu.
-
-            In expert mode, directly open the view. Else, display a
-            popup menu proposing the various places where the view can
-            be opened.
-            """
-            if name == 'webbrowser':
-                open_view(widget, name)
-                return True
-
-            if config.data.preferences['expert-mode']:
-                # In expert mode, directly open the view. Experts know
-                # how to use drag and drop anyway.
-                open_view(widget, name)
-                return True
-
-            menu=gtk.Menu()
-
-            for (label, destination) in (
-                (_("Open this view..."), 'default'),
-                (_("...in its own window"), 'popup'),
-                (_("...embedded east of the video"), 'east'),
-                (_("...embedded west of the video"), 'west'),
-                (_("...embedded south of the video"), 'south'),
-                (_("...embedded at the right of the window"), 'fareast')):
-                item = gtk.MenuItem(label)
-                item.connect('activate', open_view, name, destination)
-                menu.append(item)
-
-            menu.show_all()
-            menu.popup(None, None, None, 0, gtk.get_current_event_time())
-
-            return True
-
-        # Populate the View submenu
-        m=self.gui.adhoc_view_menuitem.get_submenu()
-        for name in sorted(self.registered_adhoc_views, reverse=True):
-            cl=self.registered_adhoc_views[name]
-            it=gtk.MenuItem(cl.view_name, use_underline=False)
-            it.set_tooltip_text(cl.tooltip)
-            it.connect('activate', open_view_menu, name)
-            m.prepend(it)
-        m.show_all()
-
-        # Generate the adhoc view buttons
-        hb=self.gui.adhoc_hbox
-        for name, tip, pixmap in (
-            ('timeline', _('Timeline'), 'timeline.png'),
-            ('tree', _('Tree view'), 'treeview.png'),
-            ('finder', _('Package finder'), 'finder.png'),
-            ('transcription', _('Transcription of annotations'), 'transcription.png'),
-
-            ('', '', ''),
-            ('transcribe', _('Note-taking editor'), 'transcribe.png'),
-            ('activebookmarks', _('Active bookmarks'), 'bookmarks.png'),
-            ('schemaeditor', _("Schema editor"), 'schemaeditor.png'),
-            ('', '', ''),
-
-            ('tagbag', _("Bag of tags"), 'tagbag.png'),
-            ('browser', _('TALES explorer'), 'browser.png'),
-            ('montage', _("Dynamic montage"), 'montage.png'),
-            ('videoplayer', _("Video player"), 'videoplayer.png'),
-            ('', '', ''),
-
-            ('webbrowser', _('Open a comment view in the web browser'), 'web.png'),
-            ('comment', _("Create or open a comment view"), 'comment.png'),
-            ('', '', ''),
-
-            ('editaccumulator', _('Edit window placeholder (annotation and relation edit windows will be put here)'), 'editaccumulator.png'),
-            ('editionhistory', _("Display edition history"), 'editionhistory.png'),
-            ('tracepreview', _("Visualise the activity trace preview"), 'trace.png'),
-            ('tracetimeline', _("Visualise the activity trace as a timeline"), 'tracetimeline.png'),
-            ):
-            if not name:
-                # Separator
-                b=gtk.VSeparator()
-                hb.pack_start(b, expand=False, padding=5)
-                continue
-            if name in ('browser', 'schemaeditor') and not config.data.preferences['expert-mode']:
-                continue
-            if name not in ('webbrowser', 'comment') and not name in self.registered_adhoc_views:
-                self.log("Missing basic adhoc view %s" % name)
-                continue
-            b=gtk.Button()
-            i=gtk.Image()
-            i.set_from_file(config.data.advenefile( ( 'pixmaps', pixmap) ))
-            b.add(i)
-            b.set_tooltip_text(tip)
-            b.connect('drag-begin', adhoc_view_drag_begin, pixmap, tip)
-            b.connect('drag-data-get', adhoc_view_drag_sent, name)
-            b.connect('clicked', open_view_menu, name)
-            b.drag_source_set(gtk.gdk.BUTTON1_MASK,
-                              config.data.drag_type['adhoc-view'], gtk.gdk.ACTION_COPY)
-            hb.pack_start(b, expand=False)
-        hb.show_all()
 
         # Trace switch button
         tsb = self.gui.traces_switch
@@ -587,17 +565,20 @@ class AdveneGUI(object):
         self.quicksearch_button.connect('button-press-event', quicksearch_options)
         hb.pack_start(self.quicksearch_button, expand=False, fill=False)
         hb.show_all()
+
         # Player status
         p=self.controller.player
         self.update_player_labels()
-
         self.oldstatus = "NotStarted"
-
         self.last_slow_position = 0
 
         self.current_annotation = None
         # Internal rule used for annotation loop
         self.annotation_loop_rule=None
+
+        # Edited data in fullscreen mode
+        self.edited_annotation_text = None
+        self.edited_annotation_begin = None
 
         # List of active annotation views (timeline, tree, ...)
         self.adhoc_views = []
@@ -605,8 +586,17 @@ class AdveneGUI(object):
         self.edit_popups = []
 
         self.edit_accumulator = None
+
+        # Text abbreviations
+        self.text_abbreviations =  dict( l.split(" ", 1) for l in config.data.preferences['text-abbreviations'].splitlines() )
+
         # Populate default STBV and type lists
         self.update_gui()
+
+    def init_gettext(self):
+        """Proxy for the module-level init_gettext method.
+        """
+        config.init_gettext()
 
     def get_icon_list(self):
         """Return the list of icon pixbuf appropriate for Window.set_icon_list.
@@ -617,6 +607,11 @@ class AdveneGUI(object):
                               for size in (16, 32, 48, 64, 128) ]
             self._icon_list=[ i for i in l if i is not None ]
         return self._icon_list
+
+    def set_busy_cursor(self, busy=False):
+        """Un/Set the busy cursor for the main window.
+        """
+        self.gui.win.window.set_cursor(self.busy_cursor if busy else None)
 
     def update_player_labels(self):
         """Update the representation of player status.
@@ -891,6 +886,155 @@ class AdveneGUI(object):
                 pass
         return True
 
+    def goto_time_dialog(self, *p):
+        """Display a dialog to go to a given time.
+        """
+        t = self.input_time_dialog()
+        if t is not None:
+            self.controller.update_status ("set", self.controller.create_position(t))
+        return True
+
+    def input_time_dialog(self, *p):
+        """Display a dialog to enter a time value.
+        """
+        d = gtk.Dialog(title=_("Enter the new time value"),
+                       parent=None,
+                       flags=gtk.DIALOG_DESTROY_WITH_PARENT,
+                       buttons=( gtk.STOCK_OK, gtk.RESPONSE_OK,
+                                 gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL ))
+
+        ta=TimeAdjustment(value=self.gui.slider.get_value(), controller=self.controller, videosync=False, editable=True, compact=False)
+        ta.entry.connect("activate", lambda w: d.response(gtk.RESPONSE_OK))
+        d.vbox.pack_start(ta.widget, expand=False)
+        d.show_all()
+        dialog.center_on_mouse(d)
+        ta.entry.select_region(0, -1)
+        ta.entry.grab_focus()
+        res=d.run()
+        retval=None
+        if res == gtk.RESPONSE_OK:
+            retval = ta.get_value()
+        d.destroy()
+        return retval
+
+    def search_replace_dialog(self, elements, title=None, default_search=None):
+        """Display a search-replace dialog.
+        """
+        if title is None:
+            title = _("Replace content in %d elements") % len(elements)
+        d = gtk.Dialog(title=title,
+                       parent=None,
+                       flags=gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT,
+                       buttons=( gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL,
+                                 gtk.STOCK_OK, gtk.RESPONSE_OK,
+                                 ))
+        l=gtk.Label(title)
+        l.set_line_wrap(True)
+        l.show()
+        d.vbox.pack_start(l, expand=False)
+
+        hb=gtk.HBox()
+        hb.pack_start(gtk.Label(_("Find word") + " "), expand=False)
+        search_entry=gtk.Entry()
+        search_entry.set_text(default_search or "")
+        hb.pack_start(search_entry, expand=False)
+        d.vbox.pack_start(hb, expand=False)
+
+        hb=gtk.HBox()
+        hb.pack_start(gtk.Label(_("Replace by") + " "), expand=False)
+        replace_entry=gtk.Entry()
+        hb.pack_start(replace_entry, expand=False)
+        d.vbox.pack_start(hb, expand=False)
+
+        d.connect('key-press-event', dialog.dialog_keypressed_cb)
+        d.show_all()
+        dialog.center_on_mouse(d)
+        res=d.run()
+        if res == gtk.RESPONSE_OK:
+            search=unicode(search_entry.get_text()).replace('\\n', '\n').replace('%n', '\n').replace('\\t', '\t').replace('%t', '\t')
+            replace=unicode(replace_entry.get_text()).replace('\\n', '\n').replace('%n', '\n').replace('\\t', '\t').replace('%t', '\t')
+            count=0
+            batch_id=object()
+            # FIXME: adapt to new API ->
+            for a in elements:
+                if not isinstance(a, (Annotation, Relation, View)):
+                    continue
+                if search in a.content.data:
+                    self.controller.notify('EditSessionStart', element=a, immediate=True)
+                    a.content.data = a.content.data.replace(search, replace)
+                    if isinstance(a, Annotation):
+                        self.controller.notify('AnnotationEditEnd', annotation=a, batch=batch_id)
+                    elif isinstance(a, Relation):
+                        self.controller.notify('RelationEditEnd', relation=a, batch=batch_id)
+                    elif isinstance(a, View):
+                        self.controller.notify('ViewEditEnd', view=a, batch=batch_id)
+                    self.controller.notify('EditSessionEnd', element=a)
+                    count += 1
+            self.log(_('%(search)s has been replaced by %(replace)s in %(count)d element(s).') % locals())
+        d.destroy()
+        return True
+
+    def render_montage_dialog(self, elements, basename=None, title=None, label=None):
+        """Extract a montage/annotation to a new video.
+        """
+        MontageRenderer = self.controller.generic_features.get('montagerenderer')
+        if MontageRenderer is None:
+            dialog.message_dialog(_("The video extracting feature is not available."))
+            return True
+        if title is None:
+            title = _("Video export")
+        if label is None:
+            label = _("Exporting video montage/fragment to %%(filename)s")
+
+        filename = dialog.get_filename(title=_("Please choose a destination filename"),
+                                       action=gtk.FILE_CHOOSER_ACTION_SAVE,
+                                       button=gtk.STOCK_SAVE,
+                                       default_file = basename,
+                                       filter='video')
+        if filename is None:
+            return
+        m = MontageRenderer(self.controller, elements)
+
+        w = gtk.Window()
+        w.set_title(title)
+        v = gtk.VBox()
+        l = gtk.Label(label % { 'filename': filename } )
+        v.add(l)
+
+        pg = gtk.ProgressBar()
+        v.pack_start(pg, expand=False)
+
+        hb = gtk.HButtonBox()
+        b = gtk.Button(stock=gtk.STOCK_CLOSE)
+        def close_encoder(b):
+            m.finalize()
+            w.destroy()
+            return True
+        b.connect('clicked', close_encoder)
+        hb.pack_start(b, expand=False)
+        v.pack_start(hb, expand=False)
+
+        w.add(v)
+        w.show_all()
+
+        def pg_callback(value, msg=''):
+            if value is None:
+                w.destroy()
+                return True
+            pg.set_fraction(value)
+            if msg:
+                pg.set_text(msg)
+            return True
+        m.render(filename, pg_callback)
+
+        # Keep a reference so that the MontageRenderer is not
+        # garbage-collected before the window is closed.
+        w.renderer = m
+
+        # FIXME: for debugging
+        self.renderer = m
+        return True
+
     @property
     def imagecache(self):
         """Return the imagecache for the current media, or None.
@@ -921,13 +1065,17 @@ class AdveneGUI(object):
         self.gui.application_space.add(self.visualisationwidget)
 
         def media_changed(context, parameters):
+            if config.data.preferences['player-autostart'] and not 'record' in self.controller.player.player_capabilities:
+                self.controller.queue_action(self.controller.update_status, "start")
+                self.controller.queue_action(self.controller.update_status, "pause")
+
             if config.data.preferences['expert-mode']:
                 return True
             uri=context.globals['uri']
             if not uri:
-                msg=_("No media association is defined in the package. Please use the 'File/Select a video file' menuitem to associate a media file.")
+                msg=_("No media association is defined in the package. Please use the 'File/Associate a video file' menu item to associate a media file.")
             elif not os.path.exists(unicode(uri).encode(sys.getfilesystemencoding(), 'ignore')) and not uri.startswith('http:') and not uri.startswith('dvd'):
-                msg=_("The associated media %s could not be found. Please use the 'File/Select a video file' menuitem to associate a media file.") % uri
+                msg=_("The associated media %s could not be found. Please use the 'File/Associate a video file' menu item to associate a media file.") % uri
             else:
                 msg=_("You are now working with the following video:\n%s") % uri
             self.controller.queue_action(dialog.message_dialog, msg, modal=False)
@@ -936,6 +1084,7 @@ class AdveneGUI(object):
         for events, method in (
             ("PackageLoad", self.manage_package_load),
             ("PackageActivate", self.manage_package_activate),
+            ("PackageEditEnd", lambda e, c: self.update_window_title()),
             ("PackageSave", self.manage_package_save),
             ( ('AnnotationCreate', 'AnnotationEditEnd',
                'AnnotationDelete', 'AnnotationActivate',
@@ -980,10 +1129,6 @@ class AdveneGUI(object):
 
         self.visual_id = None
 
-        # Populate the file history menu
-        for filename in config.data.preferences['history']:
-            self.append_file_history_menu(filename)
-
         def build_player_menu(menu):
             if menu.get_children():
                 # The menu was previously populated, but the player may have changed.
@@ -1004,6 +1149,146 @@ class AdveneGUI(object):
                 menu.append(i)
                 i.show()
             return True
+
+        # Adhoc view toolbuttons signal handling
+        def adhoc_view_drag_sent(widget, context, selection, targetType, eventTime, name):
+            if targetType == config.data.target_type['adhoc-view']:
+                selection.set(selection.target, 8, encode_drop_parameters(name=name))
+                return True
+            return False
+
+        def adhoc_view_drag_begin(widget, context, pixmap, view_name):
+            w=gtk.Window(gtk.WINDOW_POPUP)
+            w.set_decorated(False)
+            hb=gtk.HBox()
+            i=gtk.Image()
+            i.set_from_file(config.data.advenefile( ( 'pixmaps', pixmap) ))
+            hb.pack_start(i, expand=False)
+            hb.pack_start(gtk.Label(view_name), expand=False)
+            w.add(hb)
+            w.show_all()
+            context.set_icon_widget(w, 16, 16)
+            return True
+
+        def open_view(widget, name, destination='default'):
+            self.open_adhoc_view(name, destination=destination)
+            return True
+
+        def open_view_menu(widget, name):
+            """Open the view menu.
+
+            In expert mode, directly open the view. Else, display a
+            popup menu proposing the various places where the view can
+            be opened.
+            """
+            if name == 'webbrowser':
+                open_view(widget, name)
+                return True
+
+            if config.data.preferences['expert-mode']:
+                # In expert mode, directly open the view. Experts know
+                # how to use drag and drop anyway.
+                open_view(widget, name)
+                return True
+
+            menu=gtk.Menu()
+
+            for (label, destination) in (
+                (_("Open this view..."), 'default'),
+                (_("...in its own window"), 'popup'),
+                (_("...embedded east of the video"), 'east'),
+                (_("...embedded west of the video"), 'west'),
+                (_("...embedded south of the video"), 'south'),
+                (_("...embedded at the right of the window"), 'fareast')):
+                item = gtk.MenuItem(label)
+                item.connect('activate', open_view, name, destination)
+                menu.append(item)
+
+            menu.show_all()
+            menu.popup(None, None, None, 0, gtk.get_current_event_time())
+
+            return True
+
+        # Populate the View submenu
+        menu = self.gui.adhoc_view_menuitem.get_submenu()
+        it = gtk.MenuItem(_("_All available views"))
+        menu.prepend(it)
+        it.show()
+        m = gtk.Menu()
+        it.set_submenu(m)
+        for name in sorted(self.registered_adhoc_views, reverse=True):
+            cl=self.registered_adhoc_views[name]
+            it=gtk.MenuItem('_' + cl.view_name, use_underline=True)
+            it.set_tooltip_text(cl.tooltip)
+            it.connect('activate', open_view_menu, name)
+            m.prepend(it)
+
+        # Generate the adhoc view buttons
+        hb=self.gui.adhoc_hbox
+        item_index = 0
+        for name, tip, pixmap in (
+            ('timeline', _('Timeline'), 'timeline.png'),
+            ('tree', _('Tree view'), 'treeview.png'),
+            ('finder', _('Package finder'), 'finder.png'),
+            ('transcription', _('Transcription of annotations'), 'transcription.png'),
+
+            ('', '', ''),
+            ('transcribe', _('Note-taking editor'), 'transcribe.png'),
+            ('activebookmarks', _('Active bookmarks'), 'bookmarks.png'),
+            ('schemaeditor', _("Schema editor"), 'schemaeditor.png'),
+            ('', '', ''),
+
+            ('tagbag', _("Bag of tags"), 'tagbag.png'),
+            ('browser', _('TALES explorer'), 'browser.png'),
+            ('montage', _("Dynamic montage"), 'montage.png'),
+            ('videoplayer', _("Video player"), 'videoplayer.png'),
+            ('', '', ''),
+
+            ('webbrowser', _('Open a comment view in the web browser'), 'web.png'),
+            ('comment', _("Create or open a comment view"), 'comment.png'),
+            ('', '', ''),
+
+            ('editaccumulator', _('Edit window placeholder (annotation and relation edit windows will be put here)'), 'editaccumulator.png'),
+            ('editionhistory', _("Display edition history"), 'editionhistory.png'),
+            ('tracepreview', _("Visualise the activity trace preview"), 'trace.png'),
+            ('tracetimeline', _("Visualise the activity trace as a timeline"), 'tracetimeline.png'),
+            ):
+            if not name:
+                # Separator
+                b=gtk.VSeparator()
+                hb.pack_start(b, expand=False, padding=5)
+
+                it = gtk.SeparatorMenuItem()
+                menu.insert(it, item_index)
+                item_index = item_index + 1
+                continue
+            if name in ('browser', 'schemaeditor') and not config.data.preferences['expert-mode']:
+                continue
+            if name not in ('webbrowser', 'comment') and not name in self.registered_adhoc_views:
+                self.log("Missing basic adhoc view %s" % name)
+                continue
+            b=gtk.Button()
+            i=gtk.Image()
+            i.set_from_file(config.data.advenefile( ( 'pixmaps', pixmap) ))
+            b.add(i)
+            b.set_tooltip_text(tip)
+            b.connect('drag-begin', adhoc_view_drag_begin, pixmap, tip)
+            b.connect('drag-data-get', adhoc_view_drag_sent, name)
+            b.connect('clicked', open_view_menu, name)
+            b.drag_source_set(gtk.gdk.BUTTON1_MASK,
+                              config.data.drag_type['adhoc-view'], gtk.gdk.ACTION_COPY)
+            hb.pack_start(b, expand=False)
+            if name == 'webbrowser' and (self.controller.server is None or not self.controller.server.is_running()):
+                b.set_sensitive(False)
+                b.set_tooltip_text(_("The webserver could not be started. Static views cannot be accessed."))
+            if name in self.registered_adhoc_views:
+                it = gtk.MenuItem(self.registered_adhoc_views[name].view_name, use_underline=False)
+                it.connect('activate', open_view_menu, name)
+                it.set_tooltip_text(tip)
+                menu.insert(it, item_index)
+                item_index = item_index + 1
+        hb.show_all()
+        menu.show_all()
 
         menu=gtk.Menu()
         self.gui.select_player_menuitem.set_submenu(menu)
@@ -1130,7 +1415,7 @@ class AdveneGUI(object):
     def update_loop_button(self):
         """Update the loop button tooltip.
         """
-        b=self.loop_toggle_button
+        b=self.player_toolbar.buttons['loop']
         if self.current_annotation is None:
             mes=_("Select an annotation to loop on it")
         else:
@@ -1183,6 +1468,7 @@ class AdveneGUI(object):
         self.drawable.connect_object('button-press-event', self.debug_cb, self.drawable)
 
         self.player_toolbar=self.get_player_control_toolbar()
+        self.playpause_button = self.player_toolbar.buttons['playpause']
 
         # Dynamic view selection
         hb=gtk.HBox()
@@ -1222,6 +1508,7 @@ class AdveneGUI(object):
             return True
 
         edit_stbv_button=get_small_stock_button(gtk.STOCK_EDIT, on_edit_current_stbv_clicked)
+        edit_stbv_button.set_tooltip_text(_("Edit the current dynamic view."))
         hb.pack_start(edit_stbv_button, expand=False)
 
         def on_stbv_combo_changed (combo=None):
@@ -1232,10 +1519,10 @@ class AdveneGUI(object):
                 return False
             stbv=combo.get_model().get_value(i, 1)
             if stbv is None:
-                edit_stbv_button.set_tooltip_text(_("Create a new dynamic view."))
+                edit_stbv_button.set_sensitive(False)
                 combo.props.tooltip_text=_("No dynamic view")
             else:
-                edit_stbv_button.set_tooltip_text(_("Edit the current dynamic view."))
+                edit_stbv_button.set_sensitive(True)
                 combo.props.tooltip_text=self.controller.get_title(stbv)
             self.controller.activate_stbv(stbv)
             return True
@@ -1254,6 +1541,23 @@ class AdveneGUI(object):
         ti.add(self.audio_volume)
         self.audio_volume.connect('value-changed', volume_change)
         self.player_toolbar.insert(ti, -1)
+        self.player_toolbar.buttons['volume'] = ti
+
+        # Append the volume control to the toolbar
+        def rate_change(spin):
+            v = spin.get_value()
+            if self.controller.player.get_rate() != v:
+                self.controller.player.set_rate(v)
+            return True
+
+        self.rate_control = gtk.SpinButton(gtk.Adjustment(1.0, 0.2, 4.0, 0.2, 0.5),
+                                           0.2, 1)
+        self.rate_control.set_tooltip_text(_("Playing rate"))
+        ti = gtk.ToolItem()
+        ti.add(self.rate_control)
+        self.rate_control.connect('value-changed', rate_change)
+        self.player_toolbar.insert(ti, -1)
+        self.player_toolbar.buttons['rate'] = ti
 
         # Append the loop checkitem to the toolbar
         def loop_toggle_cb(b):
@@ -1262,7 +1566,7 @@ class AdveneGUI(object):
             if b.get_active():
                 if self.current_annotation:
                     def action_loop(context, target):
-                        if (self.loop_toggle_button.get_active()
+                        if (self.player_toolbar.buttons['loop'].get_active()
                             and context.globals['annotation'] == self.current_annotation):
                             self.controller.update_status('set', self.current_annotation.begin)
                         return True
@@ -1283,10 +1587,11 @@ class AdveneGUI(object):
                         self.controller.event_handler.remove_rule(self.annotation_loop_rule, type_="internal")
             return True
 
-        self.loop_toggle_button=gtk.ToggleToolButton(gtk.STOCK_REFRESH)
+        b = gtk.ToggleToolButton(gtk.STOCK_REFRESH)
+        self.player_toolbar.buttons['loop'] = b
         self.update_loop_button()
-        self.loop_toggle_button.connect('toggled', loop_toggle_cb)
-        self.player_toolbar.insert(self.loop_toggle_button, -1)
+        b.connect('toggled', loop_toggle_cb)
+        self.player_toolbar.insert(b, -1)
 
         # Append the player status label to the toolbar
         ts=gtk.SeparatorToolItem()
@@ -1307,7 +1612,7 @@ class AdveneGUI(object):
         self.gui.slider.connect('button-release-event', self.on_slider_button_release_event)
         self.gui.slider.connect('scroll-event', self.on_slider_scroll_event)
         def update_timelabel(s):
-            self.time_label.set_text(helper.format_time(s.get_value()))
+            self.time_label.set_time(s.get_value())
             return False
         self.gui.slider.connect('value-changed', update_timelabel)
 
@@ -1326,33 +1631,24 @@ class AdveneGUI(object):
         h=gtk.HBox()
         eb=gtk.EventBox()
         self.time_label=gtk.Label()
+        self.time_label.value = None
+        def set_time(s, t):
+            s.set_text(helper.format_time(t))
+            s.value = t
+            return t
+        self.time_label.set_time=set_time.__get__(self.time_label)
         # Make sure that we use a fixed-size font, so that the
         # time_label width is constant and does not constantly modify
         # the slider available width.
         self.time_label.modify_font(pango.FontDescription("courier 10"))
         if config.data.os == 'darwin':
             self.time_label.set_size_request(90, -1)
-        self.time_label.set_text(helper.format_time(None))
+        self.time_label.set_time(None)
         eb.add(self.time_label)
 
         def time_pressed(w, event):
             if event.button == 1 and event.type == gtk.gdk._2BUTTON_PRESS:
-                d = gtk.Dialog(title=_("Enter the new time value"),
-                               parent=None,
-                               flags=gtk.DIALOG_DESTROY_WITH_PARENT,
-                               buttons=( gtk.STOCK_OK, gtk.RESPONSE_OK,
-                                         gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL ))
-
-                ta=TimeAdjustment(value=self.gui.slider.get_value(), controller=self.controller, videosync=False, editable=True, compact=False)
-                d.vbox.pack_start(ta.widget, expand=False)
-                d.show_all()
-                dialog.center_on_mouse(d)
-                res=d.run()
-                retval=None
-                if res == gtk.RESPONSE_OK:
-                    t=ta.get_value()
-                    self.controller.update_status ("set", self.controller.create_position (t))
-                d.destroy()
+                self.goto_time_dialog()
                 return True
             return True
 
@@ -1406,39 +1702,60 @@ class AdveneGUI(object):
 
         self.pane['fareast'].show_all()
 
-        self.popupwidget.display_message(_("You can drag and drop view icons (timeline, treeview, transcription...) in this notebook to embed various views."), timeout=10000, title=_("Information"))
+        self.popupwidget.display_message(_("You can drag and drop view icons (timeline, treeview, transcription...) in notebooks to embed various views."), timeout=30000, title=_("Information"))
 
         return self.pane['fareast']
 
-    def find_bookmark_view(self):
-        def make_panel_visible():
-            # Make the fareast view visible if needed
-            pane=self.pane['fareast']
-            w=pane.get_allocation().width
-            if abs(w - pane.get_position()) < 200:
-                # Less than 30 visible pixels. Enlarge.
-                step=(pane.get_position() - (w - 256)) / 8
-                target=w - 256
-                def enlarge_view():
-                    pos=pane.get_position() - step
-                    if pos < target:
-                        pane.set_position(target)
-                        return False
-                    pane.set_position(pos)
-                    return True
-                gobject.timeout_add(100, enlarge_view)
-            return True
+    def make_pane_visible(self, paneid='fareast'):
+        """Ensure that the given pane is visible.
+        """
+        pane = self.pane.get(paneid)
+        if not pane:
+            return
+        width = pane.get_allocation().width
+        height = pane.get_allocation().height
+        if paneid == 'fareast':
+            need_adjust = (abs(width - pane.get_position()) < 200)
+            step = - (pane.get_position() - (width - 256)) / 8
+            condition = lambda p: (p < width - 256)
+        elif paneid == 'south':
+            need_adjust = (abs(height - pane.get_position()) < 200)
+            step = - (pane.get_position() - (height - 256)) / 8
+            condition = lambda p: (p < height - 256)
+        elif paneid == 'west':
+            # We should ideally also check for height adjustment (in
+            # south pane), but the video player is generally always
+            # visible anyway, so height should already be OK.
+            need_adjust = (pane.get_position() < 200)
+            step = 256 / 8
+            condition = lambda p: (p > 256)
+        elif paneid == 'east':
+            need_adjust = (abs(width - pane.get_position()) < 200)
+            step = - (pane.get_position() - (width - 256)) / 8
+            condition = lambda p: (p < width - 256)
+        else:
+            need_adjust = False
 
+        if need_adjust:
+            def enlarge_view():
+                pos=pane.get_position() + step
+                if condition(pos):
+                    return False
+                pane.set_position(pos)
+                return True
+            gobject.timeout_add(100, enlarge_view)
+        return True
+
+    def find_bookmark_view(self):
         l=[ w for w in self.adhoc_views if w.view_id == 'activebookmarks' ]
         if l:
             # There is at least one open view. Use the latest.
             a=l[-1]
-            if a._destination == 'fareast':
-                make_panel_visible()
+            self.make_pane_visible(a._destination)
         else:
             # No existing view. Create one.
             a=self.open_adhoc_view('activebookmarks', destination='fareast')
-            make_panel_visible()
+            self.make_pane_visible('fareast')
         return a
 
     def create_bookmark(self, position, insert_after_current=False, comment=None):
@@ -1457,50 +1774,10 @@ class AdveneGUI(object):
             b.widget.connect('size-allocate', lambda w, e: a.scroll_to_bookmark(b) and False)
         return True
 
-    def update_control_toolbar(self, tb=None):
-        if tb is None:
-            tb=self.player_toolbar
-        p=self.controller.player
-
-        buttons=dict( (b.get_stock_id(), b)
-                      for b in tb.get_children()
-                      if hasattr(b, 'get_stock_id') )
-
-        if gtk.STOCK_MEDIA_PLAY in buttons:
-            b=buttons[gtk.STOCK_MEDIA_PLAY]
-        elif gtk.STOCK_MEDIA_RECORD in buttons:
-            b=buttons[gtk.STOCK_MEDIA_RECORD]
-        else:
-            b=None
-        if b:
-            if 'record' in p.player_capabilities:
-                b.set_stock_id(gtk.STOCK_MEDIA_RECORD)
-            else:
-                b.set_stock_id(gtk.STOCK_MEDIA_PLAY)
-
-        if 'record' in p.player_capabilities:
-            for (stock, b) in buttons.iteritems():
-                if stock in (gtk.STOCK_MEDIA_RECORD, gtk.STOCK_MEDIA_STOP, gtk.STOCK_MEDIA_PLAY):
-                    continue
-                b.set_sensitive(False)
-        else:
-            for b in buttons.itervalues():
-                b.set_sensitive(True)
-
-        if 'frame-by-frame' in p.player_capabilities:
-            buttons[gtk.STOCK_MEDIA_PREVIOUS].show()
-            buttons[gtk.STOCK_MEDIA_NEXT].show()
-        else:
-            buttons[gtk.STOCK_MEDIA_PREVIOUS].hide()
-            buttons[gtk.STOCK_MEDIA_NEXT].hide()
-        if hasattr(p, 'fullscreen'):
-            buttons[gtk.STOCK_FULLSCREEN].show()
-        else:
-            buttons[gtk.STOCK_FULLSCREEN].hide()
-
     def connect_fullscreen_handlers(self, widget):
         """Connect handlers to the fullscreen widget.
         """
+        widget.connect('key-press-event', self.process_fullscreen_shortcuts)
         widget.connect('key-press-event', self.process_player_shortcuts)
         widget.connect('scroll-event', self.on_slider_scroll_event) 
 
@@ -1511,7 +1788,7 @@ class AdveneGUI(object):
         try:
             p.set_widget(self.drawable)
         except AttributeError:
-            p.set_visual(self.visual_id)
+            p.set_visual(self.drawable.get_id())
         self.update_control_toolbar(self.player_toolbar)
 
     def player_play_pause(self, event):
@@ -1536,13 +1813,13 @@ class AdveneGUI(object):
         self.controller.move_position (-config.data.preferences[i], notify=False)
 
     def player_forward_frame(self, event):
-        if event.state & gtk.gdk.SHIFT_MASK:
+        if config.data.preferences['custom-updown-keys'] or event.state & gtk.gdk.SHIFT_MASK:
             self.controller.move_position(+config.data.preferences['third-time-increment'], notify=False)
         else:
             self.controller.move_frame(+1)
 
     def player_rewind_frame(self, event):
-        if event.state & gtk.gdk.SHIFT_MASK:
+        if config.data.preferences['custom-updown-keys'] or event.state & gtk.gdk.SHIFT_MASK:
             self.controller.move_position(-config.data.preferences['third-time-increment'], notify=False)
         else:
             self.controller.move_frame(-1)
@@ -1562,6 +1839,13 @@ class AdveneGUI(object):
                                  key = c.player.MediaTime,
                                  origin = c.player.ModuloPosition)
         c.update_status ("set", pos)
+
+    def player_set_fraction(self, f):
+        self.controller.update_status("set", self.controller.create_position(long(self.controller.cached_duration * f)))
+
+    def function_key(self, event):
+        if gtk.keysyms.F1 <= event.keyval <= gtk.keysyms.F12:
+            self.controller.notify('KeyboardInput', request={ 'keyname': gtk.gdk.keyval_name(event.keyval) })
 
     control_key_shortcuts={
         gtk.keysyms.Tab: player_play_pause,
@@ -1597,7 +1881,68 @@ class AdveneGUI(object):
         gtk.keysyms.KP_Home: player_home,
         gtk.keysyms.KP_End: player_end,
         gtk.keysyms.KP_Insert: player_create_bookmark,
+
+        # Function keys
+        gtk.keysyms.F1:   function_key,
+        gtk.keysyms.F2:   function_key,
+        gtk.keysyms.F3:   function_key,
+        gtk.keysyms.F4:   function_key,
+        gtk.keysyms.F5:   function_key,
+        gtk.keysyms.F6:   function_key,
+        gtk.keysyms.F7:   function_key,
+        gtk.keysyms.F8:   function_key,
+        gtk.keysyms.F9:   function_key,
+        gtk.keysyms.F10:  function_key,
+        gtk.keysyms.F11:  function_key,
+        gtk.keysyms.F12:  function_key,
         }
+
+    fullscreen_key_shortcuts = {
+        gtk.keysyms.Tab: player_play_pause,
+        gtk.keysyms.space: player_play_pause,
+        gtk.keysyms.Up: player_forward_frame,
+        gtk.keysyms.Down: player_rewind_frame,
+        gtk.keysyms.Right: player_forward,
+        gtk.keysyms.Left: player_rewind,
+        gtk.keysyms.Home: player_home,
+        gtk.keysyms.Insert: player_create_bookmark,
+
+        # AZERTY keyboard navigation
+        gtk.keysyms.ampersand:  lambda s, e: s.player_set_fraction(.0),
+        gtk.keysyms.eacute:     lambda s, e: s.player_set_fraction(.1),
+        gtk.keysyms.quotedbl:   lambda s, e: s.player_set_fraction(.2),
+        gtk.keysyms.apostrophe: lambda s, e: s.player_set_fraction(.3),
+        gtk.keysyms.parenleft:  lambda s, e: s.player_set_fraction(.4),
+        gtk.keysyms.minus:      lambda s, e: s.player_set_fraction(.5),
+        gtk.keysyms.egrave:     lambda s, e: s.player_set_fraction(.6),
+        gtk.keysyms.underscore: lambda s, e: s.player_set_fraction(.7),
+        gtk.keysyms.ccedilla:   lambda s, e: s.player_set_fraction(.8),
+        gtk.keysyms.agrave:     lambda s, e: s.player_set_fraction(.9),
+
+        # QWERTY keyboard navigation
+        gtk.keysyms._1:  lambda s, e: s.player_set_fraction(.0),
+        gtk.keysyms._2:  lambda s, e: s.player_set_fraction(.1),
+        gtk.keysyms._3:  lambda s, e: s.player_set_fraction(.2),
+        gtk.keysyms._4:  lambda s, e: s.player_set_fraction(.3),
+        gtk.keysyms._5:  lambda s, e: s.player_set_fraction(.4),
+        gtk.keysyms._6:  lambda s, e: s.player_set_fraction(.5),
+        gtk.keysyms._7:  lambda s, e: s.player_set_fraction(.6),
+        gtk.keysyms._8:  lambda s, e: s.player_set_fraction(.7),
+        gtk.keysyms._9:  lambda s, e: s.player_set_fraction(.8),
+        gtk.keysyms._0:  lambda s, e: s.player_set_fraction(.9),
+
+        }
+
+    def is_focus_on_editable(self):
+        """Returns True if the focus is in an editable component.
+
+        If not, we can activate control_key_shortcuts without the Control modifier.
+        """
+        # For the moment, we only check if we are in full or simplified GUI state.
+        # FIXME: it is not as simple as this:
+        #print "FOCUS", [ isinstance(w.get_focus(), gtk.Editable) for w in  gtk.window_list_toplevels() if w.get_focus() is not None ]
+        # since we can want to use the standard gtk keyboard navigation among widgets.
+        return self.viewbook['east'].widget.get_visible()
 
     def process_player_shortcuts(self, win, event):
         """Generic player control shortcuts.
@@ -1607,7 +1952,6 @@ class AdveneGUI(object):
         Control-home/-end: start/end of the stream
         """
 
-        c=self.controller
         p=self.controller.player
 
         if (event.keyval == gtk.keysyms.nobreakspace
@@ -1618,42 +1962,155 @@ class AdveneGUI(object):
         elif event.keyval in self.key_shortcuts:
             self.key_shortcuts[event.keyval](self, event)
             return True
-        elif event.state & gtk.gdk.CONTROL_MASK and event.keyval in self.control_key_shortcuts:
+        elif event.keyval in self.control_key_shortcuts and (
+            event.state & gtk.gdk.CONTROL_MASK
+            or not self.is_focus_on_editable()):
             self.control_key_shortcuts[event.keyval](self, event)
             return True
         return False
 
+    def process_fullscreen_shortcuts(self, win, event):
+        """Fullscreen player control shortcuts.
+        """
+        c=self.controller
+        p=self.controller.player
+        if event.keyval == gtk.keysyms.Return:
+            # FIXME: reset data (validate or abort?) when leaving fullscreen
+            if self.edited_annotation_text is None:
+                # Not yet editing, entering edit mode
+                self.edited_annotation_text = ''
+                self.edited_annotation_begin = p.current_position_value
+                p.display_text(self.edited_annotation_text + '_', p.current_position_value, p.current_position_value + 5000)
+            else:
+                # Was editing. Creating annotation
+                at = c.package.get('annotation')
+                if at is None or not isinstance(at, AnnotationType):
+                    # Non-existent. This code path should be pretty unfrequent.
+                    if len(c.package.all.annotation_types):
+                        # Use the first defined type
+                        at = c.package.all.annotation_types[0]
+                    else:
+                        # No type. We must create one.
+                        sc = c.package.get('basic-schema')
+                        if sc is None or not isinstance(sc, Schema):
+                            if len(c.package.all.schemas):
+                                sc = c.package.all.schemas[0]
+                            else:
+                                # Do not bother
+                                self.log(_("Cannot create annotation. There is no schema to put it in."))
+                                return True
+                        if at is None:
+                            ident = 'annotation'
+                        else:
+                            ident = 'default_annotation_type'
+                        at=self.controller.package.create_annotation_type(id=ident)
+                        at.author = config.data.userid
+                        at.date = self.controller.get_timestamp()
+                        at.title = _("Default annotation type")
+                        at.mimetype = 'text/plain'
+                        at.color = self.controller.package._color_palette.next()
+                        at.element_color =  'here/tag_color'
+                        at._fieldnames = []
+                        sc.annotationTypes.append(at)
+                        self.controller.notify('AnnotationTypeCreate', annotationtype=at)
+                c.create_annotation(self.edited_annotation_begin, at,
+                                    p.current_position_value - self.edited_annotation_begin,
+                                    self.edited_annotation_text)
+                self.edited_annotation_text = None
+                self.edited_annotation_begin = None
+                p.display_text(_('Annotation created'), p.current_position_value, p.current_position_value + 1000)
+            return True
+        elif gtk.gdk.keyval_to_unicode(event.keyval):
+            c = unicode(gtk.gdk.keyval_name(event.keyval))
+            if len(c) == 1 and (c.isalnum() or c.isspace()):
+                if self.edited_annotation_text is None:
+                    # Not yet editing, entering edit mode
+                    self.edited_annotation_text = ''
+                    self.edited_annotation_begin = p.current_position_value
+                self.edited_annotation_text += c
+                # Display feedback
+                p.display_text(self.edited_annotation_text + '_', p.current_position_value, p.current_position_value + 10000)
+                return True
+        elif event.keyval == gtk.keysyms.BackSpace and self.edited_annotation_text is not None:
+            # Delete last char
+            self.edited_annotation_text = self.edited_annotation_text[:-1]
+            p.display_text(self.edited_annotation_text + '_', p.current_position_value, p.current_position_value + 10000)
+            return True
+        if event.keyval in self.fullscreen_key_shortcuts:
+            self.fullscreen_key_shortcuts[event.keyval](self, event)
+            return True
+        return False
+
     def get_player_control_toolbar(self):
-        """Return a player control toolbar
+        """Return a player control toolbar.
+
+        It has a buttons attribute, which holds references to the buttons according to an identifier.
         """
         tb=gtk.Toolbar()
         tb.set_style(gtk.TOOLBAR_ICONS)
 
-        # Note: beware, the order of buttons is significant here since
-        # they can be updated by the updated_player_cb method. In case
-        # of modification, ensure that both methods are still
-        # consistent.
         tb_list = [
-            (_("Play [Control-Tab / Control-Space]"), gtk.STOCK_MEDIA_PLAY, self.on_b_play_clicked),
-            (_("Pause [Control-Tab / Control-Space]"), gtk.STOCK_MEDIA_PAUSE, self.on_b_pause_clicked),
-            (_("Stop"), gtk.STOCK_MEDIA_STOP, lambda i: self.controller.update_status ("stop")),
-            (_("Rewind (%.02f s) [Control-Left]") % (config.data.preferences['time-increment'] / 1000.0), gtk.STOCK_MEDIA_REWIND, lambda i: self.controller.move_position (-config.data.preferences['time-increment'])),
-            (_("Forward (%.02f s) [Control-Right]" % (config.data.preferences['time-increment'] / 1000.0)), gtk.STOCK_MEDIA_FORWARD, lambda i: self.controller.move_position (config.data.preferences['time-increment'])),
-            (_("Previous frame [Control-Down]"), gtk.STOCK_MEDIA_PREVIOUS, lambda i: self.controller.move_frame(-1)),
-            (_("Next frame [Control-Up]"), gtk.STOCK_MEDIA_NEXT, lambda i: self.controller.move_frame(+1)),
-            ( (_("Fullscreen"), gtk.STOCK_FULLSCREEN, lambda i: self.controller.player.fullscreen(self.connect_fullscreen_handlers)) )
+            ('playpause', _("Play/Pause [Control-Tab / Control-Space]"), gtk.STOCK_MEDIA_PLAY, self.on_b_play_clicked),
+            ('rewind', _("Rewind (%.02f s) [Control-Left]") % (config.data.preferences['time-increment'] / 1000.0), gtk.STOCK_MEDIA_REWIND, lambda i: self.controller.move_position (-config.data.preferences['time-increment'])),
+            ('forward', _("Forward (%.02f s) [Control-Right]" % (config.data.preferences['time-increment'] / 1000.0)), gtk.STOCK_MEDIA_FORWARD, lambda i: self.controller.move_position (config.data.preferences['time-increment'])),
+            ('previous_frame', _("Previous frame [Control-Down]"), gtk.STOCK_MEDIA_PREVIOUS, lambda i: self.controller.move_frame(-1)),
+            ('next_frame', _("Next frame [Control-Up]"), gtk.STOCK_MEDIA_NEXT, lambda i: self.controller.move_frame(+1)),
+            ('fullscreen', _("Fullscreen"), gtk.STOCK_FULLSCREEN, lambda i: self.controller.player.fullscreen(self.connect_fullscreen_handlers) ),
             ]
 
-        for text, stock, callback in tb_list:
-            b=gtk.ToolButton(stock)
+        tb.buttons = {}
+        for name, text, stock, callback in tb_list:
+            if name == 'playpause':
+                b = PlayPauseButton(stock)
+            else:
+                b=gtk.ToolButton(stock)
             b.set_tooltip_text(text)
             b.connect('clicked', callback)
             tb.insert(b, -1)
+            tb.buttons[name] = b
 
         tb.show_all()
         # Call update_control_toolbar()
         self.update_control_toolbar(tb)
         return tb
+
+    def update_control_toolbar(self, tb=None):
+        """Update player control toolbar.
+
+        It modifies buttons according to the player capabilities.
+        """
+        if tb is None:
+            tb=self.player_toolbar
+        p=self.controller.player
+
+        if 'record' in p.player_capabilities:
+            tb.buttons['playpause'].set_stock_ids(gtk.STOCK_MEDIA_RECORD, gtk.STOCK_MEDIA_STOP)
+            for name, b in tb.buttons.iteritems():
+                if name == 'playpause':
+                    continue
+                b.set_sensitive(False)
+        else:
+            tb.buttons['playpause'].set_stock_ids(gtk.STOCK_MEDIA_PLAY, gtk.STOCK_MEDIA_PAUSE)
+            for b in tb.buttons.itervalues():
+                b.set_sensitive(True)
+
+        if 'frame-by-frame' in p.player_capabilities:
+            tb.buttons['previous_frame'].show()
+            tb.buttons['next_frame'].show()
+        else:
+            tb.buttons['previous_frame'].hide()
+            tb.buttons['next_frame'].hide()
+
+        if hasattr(p, 'fullscreen'):
+            tb.buttons['fullscreen'].show()
+        else:
+            tb.buttons['fullscreen'].hide()
+
+        if hasattr(self, 'rate_control'):
+            if 'set-rate' in p.player_capabilities:
+                self.rate_control.show()
+            else:
+                self.rate_control.hide()
 
     def loop_on_annotation_gui(self, a, goto=False):
         """Loop over an annotation
@@ -1663,7 +2120,7 @@ class AdveneGUI(object):
         checkbox to activate/deactivate looping.
         """
         self.set_current_annotation(a)
-        self.loop_toggle_button.set_active(True)
+        self.player_toolbar.buttons['loop'].set_active(True)
         return True
 
     def debug_cb(self, window, event, *p):
@@ -1739,17 +2196,68 @@ class AdveneGUI(object):
         except AttributeError:
             pass
         return True
+
+    def save_snapshot_as(self, position, filename=None, retry=True):
+        """Save the snapshot for the given position into a file.
+
+        If supported by the player, it will save the full-resolution screenshot.
+        """
+        def do_save_as(fname, png_data, notify=False):
+            try:
+                f = open(fname, 'wb')
+                f.write(str(png_data))
+                f.close()
+                self.controller.log(_("Screenshot saved to %s") % fname)
+                if notify:
+                    self.controller.queue_action(dialog.message_dialog, _("Screenshot saved in\n %s") % unicode(fname), modal=False)
+            except (IOError, OSError), e:
+                self.controller.queue_action(dialog.message_dialog, _("Could not save screenshot:\n %s") % unicode(e), icon=gtk.MESSAGE_ERROR, modal=False)
+
+        if filename is None:
+            name = "%s-%010d.png" % (
+                os.path.splitext(
+                    os.path.basename(
+                        self.controller.get_default_media()))[0],
+                position)
+            filename = dialog.get_filename(title=_("Save screenshot to..."),
+                                           action=gtk.FILE_CHOOSER_ACTION_SAVE,
+                                           button=gtk.STOCK_SAVE,
+                                           default_file=name)
+
+        if filename is not None:
+            if hasattr(self.controller.player, 'async_fullres_snapshot'):
+                def save_callback(snapshot=None, message=None):
+                    if snapshot is None and message is not None:
+                        self.controller.queue_action(dialog.message_dialog, message)
+                    elif snapshot:
+                        if abs(snapshot.date - position) > 100:
+                            # FIXME: It can be due to an
+                            # initialisation issue in the snapshotter,
+                            # on first invocation. Hack around the issue for now.
+                            if retry:
+                                self.controller.queue_action(self.save_snapshot_as, position, filename, retry=False)
+                            else:
+                                self.controller.queue_action(dialog.message_dialog, _("Could not take snapshot with enough precision"), modal=False)
+                        else:
+                            do_save_as(filename, snapshot.data, notify=True)
+                    else:
+                        self.controller.log("Unknown problem in full-resolution snapshot")
+                # Can capture full-res snapshot
+                self.controller.player.async_fullres_snapshot(position - 20, save_callback)
+            else:
+                do_save_as(filename,
+                           self.imagecache.get(position))
+        return True
         
     def export_element(self, element):
         def generate_default_filename(filter, filename=None):
             """Generate a filename for the given filter.
             """
-            # FIXME: Check Advene2 conformance
-            if filename is None:
+            if not filename:
                 # Get the current package title.
                 if isinstance(element, Package):
                     filename=self.controller.package.title
-                    if filename == 'Template package':
+                    if not filename or filename == 'Template package':
                         # Use a better name
                         filename=os.path.splitext(os.path.basename(self.controller.package.uri))[0]
                     filename=helper.title2id(filename)
@@ -1779,7 +2287,7 @@ class AdveneGUI(object):
                                              gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL ))
         def update_extension(sel):
             filter=sel.get_current_element()
-            f=generate_default_filename(filter, os.path.basename(fs.get_filename()))
+            f=generate_default_filename(filter, os.path.basename(fs.get_filename() or ""))
             fs.set_current_name(f)
             return True
         def valid_always(v):
@@ -1868,27 +2376,6 @@ class AdveneGUI(object):
         stbv_combo.show_all()
         return True
 
-    def append_file_history_menu(self, filename):
-        """Add the filename at the end of the filemenu Glade widget.
-        """
-        def open_history_file(button, fname):
-            try:
-                self.controller.load_package (uri=fname)
-            except (OSError, IOError), e:
-                dialog.message_dialog(_("Cannot load package %(filename)s:\n%(error)s") % {
-                        'filename': fname,
-                        'error': unicode(e)}, gtk.MESSAGE_ERROR)
-            return True
-
-        # FIXME: should use gtk.RecentChooserMenu
-        menu=self.gui.menubar.get_children()[0].get_submenu()
-        i=gtk.MenuItem(label=unicode(os.path.basename(filename)), use_underline=False)
-        i.connect('activate', open_history_file, filename)
-        i.set_tooltip_text(_("Open %s") % filename)
-
-        i.show()
-        menu.append(i)
-
     def build_utbv_menu(self, action=None):
         if action is None:
             action = self.controller.open_url
@@ -1971,7 +2458,8 @@ class AdveneGUI(object):
             if not hasattr(v, '_destination'):
                 continue
             # Do not save permanent widgets
-            if v in self.viewbook[v._destination].permanent_widgets:
+            book = self.viewbook.get(v._destination)
+            if book and v in book.permanent_widgets:
                 continue
             options, args = v.get_save_arguments()
             if not with_arguments:
@@ -2016,10 +2504,11 @@ class AdveneGUI(object):
             elif node.tag == 'layout':
                 layout=node
         # Restore layout
-        if layout and not preserve_layout:
+        if layout is not None and not preserve_layout:
             w=self.gui.win
             w.move(long(layout.attrib['x']), long(layout.attrib['y']))
-            w.resize(long(layout.attrib['width']), long(layout.attrib['height']))
+            w.resize(min(long(layout.attrib['width']), gtk.gdk.screen_width()),
+                     min(long(layout.attrib['height']), gtk.gdk.screen_height()))
             for pane in layout:
                 if pane.tag == 'pane' and pane.attrib['id'] in self.pane:
                     self.pane[pane.attrib['id']].set_position(long(pane.attrib['position']))
@@ -2176,7 +2665,8 @@ class AdveneGUI(object):
                         'error': unicode(e)}).encode('latin1')
                 view=None
             if view is not None and view.widget.get_parent() is not None:
-                # Widget is already displayed.
+                # Widget is already displayed. Present it.
+                view.widget.get_toplevel().present()
                 view=None
             label=_("Editing %s") % self.controller.get_title(element)
         elif name == 'editaccumulator':
@@ -2189,7 +2679,6 @@ class AdveneGUI(object):
                     return False
                 self.edit_accumulator.widget.connect('destroy', handle_accumulator_close)
         elif name == 'comment':
-            print "Creating view"
             v=self.controller.create_static_view(elements=[])
             label=_("Comment view (%s)" % time.strftime('%Y%m%d - %H:%M'))
             v.title=label
@@ -2287,7 +2776,7 @@ class AdveneGUI(object):
                     pass
         # Reset quicksearch source value
         config.data.preferences['quicksearch-sources']=[ "all_annotations" ]
-        pass
+        self.set_busy_cursor(False)
 
     def manage_package_load (self, context, parameters):
         """Event Handler executed after loading a package.
@@ -2305,19 +2794,16 @@ class AdveneGUI(object):
                 'relations': helper.format_element_name('relation',
                                                         len(p.all.relations))
                 })
-
-        h=config.data.preferences['history']
-        if not p.uri in h and not p.uri.endswith('new_pkg'):
-            h.append(p.uri)
-            self.append_file_history_menu(p.uri)
-            # Keep the 5 last elements
-            config.data.preferences['history']=h[-config.data.preferences['history-size-limit']:]
+        if not p.uri.endswith('new_pkg'):
+            gtk.recent_manager_get_default().add_item(p.uri)
 
         # Create the content indexer
         p._indexer=Indexer(controller=self.controller,
-                           package=p)
+                           package=p,
+                           abbreviations=self.text_abbreviations)
         p._indexer.initialize()
 
+        # FIXME: it should not be here, but in activate, and called only once
         self.controller.queue_action(self.check_for_default_adhoc_view, p)
         return True
 
@@ -2342,12 +2828,12 @@ class AdveneGUI(object):
 
     def update_window_title(self):
         # Update the main window title
-        t=" - ".join((_("Advene"), self.controller.get_title(self.controller.package)))
+        t=" - ".join((_("Advene"), unicode(os.path.basename(self.controller.package.uri)), self.controller.get_title(self.controller.package)))
         if self.controller.package._modified:
             t += " (*)"
-            self.save_toolbutton.set_sensitive(True)
+            self.toolbuttons['save'].set_sensitive(True)
         else:
-            self.save_toolbutton.set_sensitive(False)
+            self.toolbuttons['save'].set_sensitive(False)
         self.gui.win.set_title(t)
         return True
 
@@ -2533,13 +3019,14 @@ class AdveneGUI(object):
         Hence, it is a critical execution path and care should be
         taken with the code used here.
         """
+        p = self.controller.player
         # Synopsis:
         # Ask the controller to update its status
         # If we are moving the slider, don't update the display
         #gtk.threads_enter()
         try:
             pos=self.controller.update()
-        except self.controller.player.InternalException:
+        except p.InternalException:
             # FIXME: something sensible to do here ?
             print "Internal error on video player"
             #gtk.threads_leave()
@@ -2561,10 +3048,9 @@ class AdveneGUI(object):
             # snapshots, and display them to make the navigation in the
             # stream easier
             pass
-        elif self.controller.player.status in self.active_player_status:
-            t=helper.format_time(pos)
-            if t != self.time_label.get_text():
-                self.time_label.set_text(t)
+        elif p.status in self.active_player_status:
+            if pos != self.time_label.value:
+                self.time_label.set_time(pos)
             # Update the display
             d = self.controller.cached_duration
             if d > 0 and d != self.gui.slider.get_adjustment ().upper:
@@ -2574,9 +3060,10 @@ class AdveneGUI(object):
             if self.gui.slider.get_value() != pos:
                 self.gui.slider.set_value(pos)
 
-            if self.controller.player.status != self.oldstatus:
-                self.oldstatus = self.controller.player.status
-                self.gui.player_status.set_text(self.statustext.get(self.controller.player.status, _("Unknown")))
+            if p.status != self.oldstatus:
+                self.oldstatus = p.status
+                self.gui.player_status.set_text(self.statustext.get(p.status, _("Unknown")))
+                self.playpause_button.set_active(self.oldstatus != p.PlayingStatus)
 
             # Update the position mark in the registered views
             # Note: beware when implementing update_position in views:
@@ -2592,12 +3079,12 @@ class AdveneGUI(object):
 
         else:
             self.gui.slider.set_value (0)
-            t=helper.format_time(None)
-            if t != self.time_label.get_text():
-                self.time_label.set_text(t)
-            if self.controller.player.status != self.oldstatus:
+            if self.time_label.value is not None:
+                self.time_label.set_time(None)
+            if p.status != self.oldstatus:
                 self.oldstatus = self.controller.player.status
-                self.gui.player_status.set_text(self.statustext.get(self.controller.player.status, _("Unknown")))
+                self.gui.player_status.set_text(self.statustext.get(p.status, _("Unknown")))
+                self.playpause_button.set_active(self.oldstatus != p.PlayingStatus)
             # New position_update call to handle the starting case (the first
             # returned status is None)
             self.controller.position_update ()
@@ -2610,12 +3097,13 @@ class AdveneGUI(object):
         This method is regularly called by the Gtk mainloop, and
         updates elements with a slower rate than update_display
         """
-        vol=self.controller.player.sound_get_volume() / 100.0
+        c = self.controller
+        vol = c.player.sound_get_volume() / 100.0
         if self.audio_volume.get_value() != vol:
             self.audio_volume.set_value(vol)
 
         def do_save(aliases):
-            for alias, p in self.controller.packages.iteritems():
+            for alias, p in c.packages.iteritems():
                 if alias == 'advene':
                     continue
                 if p._modified:
@@ -2630,8 +3118,24 @@ class AdveneGUI(object):
                     p.save(name=n)
             return True
 
-        if self.gui.win.get_title().endswith('(*)') ^ self.controller.package._modified:
+        if self.gui.win.get_title().endswith('(*)') ^ c.package._modified:
             self.update_window_title()
+        self.toolbuttons['undo'].set_sensitive(bool(c.undomanager.history))
+        is_playing = (c.player.status in (c.player.PlayingStatus, c.player.PauseStatus))
+        self.toolbuttons['create_text_annotation'].set_sensitive(is_playing)
+        self.toolbuttons['create_svg_annotation'].set_sensitive(is_playing)
+        for l in ('rewind', 'forward', 'previous_frame', 'next_frame', 'loop'):
+            self.player_toolbar.buttons[l].set_sensitive(is_playing)
+
+        # Check snapshotter activity
+        s = getattr(c.player, 'snapshotter', None)
+        if s:
+            if s.timestamp_queue.empty():
+                self.snapshotter_monitor_icon.set_state('idle')
+            else:
+                self.snapshotter_monitor_icon.set_state('running')
+        else:
+            self.snapshotter_monitor_icon.set_state(None)
 
         # Check auto-save
         if config.data.preferences['package-auto-save'] != 'never':
@@ -2640,14 +3144,14 @@ class AdveneGUI(object):
                 # Need to save
                 l=[ alias for (alias, p) in self.controller.packages.iteritems() if p._modified and alias != 'advene' ]
                 if l:
-                    if self.controller.tracers and config.data.preferences['record-actions']:
+                    if c.tracers and config.data.preferences['record-actions']:
                         try:
-                            fn = self.controller.tracers[0].export()
+                            fn = c.tracers[0].export()
                             print "trace exported to %s" % fn
                         except Exception, e:
                             print "error exporting trace : %s" % unicode(e).encode('utf-8')
                     if config.data.preferences['package-auto-save'] == 'always':
-                        self.controller.queue_action(do_save, l)
+                        c.queue_action(do_save, l)
                     else:
                         # Ask before saving. Use the non-modal dialog
                         # to avoid locking the interface
@@ -2658,7 +3162,7 @@ class AdveneGUI(object):
 
         # Fix the webserver reaction time on win32
         if config.data.os == 'win32':
-            if self.controller.player.status in self.active_player_status:
+            if c.player.status in self.active_player_status:
                 i=config.data.play_interval
             else:
                 i=config.data.noplay_interval
@@ -2681,7 +3185,7 @@ class AdveneGUI(object):
                                              case_sensitive=not config.data.preferences['quicksearch-ignore-case'])
 
     def do_quicksearch(self, *p):
-        s=self.quicksearch_entry.get_text()
+        s=unicode(self.quicksearch_entry.get_text())
         if not s:
             self.log(_("Empty quicksearch string"))
             return True
@@ -2689,7 +3193,7 @@ class AdveneGUI(object):
         self.open_adhoc_view('interactiveresult', destination='east', result=res, label=_("'%s'") % s, query=s)
         return True
 
-    def ask_for_annotation_type(self, text=None, create=False, force_create=False):
+    def ask_for_annotation_type(self, text=None, create=False, force_create=False, default=None):
         """Display a popup asking to choose an annotation type.
 
         If create, then offer the possibility to create a new one.
@@ -2740,7 +3244,7 @@ class AdveneGUI(object):
             if create and force_create:
                 preselect=newat
             else:
-                preselect=None
+                preselect=default
             type_selector=dialog.list_selector_widget(members=[ (a, self.controller.get_title(a), self.controller.get_element_color(a)) for a in ats],
                                                       preselect=preselect,
                                                       callback=handle_new_type_selection)
@@ -2812,8 +3316,8 @@ class AdveneGUI(object):
             at=type_selector.get_current_element()
             if at == newat:
                 # Creation of a new type.
-                attitle=new_type_title_dialog.title_entry.get_text()
-                atid=new_type_title_dialog.id_entry.get_text()
+                attitle=unicode(new_type_title_dialog.title_entry.get_text())
+                atid=unicode(new_type_title_dialog.id_entry.get_text())
                 at=self.controller.package.get(atid)
                 if at is not None:
                     dialog.message_dialog(_("You specified a annotation-type identifier that already exists. Aborting."))
@@ -2821,8 +3325,8 @@ class AdveneGUI(object):
                     return None
                 sc=schema_selector.get_current_element()
                 if sc == newschema:
-                    sctitle=new_schema_title_dialog.title_entry.get_text()
-                    scid=new_schema_title_dialog.id_entry.get_text()
+                    sctitle=unicode(new_schema_title_dialog.title_entry.get_text())
+                    scid=unicode(new_schema_title_dialog.id_entry.get_text())
                     sc=self.controller.package.get(scid)
                     if sc is None:
                         # Create the schema
@@ -2905,8 +3409,8 @@ class AdveneGUI(object):
         if res == gtk.RESPONSE_OK:
             sc=schema_selector.get_current_element()
             if sc == newschema:
-                sctitle=new_schema_title_dialog.title_entry.get_text()
-                scid=new_schema_title_dialog.id_entry.get_text()
+                sctitle=unicode(new_schema_title_dialog.title_entry.get_text())
+                scid=unicode(new_schema_title_dialog.id_entry.get_text())
                 sc=self.controller.package.get(scid)
                 if sc is None:
                     # Create the schema
@@ -2924,12 +3428,7 @@ class AdveneGUI(object):
 
     def popup_edit_accumulator(self, *p):
         self.open_adhoc_view('editaccumulator', destination='fareast')
-        # Make the fareast view visible if needed
-        p=self.pane['fareast']
-        w=p.get_allocation().width
-        if abs(w - p.get_position()) < 30:
-            # Less than 50 visible pixels. Enlarge.
-            p.set_position(w - 256)
+        self.make_pane_visible('fareast')
         return True
 
     def on_exit(self, source=None, event=None):
@@ -2983,11 +3482,18 @@ class AdveneGUI(object):
         """Display a dialog to adjust the annotation bound.
         """
         translation={
-            'begin': _('begin'),
-            'end': _('end'),
+            'begin': _('first frame'),
+            'end': _('last frame'),
+            }
+        border_mode = {
+            'begin': 'left',
+            'end': 'right',
             }
         t=getattr(annotation, bound)
-        fs = FrameSelector(self.controller, t)
+        fs = FrameSelector(self.controller, t,
+                           label=_("Click on %(bound)s of %(annotation)s") % { 'bound': translation[bound],
+                                                                               'annotation': self.controller.get_title(annotation) },
+                           border_mode=border_mode[bound])
         new = fs.get_value(_("Update %(bound)s of %(annotation)s") % { 'bound': translation[bound],
                                                                        'annotation': self.controller.get_title(annotation) })
         if new != t:
@@ -3001,6 +3507,30 @@ class AdveneGUI(object):
         """Adjust annotation bounds for a given type.
         """
         self.open_adhoc_view('shotvalidation', annotationtype=at)
+        return True
+
+    def adjust_timestamp(self, t):
+        """Display the FrameSelector and return the selected value.
+        """
+        fs = FrameSelector(self.controller, t,
+                           label=_("Click on the frame corresponding to the timestamp value"),
+                           border_mode='both')
+        new = fs.get_value(_("Set new timestamp value"))
+        return new
+
+    def display_statistics(self, annotations, label=None):
+        """Display statistics about the given annotations.
+        """
+        if label is None:
+            label = _("<b>Annotation statistics</b>\n\n")
+        msg =  label
+        msg += "%d annotations\n" % len(annotations)
+        if annotations:
+            msg += "Min duration : %s\n" % helper.format_time(min( a.fragment.duration for a in annotations))
+            msg += "Max duration : %s\n" % helper.format_time(max( a.fragment.duration for a in annotations))
+            msg += "Mean duration : %s\n" % helper.format_time(sum( a.fragment.duration for a in annotations) / len(annotations))
+            msg += "Total duration : %s\n" % helper.format_time(sum( a.fragment.duration for a in annotations))
+        dialog.message_dialog(msg)
         return True
 
     def display_textfile(self, path, title=None, viewname=None):
@@ -3060,6 +3590,47 @@ class AdveneGUI(object):
         return True
 
     # Callbacks function. Skeletons can be generated by glade2py
+    def on_create_text_annotation(self, win=None, event=None):
+        c = self.controller
+        if c.player.status in (c.player.PlayingStatus, c.player.PauseStatus):
+            # Find out the appropriate type
+            at = self.controller.package.get('annotation')
+            if not at:
+                # Does not exist. Create it.
+                at = self.controller.package.create_annotation_type(id='annotation')
+                at.title = _("Text annotation")
+                at.mimetype = "text/plain"
+                at.color = self.controller.package._color_palette.next()
+                at.element_color = 'here/tag_color'
+                at._fieldnames=[]
+                self.controller.notify('AnnotationTypeCreate', annotationtype=at)
+            if not isinstance(at, AnnotationType):
+                dialog.message_dialog(_("Cannot find an appropriate annotation type"))
+                return True
+            a = self.controller.create_annotation(c.player.current_position_value, at, content=_("Comment here"))
+            self.edit_element(a)
+        return True
+
+    def on_create_svg_annotation(self, win=None, event=None):
+        c = self.controller
+        self.controller.update_snapshot(c.player.current_position_value)
+        if c.player.status in (c.player.PlayingStatus, c.player.PauseStatus):
+            # Find out the appropriate type
+            at = self.controller.package.get('svgannotation')
+            if not at:
+                # Does not exist. Create it.
+                at = self.controller.package.create_annotation_type(id='svgannotation')
+                at.title = _("Graphical annotation")
+                at.mimetype = "image/svg+xml"
+                at.color = self.controller.package._color_palette.next()
+                at.element_color = 'here/tag_color'
+                self.controller.notify('AnnotationTypeCreate', annotationtype=at)
+            if not isinstance(at, AnnotationType):
+                dialog.message_dialog(_("Cannot find an appropriate annotation type"))
+                return True
+            a = self.controller.create_annotation(c.player.current_position_value, at)
+            self.edit_element(a)
+        return True
 
     def on_win_key_press_event (self, win=None, event=None):
         """Keypress handling.
@@ -3106,6 +3677,7 @@ class AdveneGUI(object):
             # Ask to save it first.
             dialog.message_dialog(_("An unsaved template package exists\nSave it first."))
         else:
+            self.set_busy_cursor(True)
             self.controller.load_package ()
         return True
 
@@ -3172,8 +3744,10 @@ class AdveneGUI(object):
                         return True
 
             try:
+                self.set_busy_cursor(True)
                 self.controller.load_package (uri=filename, alias=alias)
             except (OSError, IOError), e:
+                self.set_busy_cursor(False)
                 dialog.message_dialog(_("Cannot load package %(filename)s:\n%(error)s") % {
                         'filename': filename,
                         'error': unicode(e)}, gtk.MESSAGE_ERROR)
@@ -3183,7 +3757,7 @@ class AdveneGUI(object):
         """Save the current package."""
         if package is None:
             package=self.controller.package
-        # FIXME: new_pkg still in use ???
+        self.controller.update_package_title()
         if (package.url == ""
             or package.url.endswith('new_pkg')):
             self.on_save_as1_activate (package=package)
@@ -3212,6 +3786,7 @@ class AdveneGUI(object):
         """Save the package with a new name."""
         if package is None:
             package=self.controller.package
+        self.controller.update_package_title()
         if config.data.path['data']:
             d=config.data.path['data']
         else:
@@ -3277,44 +3852,19 @@ class AdveneGUI(object):
         return True
 
 
-    def on_import_dvd_chapters1_activate (self, button=None, data=None):
-        # FIXME: loosy test
-        if (self.controller.get_current_mediafile() is None
-            or 'dvd' in self.controller.get_current_mediafile()):
-            if not dialog.message_dialog(
-                _("Do you confirm the creation of annotations matching the DVD chapters?"),
-                icon=gtk.MESSAGE_QUESTION):
-                return True
-#            try:
-#                i=advene.util.importer.get_importer('lsdvd', controller=self.controller)
-#            except Exception:
-#                dialog.message_dialog(_("Cannot import DVD chapters. Did you install the lsdvd software?"),
-#                                        icon=gtk.MESSAGE_ERROR)
-            # FIXME: reimplement
-            dialog.message_dialog(_("Cannot import DVD chapters. Did you install the lsdvd software?"),
-                                  icon=gtk.MESSAGE_ERROR)
-            
-            #i.package=self.controller.package
-            #i.process_file('lsdvd')
-            #self.controller.package._modified = True
-            #self.controller.notify('PackageLoad', package=self.controller.package)
-        else:
-            dialog.message_dialog(_("The associated media is not a DVD."),
-                                           icon=gtk.MESSAGE_ERROR)
-        return True
-
     def on_import_file1_activate (self, button=None, data=None):
-        v=ExternalImporter(controller=self.controller)
-        w=v.popup()
-        dialog.center_on_mouse(w)
+        self.open_adhoc_view('importerview')
         return False
 
-    def on_undo1_activate (self, button=None, data=None):
-        try:
-            self.controller.undomanager.undo()
-        except AttributeError:
-            pass
-        return True
+    def on_process_video_activate(self, button=None, data=None):
+        fname = self.controller.get_default_media()
+        if fname:
+            self.open_adhoc_view('importerview', filename=fname, message=_("Processing %s video") % fname,
+                                 display_unlikely=False)
+        else:
+            dialog.message_dialog(_("No associated video file"),
+                                  icon=gtk.MESSAGE_ERROR)
+        return False
 
     def on_find1_activate (self, button=None, data=None):
         self.open_adhoc_view('interactivequery', destination='east')
@@ -3449,14 +3999,14 @@ class AdveneGUI(object):
                     'status': self.statustext.get(p.status, _("Unknown")),
                     'position': helper.format_time(p.current_position_value),
                     'positionms': p.current_position_value,
-                    'duration': helper.format_time(p.stream_duration),
+                    'duration': helper.format_time_reference(p.stream_duration),
                     'durationms': p.stream_duration,
-                    'cached': helper.format_time(self.controller.cached_duration),
+                    'cached': helper.format_time_reference(self.controller.cached_duration),
                     'cachedms': self.controller.cached_duration
                     })
         else:
             self.controller.log(_("Player not active - cached duration   : %(duration)s (%(durationms)d ms)") % {
-                    'duration': helper.format_time(self.controller.cached_duration),
+                    'duration': helper.format_time_reference(self.controller.cached_duration),
                     'durationms': self.controller.cached_duration })
         return True
 
@@ -3466,9 +4016,9 @@ class AdveneGUI(object):
         d=gtk.AboutDialog()
         d.set_name('Advene')
         d.set_version(config.data.version_string.replace('Advene ', ''))
-        d.set_copyright("Copyright 2002-2008 Olivier Aubert, Pierre-Antoine Champin")
-        d.set_license(_('GNU General Public License\nSee http://www.gnu.org/copyleft/gpl.html for more details'))
-        d.set_website('http://liris.cnrs.fr/advene/')
+        d.set_copyright("Copyright 2002-2012 Olivier Aubert, Pierre-Antoine Champin")
+        d.set_license(_('GNU General Public License v. 2\nSee http://www.gnu.org/copyleft/gpl.html for more details'))
+        d.set_website('http://www.advene.org/')
         d.set_website_label(_('Visit the Advene web site for examples and documentation.'))
         d.set_authors( [ 'Olivier Aubert', 'Pierre-Antoine Champin', 'Yannick Prie', 'Bertrand Richard', 'Frank Wagner' ] )
         d.set_logo(gtk.gdk.pixbuf_new_from_file(config.data.advenefile( ( 'pixmaps', 'logo_advene.png') )))
@@ -3478,21 +4028,21 @@ class AdveneGUI(object):
         return True
 
     def on_b_play_clicked (self, button=None, data=None):
-        if not self.controller.player.playlist_get_list():
+        p = self.controller.player
+        if not p.playlist_get_list() and not 'record' in p.player_capabilities:
             # No movie file is defined yet. Propose to choose one.
             self.on_b_addfile_clicked()
             return True
-        if self.controller.player.status == self.controller.player.PauseStatus:
-            self.controller.update_status ("resume")
-        elif self.controller.player.status != self.controller.player.PlayingStatus:
-            self.controller.update_status ("start")
-        return True
-
-    def on_b_pause_clicked (self, button=None, data=None):
-        if self.controller.player.status == self.controller.player.PauseStatus:
-            self.controller.update_status ("resume")
-        elif self.controller.player.status == self.controller.player.PlayingStatus:
-            self.controller.update_status ("pause")
+        if p.status == p.PlayingStatus:
+            if 'record' in p.player_capabilities:
+                self.controller.update_status("stop")
+            else:
+                self.controller.update_status("pause")
+        else:
+            if 'record' in p.player_capabilities:
+                self.controller.update_status ("start")
+            else:
+                self.controller.update_status ("resume")
         return True
 
     def on_b_addfile_clicked (self, button=None, data=None):
@@ -3610,15 +4160,20 @@ class AdveneGUI(object):
             self.update_window_title()
             self.controller.set_default_media(cache['media'])
             try:
-                self.controller.package.cached_duration = long(cache['duration'])
+                d=long(cache['duration'])
+                if d != self.controller.package.cached_duration:
+                    self.controller.package.cached_duration = d
+                    self.controller.notify('DurationUpdate', duration=d)
             except ValueError, e:
                 print "Cannot convert duration", str(e)
                 pass
         return True
 
     def on_preferences1_activate (self, button=None, data=None):
+        # Direct options are directly retrieved/stored from/into config.data.preferences
         direct_options=('history-size-limit', 'scroll-increment', 'second-scroll-increment',
                         'time-increment', 'second-time-increment', 'third-time-increment',
+                        'custom-updown-keys', 'player-autostart',
                         'language',
                         'display-scroller', 'display-caption', 'imagecache-save-on-exit',
                         'remember-window-size', 'expert-mode', 'update-check',
@@ -3626,7 +4181,14 @@ class AdveneGUI(object):
                         'bookmark-snapshot-width', 'bookmark-snapshot-precision',
                         'save-default-workspace', 'restore-default-workspace',
                         'slave-player-sync-delay',
-                        'tts-language', 'record-actions', 'popup-destination' )
+                        'tts-language', 'tts-encoding', 'tts-engine',
+                        'record-actions', 'popup-destination',
+                        'timestamp-format', 'default-fps',
+                        'abbreviation-mode', 'text-abbreviations', 'completion-mode',
+                        'prefer-wysiwyg', 'player-shortcuts-in-edit-windows' )
+        # Direct options needing a restart to be taken into account.
+        restart_needed_options = ('tts-engine', 'language')
+
         path_options=('data', 'plugins', 'advene', 'imagecache', 'moviepath', 'shotdetect')
         cache={
             'font-size': config.data.preferences['timeline']['font-size'],
@@ -3655,24 +4217,25 @@ class AdveneGUI(object):
         ew.add_file_selector(_("Shotdetect"), "shotdetect", _("Shotdetect application"))
 
         ew.add_title(_("GUI"))
-        ew.add_option(_("Interface language (after restart)"), 'language', _("Language used for the interface (necessitates to restart the application)"),
-                      {
-                "English": 'C',
-                "Francais": 'fr_FR',
-                _("System default"): '',
-                })
+        ew.add_option(_("Interface language (after restart)"), 'language', _("Language used for the interface (necessitates to restart the application)"), odict((
+                (_("System default"), ''),
+                ("English", 'C'),
+                ("Esperanto", 'eo'),
+                ("Francais", 'fr_FR'),
+                )))
         ew.add_checkbox(_("Record activity trace"), "record-actions", _("Record activity trace"))
         ew.add_checkbox(_("Expert mode"), "expert-mode", _("Offer advanced possibilities"))
+        ew.add_checkbox(_("Prefer WYSIWYG"), "prefer-wysiwyg", _("Use WYSIWYG editors when possible (HTML, SVG)"))
+        ew.add_checkbox(_("Player control in edit popups"), 'player-shortcuts-in-edit-windows', _("Enable generic player controls in edit windows. This may be undesirable since it overloads some standard text-edition behaviours (esp. control-left/right)."))
 
         ew.add_option(_("Open popups"), 'popup-destination',
-                      _("Where should we open adhoc views?"),
-                      {
-                _("as a popup window"): 'popup',
-                _("embedded east of the video"): 'east',
-                _("embedded west of the video"): 'west',
-                _("embedded south of the video"): 'south',
-                _("embedded at the right of the window"): 'fareast',
-                })
+                      _("Where should we open adhoc views?"), odict((
+                (_("as a popup window"), 'popup'),
+                (_("embedded east of the video"), 'east'),
+                (_("embedded west of the video"), 'west'),
+                (_("embedded south of the video"), 'south'),
+                (_("embedded at the right of the window"), 'fareast'),
+                )))
 
         ew.add_spin(_("History size"), "history-size-limit", _("History filelist size limit"),
                     -1, 20)
@@ -3683,46 +4246,48 @@ class AdveneGUI(object):
         ew.add_title(_("General"))
         ew.add_checkbox(_("Weekly update check"), 'update-check', _("Weekly check for updates on the Advene website"))
         ew.add_option(_("On exit,"), 'imagecache-save-on-exit',
-                      _("How to handle screenshots on exit"),
-                      {
-                _("never save screenshots"): 'never',
-                _("always save screenshots"): 'always',
-                _("ask before saving screenshots"): 'ask',
-                })
+                      _("How to handle screenshots on exit"), odict((
+                (_("never save screenshots"), 'never'),
+                (_("always save screenshots"), 'always'),
+                (_("ask before saving screenshots"), 'ask'),
+                )))
         ew.add_option(_("Auto-save"), 'package-auto-save',
-                      _("Data auto-save functionality"),
-                      {
-                _("is desactivated"): 'never',
-                _("is done automatically"): 'always',
-                _("is done after confirmation"): 'ask',
-                })
+                      _("Data auto-save functionality"), odict((
+                (_("is desactivated"), 'never'),
+                (_("is done automatically"), 'always'),
+                (_("is done after confirmation"), 'ask'),
+                )))
         ew.add_spin(_("Auto-save interval (in s)"), 'package-auto-save-interval', _("Interval (in seconds) between package auto-saves"), 5, 60 * 60)
 
-        ew.add_title(_("Standard views"))
+        ew.add_title(_("Workspace"))
 
         ew.add_option(_("On package saving,"), 'save-default-workspace',
-                      _("Do you wish to save the default workspace with the package?"),
-                      {
-                _("never save the current workspace"): 'never',
-                _("always save the current workspace"): 'always',
-                _("ask before saving the current workspace"): 'ask',
-                })
+                      _("Do you wish to save the default workspace with the package?"), odict((
+                (_("never save the current workspace"), 'never'),
+                (_("always save the current workspace"), 'always'),
+                (_("ask before saving the current workspace"), 'ask'),
+                )))
 
         ew.add_option(_("On package load,"), 'restore-default-workspace',
-                      _("Do you wish to load the workspace saved with the package?"),
-                      {
-                _("never load the saved workspace"): 'never',
-                _("always load the saved workspace"): 'always',
-                _("ask before loading the saved workspace"): 'ask',
-                })
+                      _("Do you wish to load the workspace saved with the package?"), odict((
+                (_("never load the saved workspace"), 'never'),
+                (_("always load the saved workspace"), 'always'),
+                (_("ask before loading the saved workspace"), 'ask'),
+                )))
 
         ew.add_title(_("Video Player"))
+        ew.add_checkbox(_("Autostart"), 'player-autostart', _("Automatically start the player when loading a media file (either directly or through a package)"))
+        ew.add_checkbox(_("Fulscreen timestamp"), 'player-fullscreen-timestamp', _("Display the timestamp over the video when in fullscreen mode"))
         ew.add_checkbox(_("Enable captions"), "player-caption", _("Enable captions over the video"))
         ew.add_file_selector(_("Caption font"), "player-osdfont", _("TrueType font for captions"))
         ew.add_checkbox(_("Enable SVG"), "player-svg", _("Enable SVG captions over the video"))
 
         ew.add_checkbox(_("Enable snapshots"), "player-snapshot", _("Enable snapshots"))
         ew.add_spin(_("Snapshot width"), "player-snapshot-width", _("Snapshot width in pixels."), 0, 1280)
+        ew.add_spin(_("Verbosity"), "player-level", _("Verbosity level. -1 for no messages."),
+                    -1, 3)
+
+        ew.add_label(_("Devices"))
 
         options={_("Standard"): 'default' }
         if config.data.os == 'win32':
@@ -3733,9 +4298,13 @@ class AdveneGUI(object):
             ew.add_entry(_("DVD device"), 'player-dvd-device', _("Device for the DVD"))
             options[_("X11")] = 'x11'
             options[_("XVideo")] = 'xvideo'
+            options[_("GL")] = 'gl'
+
         ew.add_option(_("Video output"), "player-vout", _("Video output module"), options)
-        ew.add_spin(_("Verbosity"), "player-level", _("Verbosity level. -1 for no messages."),
-                    -1, 3)
+
+        ew.add_label(_("Recorder options"))
+        ew.add_entry(_("Audio input"), 'player-audio-record-device', _("Device name for audio input (with gstrecorder plugin)"))
+        ew.add_checkbox(_("Record video"), 'player-record-video', _("Record both video and audio"))
         
         if config.data.preferences['expert-mode']:
             ew.add_label(_("<i>Experimental</i>"))
@@ -3743,9 +4312,27 @@ class AdveneGUI(object):
             ew.add_checkbox(_("Caption"), 'display-caption', _("Embed the caption view below the video"))
 
         ew.add_title(_("Time-related"))
+        ew.add_option(_("Time format"), 'timestamp-format', _("Format used to display timecodes"), odict( (
+                    ('HH:MM:SS.sss', '%H:%M:%.S'),
+                    ('HH:MM:SSfNN (frame number)', '%H:%M:%fS'),
+                    ('HH:MM:SS', '%H:%M:%S'),
+                    ('MM:SS.sss', '%M:%.S'),
+                    ('MM:SS', '%M:%S'),
+                    ('SS.sss', '%.S'),
+                    ('SS', '%S'),
+                    )) )
+        fps = [ 10, 12, 24, 25, 40, 50, 60, 72 ]
+        d = config.data.preferences['default-fps']
+        if not d in fps:
+            fps.append(d)
+            fps.sort()
+        ew.add_option(_("Default FPS"), 'default-fps',
+                      _("Default FPS (frame-per-second) value, when entering or displaying timestamps with frame numbers."), odict( (str(f), f) for f in fps))
         ew.add_spin(_("Time increment"), "time-increment", _("Skip duration, when using control-left/right or forward/rewind buttons (in ms)."), 1, 300000)
         ew.add_spin(_("Second time increment"), "second-time-increment", _("Skip duration, when using control-shift-left/right (in ms)."), 1, 300000)
         ew.add_spin(_("Third time increment"), "third-time-increment", _("Skip duration, when using control-shift-up/down (in ms)."), 1, 300000)
+        ew.add_checkbox(_("Custom Up/Down"), 'custom-updown-keys', _("Use third time increment for up/down navigation without having to hold shift."))
+        ew.add_label("")
         ew.add_spin(_("Scroll increment"), "scroll-increment", _("On most annotations, control+scrollwheel will increment/decrement their bounds by this value (in ms)."), 10, 10000)
         ew.add_spin(_("Second scroll increment"), "second-scroll-increment", _("On most annotations, control+shift+scrollwheel will increment/decrement their bounds by this value (in ms)."), 10, 10000)
         ew.add_label("")
@@ -3755,23 +4342,46 @@ class AdveneGUI(object):
         ew.add_spin(_("Button height"), 'button-height', _("Height of annotation widgets"), 10, 50)
         ew.add_spin(_("Interline height"), 'interline-height', _("Height of interlines"), 0, 40)
 
+        ew.add_title(_("Text content"))
+        ew.add_checkbox(_("Completion mode"), 'completion-mode', _("Enable dynamic completion mode"))
+        ew.add_checkbox(_("Abbreviation mode"), 'abbreviation-mode', _("Enable abbreviation mode"))
+        ew.add_text(_("Abbreviations"), 'text-abbreviations', _("Text abbreviations. 1 entry per line. Each line consists of the abbreviation followed by its replacement."))
+
         ew.add_title(_("Text-To-Speech"))
         ew.add_option(_("TTS language"), 'tts-language',
-                      _("What language settings should be used for text-to-speech"),
-                      {
-                _("French"): 'fr',
-                _("English"): 'en',
-                _("Esperanto"): 'eo',
-                _("Spanish"): 'es',
-                })
+                      _("What language settings should be used for text-to-speech"), odict((
+                (_("English"), 'en'),
+                (_("French"), 'fr'),
+                (_("Spanish"), 'es'),
+                )))
+        ew.add_entry(_("TTS Encoding"), 'tts-encoding',
+                      _("What encoding should be used to communicate with the TTS engine"), entries = [ 'utf8', 'utf16', 'latin1', 'cp1252' ] )
+        ew.add_option(_("TTS Engine"), 'tts-engine',
+                      _("Which TTS engine should be used (modification requires restarting Advene to take into account)"), odict((
+                (_("Automatic"), 'auto'),
+                (_("eSpeak"), 'espeak'),
+                (_("Custom script with standard input"), 'custom'),
+                (_("Custom script with arguments"), 'customarg'),
+                (_("SAPI"), 'sapi'),
+                (_("MacOS X say"), 'macosx'),
+                (_("Generic (text output)"), 'generic'),
+                )))
 
         res=ew.popup()
         if res:
             player_need_restart = False
+            app_need_restart = False
 
             cache['package-auto-save-interval']=cache['package-auto-save-interval']*1000
+            if cache['text-abbreviations'] != config.data.preferences['text-abbreviations']:
+                self.text_abbreviations.clear()
+                self.text_abbreviations.update( dict( l.split(" ", 1) for l in config.data.preferences['text-abbreviations'].splitlines() ) )
+
             for k in direct_options:
+                if k in restart_needed_options and config.data.preferences[k] != cache[k]:
+                    app_need_restart = True
                 config.data.preferences[k] = cache[k]
+
             for k in ('font-size', 'button-height', 'interline-height'):
                 config.data.preferences['timeline'][k] = cache[k]
             for k in path_options:
@@ -3797,6 +4407,9 @@ class AdveneGUI(object):
             # Save preferences
             config.data.save_preferences()
 
+            if app_need_restart:
+                dialog.message_dialog(_("You should restart Advene to take some options into account."), modal=False)
+
         return True
 
     def on_save_imagecache1_activate (self, button=None, data=None):
@@ -3808,20 +4421,32 @@ class AdveneGUI(object):
                 self.log(_("Cannot save imagecache for %(url)s: %(e)s") % locals())
         return True
 
+    def on_reset_imagecache_activate (self, button=None, data=None):
+        for ic in self.controller.imagecache.itervalues():
+            valid = ic.valid_snapshots()
+            ic.reset()
+            for t in valid:
+                self.controller.notify('SnapshotUpdate', position=t)
+        return True
+
     def on_restart_player1_activate (self, button=None, data=None):
         self.log (_("Restarting player..."))
         self.controller.restart_player ()
         return True
 
-    def on_slider_button_press_event (self, button=None, data=None):
+    def on_slider_button_press_event (self, button=None, event=None):
         self.slider_move = True
+        if event.button == 1:
+            event.button = 2
         return False
 
-    def on_slider_button_release_event (self, button=None, data=None):
+    def on_slider_button_release_event (self, button=None, event=None):
         if self.controller.player.playlist_get_list():
             p = self.controller.create_position (value = long(self.gui.slider.get_value ()))
             self.controller.update_status('set', p)
         self.slider_move = False
+        if event.button == 1:
+            event.button = 2
         return False
 
     def on_slider_scroll_event (self, widget=None, event=None):
@@ -3859,6 +4484,23 @@ class AdveneGUI(object):
         self.display_textfile(config.data.advenefile('advene.log', 'settings'),
                               title=_("Advene log"),
                               viewname='advenelogview')
+        return True
+
+    def on_advene_log_folder_display(self, button=None, data=None):
+        d = config.data.advenefile('', 'settings')
+        if config.data.os == 'win32':
+            os.startfile(d)
+        elif config.data.os == 'darwin':
+            os.system('open "%s"' % d)
+        else:
+            # Linux is more problematic...
+            for p in ('kfmclient', 'gnome-open', 'xdg-open'):
+                prg = helper.find_in_path(p)
+                if prg is not None:
+                    if p == 'kfmclient':
+                        prg = prg + " openURL"
+                    os.system('%s "%s"' % (prg, d))
+                    break
         return True
 
     def on_create_view_activate (self, button=None, data=None):
@@ -3919,7 +4561,9 @@ class AdveneGUI(object):
         try:
             source=Package(url=filename)
         except Exception, e:
-            self.log("Cannot load %s file: %s" % (filename, unicode(e)))
+            msg = "Cannot load %s file: %s" % (filename, unicode(e))
+            self.log(msg)
+            dialog.message_dialog(msg, icon=gtk.MESSAGE_ERROR)
             return True
         m=Merger(self.controller, sourcepackage=source, destpackage=self.controller.package)
         m.popup()
@@ -3966,7 +4610,7 @@ class AdveneGUI(object):
         else:
             # Existing view. Check that it is already an workspace-view
             if v.content.mimetype != 'application/x-advene-workspace-view':
-                dialog.message_dialog(_("Error: the view %s exists and is not a workspace view.") % ident)
+                dialog.message_dialog(_("Error: the view %s exists and is not a workspace view.") % ident, icon=gtk.MESSAGE_ERROR)
                 return True
             create=False
         v.title=title
@@ -4042,34 +4686,49 @@ class AdveneGUI(object):
         hb=gtk.HBox()
         hb.pack_start(gtk.Label(_("Video URL")), expand=False)
         video_entry=gtk.Entry()
-        video_entry.set_tooltip_text(_("URL for the video, if it is available on a sharing website.\nOnly for GoogleVideo and Youtube for the moment"))
-        u=self.controller.package[config.data.namespace+'website-export-video-url']
+        video_entry.set_tooltip_text(_("URL for the video, if it is available on a sharing website (Only Youtube for the moment).\n It can also be a h264/ogg file, which will in this case be handled by the HTML5 video player."))
+        u=self.controller.package.meta[config.data.namespace+'website-export-video-url']
+        if u is None:
+            u = self.controller.get_current_mediafile()
+            if u:
+                u = os.path.basename(u)
         if u is not None:
             video_entry.set_text(u)
+
         hb.add(video_entry)
         v.pack_start(hb, expand=False)
 
         pb=gtk.ProgressBar()
         v.pack_start(pb, expand=False)
 
+        w.should_continue = False
+
         def cb(val, msg):
             if val > 0 and val <= 1.0:
                 pb.set_fraction(val)
+            if len(msg) > 80:
+                msg = msg[:36] + "(...)" + msg[-36:]
             pb.set_text(msg)
             while gtk.events_pending():
                 gtk.main_iteration()
-            return True
+            return w.should_continue
 
         def do_conversion(b):
-            b.set_sensitive(False)
-            d=dirname_entry.get_text()
+            d=unicode(dirname_entry.get_text())
             if not d:
                 return False
-            self.controller.package.meta[config.data.namespace + 'website-export-directory'] = d
-            video=video_entry.get_text()
+
+            video=unicode(video_entry.get_text())
+
+            if (self.controller.package.meta[config.data.namespace+ 'website-export-directory'] != d
+                or self.controller.package.meta[config.data.namespace+ 'website-export-video-url'] != video):
+                self.controller.package._modified = True
+            self.controller.package.meta[config.data.namespace+ 'website-export-directory'] = d
             if video:
                 self.controller.package.meta[config.data.namespace + 'website-export-video-url'] = video
             b.set_sensitive(False)
+            w.should_continue = True
+
             try:
                 self.controller.website_export(destination=d,
                                                max_depth=max_depth.get_value_as_int(),
@@ -4078,12 +4737,17 @@ class AdveneGUI(object):
             except OSError, e:
                 dialog.message_dialog(_("Could not export data: ") + unicode(e), icon=gtk.MESSAGE_ERROR)
                 b.set_sensitive(True)
+            self.log(_("Website export to %s completed") % d)
+            w.destroy()
             return True
 
         dirname_entry.connect('activate', do_conversion)
 
         def do_cancel(*p):
-            w.destroy()
+            if w.should_continue:
+                w.should_continue = False
+            else:
+                w.destroy()
             return True
 
         hb=gtk.HButtonBox()
@@ -4118,9 +4782,9 @@ class AdveneGUI(object):
         # FIXME: Advene2
         ic=self.controller.package.imagecache
         for a in self.controller.package.all.annotations:
-            if not ic.is_initialized(a.begin):
+            if not ic[a.media.url].is_initialized(a.begin):
                 missing.add(a.begin)
-            if not ic.is_initialized(a.end):
+            if not ic[a.media.url].is_initialized(a.end):
                 missing.add(a.end)
         if missing:
             dialog.message_dialog(_("Updating %d snapshots") % len(missing), modal=False)
@@ -4230,6 +4894,21 @@ class AdveneGUI(object):
         w.show_all()
         w.set_modal(True)
 
+    def on_simplify_interface_activate(self, *p):
+        if self.viewbook['east'].widget.get_visible():
+            # Full state -> go into simplified state
+            for v in self.viewbook.values():
+                v.widget.hide()
+            self.gui.toolbar_container.hide()
+            self.gui.stbv_combo.get_parent().hide()
+        else:
+            # Simplified state -> go into full state
+            for v in self.viewbook.values():
+                v.widget.show()
+            self.gui.toolbar_container.show()
+            self.gui.stbv_combo.get_parent().show()
+        return True
+
     def on_shotdetect_activate(self, *p):
         if not os.path.exists(config.data.path['shotdetect']):
             dialog.message_dialog(_("The <b>shotdetect</b> application does not seem to be installed. Please check that it is present and that its path is correctly specified in preferences." ), icon=gtk.MESSAGE_ERROR)
@@ -4286,12 +4965,11 @@ class AdveneGUI(object):
             i.process_file(filename)
             if filename.endswith('.txt'):
                 # Intermediary import. Fix some details.
-                at=i.annotationtype
+                at=i.defaulttype
                 at.mimetype='application/x-advene-structured'
                 at.representation='here/content/parsed/num'
                 at.title=_("Incomplete shots")
             self.controller.package._modified = True
-            self.controller.notify('AnnotationTypeCreate', annotationtype=i.annotationtype)
             self.controller.notify('PackageLoad', package=self.controller.package)
             msg=_("Detected %s shots") % i.statistics['annotation']
             dialog.message_dialog(msg, modal=False)
@@ -4369,6 +5047,11 @@ class AdveneGUI(object):
 
             This method is meant to be run in its own thread.
             """
+            def subprocess_setup():
+                # Python installs a SIGPIPE handler by default. This is usually not what
+                # non-Python subprocesses expect.
+                signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
             shot_re=re.compile('Shot log\s+::\s+(.+)')
             exp_re = re.compile('(\d*\.\d*)e\+(\d+)')
 
@@ -4376,11 +5059,18 @@ class AdveneGUI(object):
                    '-i', gobject.filename_from_utf8(movie.encode('utf8')),
                    '-o', gobject.filename_from_utf8(pb._tempdir.encode('utf8')),
                    '-s', str(pb._sensitivity.get_value_as_int()) ]
+
+            if config.data.os == 'win32':
+                kw = { 'creationflags': win32process.CREATE_NO_WINDOW }
+            else:
+                kw = { 'preexec_fn': subprocess_setup }
             try:
                 pb._shots=subprocess.Popen( argv,
                                             bufsize=0,
                                             shell=False,
-                                            stderr=subprocess.PIPE )
+                                            stdout=subprocess.PIPE,
+                                            stderr=subprocess.PIPE,
+                                            **kw )
             except OSError, e:
                 do_cancel(None, pb)
                 dialog.message_dialog(_("Could not run shotdetect: %s") % unicode(e), modal=False)
@@ -4412,7 +5102,7 @@ class AdveneGUI(object):
                     do_gui_operation(pb.set_label_value,
                                      _("Detected shot #%(num)d at %(pos)s ") % {
                             'num': len(pb._datapoints),
-                            'pos': helper.format_time(ts) 
+                            'pos': helper.format_time_reference(ts)
                             },
                                      prg)
 
@@ -4424,16 +5114,16 @@ class AdveneGUI(object):
             b.set_sensitive(False)
 
             pb._tempdir=unicode(tempfile.mkdtemp('', 'shotdetect'), sys.getfilesystemencoding())
-            if config.data.os == 'win32' or self.controller.cached_duration <= 0:
-                # Async. reading from a pipe is a mess on win32. A
-                # proper fix should be found, but in the meantime,
-                # give a feedback to the user.  Do it also when the
-                # movie length is unknown, so that the user can know
-                # there is activity even if no shot is detected.
-                def progress():
-                    pb.pulse()
-                    return True
-                pb._source=gobject.timeout_add(500, progress)
+            #~ if config.data.os == 'win32' or self.controller.cached_duration <= 0:
+                #~ # Async. reading from a pipe is a mess on win32. A
+                #~ # proper fix should be found, but in the meantime,
+                #~ # give a feedback to the user.  Do it also when the
+                #~ # movie length is unknown, so that the user can know
+                #~ # there is activity even if no shot is detected.
+                #~ def progress():
+                    #~ pb.pulse()
+                    #~ return True
+                #~ pb._source=gobject.timeout_add(500, progress)
 
             t=threading.Thread(target=execute_shotdetect, args= [ pb ])
             t.start()

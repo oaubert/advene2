@@ -1,6 +1,6 @@
 #
 # Advene: Annotate Digital Videos, Exchange on the NEt
-# Copyright (C) 2008 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
+# Copyright (C) 2008-2012 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
 #
 # Advene is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -852,6 +852,12 @@ class AdveneWebServer:
         settings = {
             'global': {
                 'server.socket_port' : port,
+                # Should do this for ipv6:
+                #'server.socket_host' : '::',
+                # but looks like we cannot listen to both ipv4 and ipv6
+                # despite http://stackoverflow.com/questions/1555319/cherrypy-server-unavailable-from-anything-but-localhost
+                # but http://stackoverflow.com/questions/4140550/firefox-cant-establish-connection-with-localhost-while-running-a-cherrypy-tutori
+
                 #'server.socket_queue_size': 5,
                 #'server.protocol_version': "HTTP/1.0",
                 'log.screen': False,
@@ -886,22 +892,29 @@ class AdveneWebServer:
         cherrypy.tree.mount(Root(controller), config=app_config)
 
         try:
-            # server.quickstart *must* be started from the main thread.
-            cherrypy.server.quickstart()
+            # engine.start *must* be started from the main thread.
+            cherrypy.engine.start()
         except Exception, e:
             self.controller.log(_("Cannot start HTTP server: %s") % unicode(e))
 
-    def start(self, *p):
+    def start(self):
         """Start the webserver.
         """
-        self.controller.queue_action(cherrypy.engine.start)
+        def protected_start():
+            try:
+                cherrypy.engine.start()
+            except Exception, e:
+                self.controller.log(_("Cannot start HTTP server: %s") % unicode(e))
+        self.controller.queue_action(protected_start)
         return True
 
     def stop(self):
         """Stop the webserver.
         """
-        cherrypy.engine.stop()
-        cherrypy.server.stop()
+        cherrypy.engine.exit()
+
+    def is_running(self):
+        return cherrypy.engine.state == cherrypy.engine.states.STARTED
 
 class BasicController:
     def __init__(self):

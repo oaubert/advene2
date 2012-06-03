@@ -1,6 +1,6 @@
 #
 # Advene: Annotate Digital Videos, Exchange on the NEt
-# Copyright (C) 2008 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
+# Copyright (C) 2008-2012 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
 #
 # Advene is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -221,6 +221,12 @@ class AdveneController(object):
         # Scrubbing timeout guard
         self.scrub_lastvalue = None
 
+        # Misc. modules: some features are implemented as plugins but
+        # do not fit in the available categories (content-handler,
+        # view, tracer...). Here is a placeholder for keeping their
+        # reference, indexed by view name. The value is a class.
+        self.generic_features = {}
+
         # Event handler initialization
         self.event_handler = advene.rules.ecaengine.ECAEngine (controller=self)
         self.modifying_events = self.event_handler.catalog.modifying_events
@@ -414,6 +420,13 @@ class AdveneController(object):
         """
         config.data.register_player(imp)
 
+    def register_generic_feature(self, name, feature_class):
+        """Register a generic feature.
+        """
+        if name in self.generic_features:
+            self.log(_("Warning: redefining an existing feature %s") % name)
+        self.generic_features[name] = feature_class
+
     def register_slave_player(self, p):
         """Register a slave video player.
         """
@@ -600,7 +613,7 @@ class AdveneController(object):
                 # Special search.
                 res=[]
                 for i in searched.split():
-                    e=p.get_element_by_id(i)
+                    e=p.get(i)
                     if e is not None:
                         result.append(e)
                 continue
@@ -740,14 +753,14 @@ class AdveneController(object):
             pass
 
         try:
-            self.user_plugins=self.load_plugins(config.data.advenefile('plugins', 'settings'),
-                                                prefix="advene_user_plugins")
+            self.app_plugins=self.load_plugins(os.path.join(os.path.dirname(advene.__file__), 'plugins'),
+                                               prefix="advene_app_plugins")
         except OSError:
             pass
 
         try:
-            self.app_plugins=self.load_plugins(os.path.join(os.path.dirname(advene.__file__), 'plugins'),
-                                               prefix="advene_app_plugins")
+            self.user_plugins=self.load_plugins(config.data.advenefile('plugins', 'settings'),
+                                                prefix="advene_user_plugins")
         except OSError:
             pass
 
@@ -758,16 +771,6 @@ class AdveneController(object):
         self.event_handler.internal_rule (event="PackageLoad",
                                           method=self.manage_package_load)
 
-        if config.data.webserver['mode']:
-            try:
-                self.server = AdveneWebServer(controller=self, port=config.data.webserver['port'])
-                serverthread = threading.Thread (target=self.server.start)
-                serverthread.setName("Advene webserver")
-                serverthread.start()
-            except socket.error:
-                if config.data.os != 'win32':
-                    self.busy_port_info()
-                self.log(_("Deactivating web server"))
         media=None
         # Arguments handling
         for uri in args:
@@ -820,7 +823,70 @@ class AdveneController(object):
 
         self.player.check_player()
 
+        if config.data.webserver['mode']:
+            try:
+                self.server = AdveneWebServer(controller=self, port=config.data.webserver['port'])
+                serverthread = threading.Thread (target=self.server.start)
+                serverthread.setName("Advene webserver")
+                serverthread.start ()
+            except socket.error:
+                if config.data.os != 'win32':
+                    self.busy_port_info()
+                self.log(_("Deactivating web server"))
+                self.server = None
         return True
+
+    def create_annotation(self, position, type, duration=None, content=None):
+        position=long(position)
+        if position > self.cached_duration:
+            return None
+        id_=self.package._idgenerator.get_id(Annotation)
+
+        if duration is None:
+            duration = self.cached_duration / 20
+        if position + duration > self.cached_duration:
+            duration = self.cached_duration - position
+
+        el=self.package.create_annotation(
+            id=id_,
+            type=type,
+            media = self.controller.current_media,
+            begin=position,
+            end=position + duration)
+        if content is not None:
+            if getattr(el.type, '_fieldnames', None):
+                # Structured data
+                if "=" in content:
+                    # Let's assume that content is simple-structured data.
+                    try:
+                        data = dict( (k, v) for l in content.splitlines() for (k, v) in l.split('=') )
+                        # Add other keys
+                        data.update(dict( (f, "") for f in sorted(el.type._fieldnames) ))
+                        # Serialize
+                        content = "\n".join( "%s=%s" % (k, v) for (k, v) in data.iteritems() )
+                    except ValueError:
+                        # Badly formatted data
+                        content = "\n".join( "%s=" % f for f in sorted(el.type._fieldnames) ) + "\ncontent=%s" % content.replace("\n", " ")
+                else:
+                    content = "\n".join( "%s=" % f for f in sorted(el.type._fieldnames) ) + "\ncontent=%s" % content.replace("\n", " ")
+            elif 'svg' in el.type.mimetype:
+                if not '<svg' in content:
+                    # It must be simple text. Generate appropriate SVG.
+                    content = """<svg:svg width="640pt" height="480pt" preserveAspectRatio="xMinYMin meet" version="1" viewBox="0 0 640 480" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svg="http://www.w3.org/2000/svg">
+  <text fill="green" name="Content" stroke="green" style="stroke-width:1; font-family: sans-serif; font-size: 22" x="8" y="390">%s</text>
+</svg:svg>""" % content
+
+            el.content.data=content
+        elif getattr(el.type, '_fieldnames', None):
+            el.content.data="\n".join( "%s=" % f for f in sorted(el.type._fieldnames) )
+        elif 'svg' in el.type.mimetype:
+            el.content.data = """<svg:svg width="640pt" height="480pt" preserveAspectRatio="xMinYMin meet" version="1" viewBox="0 0 640 480" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svg="http://www.w3.org/2000/svg">
+  <rect fill="none" name="Rect" stroke="green" style="stroke-width:2;" x="100" y="100" width="100" height="100" />
+</svg:svg>"""
+
+        el.complete=False
+        self.notify('AnnotationCreate', annotation=el)
+        return el
 
     def create_position (self, value=0, key=None, origin=None):
         """Create a new player-specific position.
@@ -843,7 +909,7 @@ class AdveneController(object):
         if False:
             print "Notify %s (%s): %s" % (
                 event_name,
-                helper.format_time(self.player.current_position_value),
+                helper.format_time_reference(self.player.current_position_value),
                 str(kw))
             import traceback
             traceback.print_stack()
@@ -918,6 +984,8 @@ class AdveneController(object):
             # Check if the player has async_snapshot capability.
             async=getattr(self.player, 'async_snapshot', None)
             if async is not None:
+                if position is None:
+                    position = self.player.current_position_value
                 if self.player.snapshot_notify is None:
                     self.player.snapshot_notify=self.snapshot_taken
                 async(position or 0)
@@ -943,6 +1011,11 @@ class AdveneController(object):
 
         Cf http://cweiske.de/howto/launch/ for details.
         """
+        if (url.startswith(self.get_urlbase()) and
+                           (self.server is None or not self.server.is_running())):
+            # Cannot open a local URL: the webserver is not active
+            self.log(_("Cannot open Advene URL %s: the webserver is not running.") % url)
+            return True
         if self.gui and self.gui.open_url_embedded(url):
             return True
         if config.data.os == 'win32' or config.data.os == 'darwin':
@@ -1024,6 +1097,14 @@ class AdveneController(object):
             url=u"%s/view/%s" % (url, defaultview)
         return url
 
+    def get_urlbase(self):
+        """Return the URL base.
+        """
+        if self.server is not None:
+            return self.server.urlbase
+        else:
+            return "http:///"
+
     def get_title(self, element, representation=None, max_size=None):
         """Return the title for the given element.
         """
@@ -1060,10 +1141,11 @@ class AdveneController(object):
                 r=element.content.data
                 if element.content.mimetype == 'image/svg+xml':
                     return "SVG graphics"
+                elif not element.content.is_textual:
+                    return "Data"
                 if not r:
                     r=element.id
                 return cleanup(r)
-
             else:
                 c=self.build_context(here=element)
                 try:
@@ -1152,14 +1234,12 @@ class AdveneController(object):
                     # And convert it to a pathname (for Windows)
                     if d.startswith('file:'):
                         d=d.replace('file://', '')
-                    d=os.path.dirname(urllib.url2pathname(d))
+                    d=urllib.url2pathname(d)
+                    d=unicode(os.path.dirname(d), sys.getfilesystemencoding())
                 if '~' in d:
                     # Expand userdir
-                    d=os.path.expanduser(d)
-                try:
-                    d=unicode(d)
-                except UnicodeDecodeError:
-                    d=unicode(d, sys.getfilesystemencoding())
+                    d=unicode(os.path.expanduser(d), sys.getfilesystemencoding())
+
                 n=os.path.join(d, name)
                 # FIXME: if d is a URL, use appropriate method (urllib.??)
                 if os.path.exists(n.encode(sys.getfilesystemencoding(), 'ignore')):
@@ -1194,6 +1274,20 @@ class AdveneController(object):
         # Reset cached_duration so that it will be updated on play
         self.pending_duration_update = True
         self.notify("MediaChange", uri=uri)
+
+    def update_package_title(self):
+        """Generate a default package title if none was set.
+        """
+        if (len(self.package.all.annotations)
+            and (not self.package.title
+                 or self.package.title == "Template package"
+                 or self.package.title.startswith(_("Analysis of ")))
+            and self.get_default_media()):
+            self.package.title = _("Analysis of ") + unicode(os.path.basename(self.get_default_media()))
+            self.notify("PackageEditEnd", package=self.package)
+            return True
+        else:
+            return False
 
     def set_default_media (self, uri, package=None):
         """Set the default media for the package.
@@ -1996,10 +2090,7 @@ class AdveneController(object):
         p=self.player
         if p.status == p.PlayingStatus:
             self.update_status('pause')
-        elif p.status != p.PauseStatus:
-            self.update_status('start')
-            self.update_status('pause')
-        self.move_position (int(1000 / 25.0 * number_of_frames), notify=False)
+        self.move_position (int(1000 * number_of_frames / config.data.preferences['default-fps']), notify=False)
         return True
 
     def move_position (self, value, relative=True, notify=True):
@@ -2019,49 +2110,6 @@ class AdveneController(object):
                                                              origin=self.player.AbsolutePosition),
                                 notify=notify)
 
-    def generate_sorted_lists (self, position):
-        """Return two sorted lists valid for a given position.
-
-        (i.e. all annotations beginning or ending after the
-        position). The lists are sorted according to the begin and end
-        position respectively.
-
-        The elements of the list are (annotation, begin, end).
-
-        The update_display method only has to check the first element
-        of each list. If there is a match, it should trigger the
-        events and pop the element.
-
-        If there is a seek operation, we should regenerate the lists.
-
-        @param position: the current position
-        @type position: int
-        @return: a tuple of two lists containing triplets
-        @rtype: tuple
-        """
-        if self.current_media is None:
-            return None, None
-        
-        l = [ (a, a.begin, a.end)
-              for a in self.package.all.iter_annotations(media=self.current_media)
-              if a.begin >= position or a.end >= position ]
-        future_begins = list(l)
-        future_ends = l
-        future_begins.sort(key=operator.itemgetter(1))
-        future_ends.sort(key=operator.itemgetter(2))
-
-        #print "Position: %s" % helper.format_time(position)
-        #print "Begins: %s\nEnds: %s" % ([ a[0].id for a in future_begins[:4] ],
-        #                                [ a[0].id for a in future_ends[:4] ])
-        return future_begins, future_ends
-
-    def reset_annotation_lists (self):
-        """Reset the future annotations lists."""
-        #print "reset annotation lists"
-        self.future_begins = None
-        self.future_ends = None
-        self.active_annotations = []
-
     def update_status (self, status=None, position=None, notify=True):
         """Update the player status.
 
@@ -2073,10 +2121,13 @@ class AdveneController(object):
         @param position: an optional position
         @type position: Position
         """
+        if isinstance(position, Annotation):
+            position = position.begin
         position_before=self.player.current_position_value
         #print "update status:", status, position
-        if status == 'set' or status == 'start' or status == 'stop':
-            self.reset_annotation_lists()
+        if (status == 'set' or status == 'start' or status == 'stop'):
+            if position != position_before:
+                self.reset_annotation_lists()
             if notify:
                 # Bit of a hack... In a loop context, setting the
                 # position is done with notify=False, so we do not
@@ -2091,7 +2142,7 @@ class AdveneController(object):
             #     print "update_status %s %i" % (status, position.value)
             # else:
             #     print "update_status %s %s" % (status, position)
-            if self.player.playlist_get_list():
+            if self.player.playlist_get_list() or 'record' in self.player.player_capabilities:
                 self.player.update_status (status, position)
                 for p in self.slave_players:
                     p.update_status(status, position)
@@ -2099,7 +2150,12 @@ class AdveneController(object):
                 if hasattr(position, 'value'):
                     # It is a player.Position. Do a simple conversion
                     # (which will fail in many cases)
-                    position=position.value
+                    if position.origin == self.player.RelativePosition:
+                        position = self.player.current_position_value + position.value
+                    elif position.origin == self.player.ModuloPosition:
+                        position = (self.player.current_position_value + position.value) % self.player.stream_duration
+                    else:
+                        position=position.value
                 self.update_snapshot(position)
         except Exception, e:
             # FIXME: we should catch more specific exceptions and
@@ -2167,6 +2223,57 @@ class AdveneController(object):
 
         return True
 
+    def generate_sorted_lists (self, position):
+        """Return two sorted lists and a list of active annotations valid for a given position.
+
+        (i.e. all annotations beginning or ending after the
+        position). The lists are sorted according to the begin and end
+        position respectively.
+
+        The elements of the begin/end lists are (annotation, begin,
+        end). The elements of active_annotations are annotations.
+
+        The update_display method only has to check the first element
+        of each list. If there is a match, it should trigger the
+        events and pop the element.
+
+        If there is a seek operation, we should regenerate the lists.
+
+        @param position: the current position
+        @type position: int
+        @return: a tuple of three lists containing triplets or simple annotations
+        @rtype: tuple
+        """
+        if self.current_media is None:
+            return [], [], []
+
+        # Substract 20ms to the current position, so that in case the
+        # generate_sorted_lists is triggered due to selecting an
+        # annotation, the annotation is put in future_begins and its
+        # AnnotatioBegin gets correctly notified.
+        position -= 20
+        
+        l = [ (a, a.begin, a.end)
+              for a in self.package.all.iter_annotations(media=self.current_media)
+              if a.begin >= position or a.end >= position ]
+        future_begins = list(l)
+        future_ends = l
+        # FIXME: Adven2 - check validity of this line:
+        active = list(l)
+        future_begins.sort(key=operator.itemgetter(1))
+        future_ends.sort(key=operator.itemgetter(2))
+
+        #print "Position: %s" % helper.format_time(position)
+        #print "Begins: %s\nEnds: %s" % ([ a[0].id for a in future_begins[:4] ],
+        #                                [ a[0].id for a in future_ends[:4] ])
+        return future_begins, future_ends, active
+
+    def reset_annotation_lists (self):
+        """Reset the future annotations lists."""
+        self.future_begins = None
+        self.future_ends = None
+        self.active_annotations = []
+
     def update (self):
         """Update the information.
 
@@ -2181,12 +2288,15 @@ class AdveneController(object):
         # Process the event queue
         self.process_queue()
 
+        p = self.player
+
         pos=self.position_update ()
 
-        if pos < self.last_position:
-            # We did a seek compared to the last time, so we
-            # invalidate the future_begins and future_ends lists
-            # as well as the active_annotations
+        if pos < self.last_position or pos > self.last_position + 1000:
+            # We did a seek compared to the last time (backward, or
+            # more than 1s forward), so we invalidate the
+            # future_begins and future_ends lists as well as the
+            # active_annotations
             self.reset_annotation_lists()
 
         self.last_position = pos
@@ -2213,14 +2323,17 @@ class AdveneController(object):
                     t = 0
 
         if self.future_begins is None or self.future_ends is None:
-            self.future_begins, self.future_ends = self.generate_sorted_lists (pos)
+            self.future_begins, self.future_ends, self.active_annotations = self.generate_sorted_lists(pos)
+            #print "New lists", [a.id for a in self.active_annotations], [t[0].id for t in self.future_begins ]
 
-        if self.future_begins and self.player.status == self.player.PlayingStatus:
+        if self.future_begins and (p.status == p.PlayingStatus or p.status == p.PauseStatus):
             a, b, e = self.future_begins[0]
+            #print "Future begin", a.id, b, pos
             while b <= pos:
                 # Ignore if we were after the annotation end
                 self.future_begins.pop(0)
                 if e > pos:
+                    #print "AnnotationBegin", a.id, e, pos
                     self.notify ("AnnotationBegin",
                                  annotation=a,
                                  immediate=True)
@@ -2230,7 +2343,7 @@ class AdveneController(object):
                 else:
                     break
 
-        if self.future_ends and self.player.status == self.player.PlayingStatus:
+        if self.future_ends and (p.status == p.PlayingStatus or p.status == p.PauseStatus):
             a, b, e = self.future_ends[0]
             while e <= pos:
                 #print "Comparing %d < %d for %s" % (e, pos, a.content.data)
@@ -2247,6 +2360,13 @@ class AdveneController(object):
                 else:
                     break
 
+        if p.stream_duration > self.cached_duration + 2000:
+            # Something wrong here. Can be a live stream, or a unknown
+            # length movie.  The "+ 2000" is here to make sure that we
+            # do not spend our time updating, since it could be a live
+            # stream played/recorded.
+            self.cached_duration=long(p.stream_duration)
+            self.notify('DurationUpdate', duration=self.cached_duration)
         # Update the cached duration if necessary
         if self.pending_duration_update and self.player.stream_duration > 0:
             self.cached_duration = self.current_media.duration = long(self.player.stream_duration)
