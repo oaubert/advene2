@@ -1380,9 +1380,9 @@ class AdveneGUI(object):
         element may be AnnotationType, RelationType or Schema
         """
         try:
-            c=self.controller.build_context(here=element)
-            colname=c.evaluateValue(element.getMetaData(config.data.namespace, 'color'))
-            gtk_color=name2color(colname)
+            c = self.controller.build_context(here=element)
+            colname = c.evaluate(element.color)
+            gtk_color = name2color(colname)
         except:
             gtk_color=None
         d=gtk.ColorSelectionDialog(_("Choose a color"))
@@ -2269,7 +2269,7 @@ class AdveneGUI(object):
             # Add a pertinent extension
             if filter is None:
                 return filename
-            ext=filter.getMetaData(config.data.namespace, 'extension')
+            ext = filter.meta.get(config.data.namespace + 'extension')
             if not ext:
                 ext = helper.title2id(filter.id)
             return '.'.join( (filename, ext) )
