@@ -188,7 +188,7 @@ class Config(object):
             'edit-height': 25,
             }
 
-        self.namespace="http://advene.org/ns/advene-application/2.0"
+        self.namespace="http://advene.org/ns/advene-application/2.0/"
         self.transientns="http://advene.org/ns/transient/"
         #libadvene.model.serializers.unserialized.register_unzerialized_meta_prefix(ton_prefixe)
 
