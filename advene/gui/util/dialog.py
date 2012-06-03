@@ -1,6 +1,6 @@
 #
 # Advene: Annotate Digital Videos, Exchange on the NEt
-# Copyright (C) 2008 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
+# Copyright (C) 2008-2012 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
 #
 # Advene is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -112,12 +112,15 @@ def list_selector_widget(members=None,
             try:
                 return combo.get_model().get_value(combo.get_active_iter(), 1)
             except (TypeError, AttributeError):
-                return combo.child.get_text()
+                return unicode(combo.child.get_text())
         def set_current_element(combo, t):
             combo.child.set_text(t)
     else:
         def get_current_element(combo):
-            return combo.get_model().get_value(combo.get_active_iter(), 1)
+            if combo.get_active_iter() is not None:
+                return combo.get_model().get_value(combo.get_active_iter(), 1)
+            else:
+                return None
         def set_current_element(combo, el):
             # Find the index of the element
             l=[ t[0] for t in enumerate(combo.get_model()) if t[1][1] == el ]
@@ -312,7 +315,7 @@ def entry_dialog(title=None,
     ret=None
     if res == gtk.RESPONSE_OK:
         try:
-            ret=e.get_text()
+            ret=unicode(e.get_text())
         except ValueError:
             ret=None
     else:
@@ -482,7 +485,7 @@ def get_filename(title=_("Open a file"),
                  default_dir=None,
                  default_file=None,
                  alias=False,
-                 filter='any'):
+                 filter=None):
     """Get a filename.
 
     @param title: the dialog title
@@ -550,7 +553,7 @@ def get_filename(title=_("Open a file"),
             button.set_label(_("Wait..."))
             try:
                 st=helper.get_statistics(button._filename)
-            except Exception, e:
+            except AdveneException, e:
                 st=_("Error: %s") % unicode(e)
             button.set_label(st)
             button._filename=None
@@ -585,7 +588,7 @@ def get_filename(title=_("Open a file"),
             filters[name].add_pattern(e)
         fs.add_filter(filters[name])
 
-    fs.set_filter(filters[filter])
+    fs.set_filter(filters[filter or 'any'])
     fs.connect('selection-changed', update_preview)
     fs.connect('key-press-event', dialog_keypressed_cb)
 
@@ -603,7 +606,7 @@ def get_filename(title=_("Open a file"),
     if res == gtk.RESPONSE_OK:
         filename=fs.get_filename()
         if alias:
-            al=alias_entry.get_text()
+            al=unicode(alias_entry.get_text())
             if not al:
                 # It may not have been updated, if the user typed the
                 # filename in the entry box.
@@ -735,13 +738,19 @@ class CategorizedSelector:
 def center_on_mouse(w):
     """Center the given gtk.Window on the mouse position.
     """
-    d=gtk.gdk.device_get_core_pointer()
     root=w.get_toplevel().get_root_window()
-    (x, y) = d.get_state(root)[0]
-    x, y = long(x), long(y)
+    (screen, x, y, mod) = root.get_display().get_pointer()
+    r = screen.get_monitor_geometry(screen.get_monitor_at_point(x, y))
 
     # Let's try to center the window on the mouse as much as possible.
-    width, height=w.get_size()
-    rw, rh = root.get_size()
-    w.move( min( max(0, x - width/2), rw-width ),
-            min( max(0, y - height/2), rh-height) )
+    width, height = w.get_size()
+
+    posx = max(r.x, x - width / 2)
+    if posx + width > r.x + r.width:
+        posx = r.x + r.width - width
+
+    posy = max(r.y, y - height / 2)
+    if posy + height > r.y + r.height:
+        posy = r.y + r.height - height
+
+    w.move(posx, posy)

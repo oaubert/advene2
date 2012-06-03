@@ -1,6 +1,6 @@
 #
 # Advene: Annotate Digital Videos, Exchange on the NEt
-# Copyright (C) 2008 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
+# Copyright (C) 2008-2012 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
 #
 # Advene is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -36,6 +36,8 @@ http://laszlok2.blogspot.com/2006/05/prince-of-cairo_28.html
 import struct
 import os
 
+from gettext import gettext as _
+
 import gtk
 import cairo
 import pango
@@ -44,14 +46,14 @@ import gobject
 try:
     import rsvg
 except ImportError:
-    rsvg=None
+    import advene.util.ctypesrsvg as rsvg
 
 # Advene part
 import advene.core.config as config
 from advene.core.imagecache import ImageCache
 
 from advene.gui.util import png_to_pixbuf, enable_drag_source, name2color
-from advene.gui.util import encode_drop_parameters, get_color_style
+from advene.gui.util import get_color_style
 import advene.util.helper as helper
 from libadvene.model.cam.annotation import Annotation
 
@@ -82,6 +84,7 @@ class GenericColorButtonWidget(gtk.DrawingArea):
         else:
             self.controller=None
         self.set_events(gtk.gdk.POINTER_MOTION_MASK |
+                        gtk.gdk.POINTER_MOTION_HINT_MASK |
                         gtk.gdk.BUTTON_PRESS_MASK |
                         gtk.gdk.BUTTON_RELEASE_MASK |
                         gtk.gdk.BUTTON1_MOTION_MASK |
@@ -116,7 +119,6 @@ class GenericColorButtonWidget(gtk.DrawingArea):
         self.draw(cr, w, h)
         cr.paint_with_alpha(0.0)
         widget.drag_source_set_icon(cm, pixmap)
-        widget._icon=pixmap
         def set_cursor(wid, t=None, precision=None):
             try:
                 self.container.set_annotation(t)
@@ -137,8 +139,8 @@ class GenericColorButtonWidget(gtk.DrawingArea):
             width=s[0]
         if height is None:
             height=s[1]
-        if width < 0:
-            print "Error: width ", width, " < 0 for ", self.element.id
+        if width <= 0:
+            print "Error: width ", width, " <= 0 for ", self.element.id
             width=5
         if (self.cached_surface
             and self.cached_surface.get_width() == width
@@ -220,9 +222,8 @@ class GenericColorButtonWidget(gtk.DrawingArea):
         """Refresh the widget.
         """
         if self.window and self.cached_surface:
-            width = self.cached_surface.get_width()
-            height = self.cached_surface.get_height()
-            self.window.invalidate_rect(gtk.gdk.Rectangle(0, 0, width, height), False)
+            self.window.invalidate_rect(gtk.gdk.Rectangle(self.allocation.x, self.allocation.y,
+                                                          self.allocation.width, self.allocation.height), False)
 
     def expose_cb(self, widget, event):
         """Handle the expose event.
@@ -254,22 +255,8 @@ class AnnotationWidget(GenericColorButtonWidget):
         GenericColorButtonWidget.__init__(self, element=annotation, container=container)
         self.connect('key-press-event', self.keypress, self.annotation)
         self.connect('enter-notify-event', lambda b, e: b.grab_focus() and True)
-        self.connect('drag-data-get', self.drag_sent)
-        # drag_set_icon_cursor does not work on native Gtk on MacOS X
-        if not (config.data.os == 'darwin' and not os.environ.get('DISPLAY')):
-            self.connect('drag-begin', self._drag_begin)
-            self.connect('drag-end', self._drag_end)
         # The widget can generate drags
-        self.drag_source_set(gtk.gdk.BUTTON1_MASK,
-                             config.data.drag_type['annotation']
-                             + config.data.drag_type['uri-list']
-                             + config.data.drag_type['text-plain']
-                             + config.data.drag_type['TEXT']
-                             + config.data.drag_type['STRING']
-                             + config.data.drag_type['timestamp']
-                             + config.data.drag_type['tag']
-                             ,
-                             gtk.gdk.ACTION_LINK | gtk.gdk.ACTION_COPY | gtk.gdk.ACTION_MOVE )
+        enable_drag_source(self, annotation, container.controller)
         self.no_image_pixbuf=None
 
     def set_fraction_marker(self, f):
@@ -280,6 +267,10 @@ class AnnotationWidget(GenericColorButtonWidget):
     fraction_marker = property(get_fraction_marker, set_fraction_marker)
 
     def _drag_begin(self, widget, context):
+        # set_icon_widget is broken ATM in recent gtk on win32.
+        if config.data.os == 'win32':
+            return GenericColorButtonWidget._drag_begin(self, widget, context)
+
         try:
             widgets=self.container.get_selected_annotation_widgets()
             if not widget in widgets:
@@ -352,43 +343,9 @@ class AnnotationWidget(GenericColorButtonWidget):
         context.set_icon_widget(w, 0, 0)
         return True
 
-    def _drag_end(self, widget, context):
-        widget._icon.destroy()
-        widget._icon=None
-        return True
-
     def set_active(self, b):
         self.active=b
         self.update_widget()
-
-    def drag_sent(self, widget, context, selection, targetType, eventTime):
-        """Handle the drag-sent event.
-        """
-        if targetType == config.data.target_type['annotation']:
-            try:
-                widgets=self.container.get_selected_annotation_widgets()
-                if not widget in widgets:
-                    widgets=None
-            except AttributeError:
-                widgets=None
-            if not widgets:
-                widgets=[ widget ]
-            selection.set(selection.target, 8, "\n".join( w.annotation.uriref for w in widgets ).encode('utf8'))
-        elif targetType == config.data.target_type['uri-list']:
-            l=(self.controller.build_context(here=w.annotation).evaluate('here/absolute_url')
-               for w in widgets)
-            selection.set(selection.target, 8, "\n".join(l).encode('utf8'))
-        elif (targetType == config.data.target_type['text-plain']
-              or targetType == config.data.target_type['TEXT']
-              or targetType == config.data.target_type['STRING']):
-            selection.set(selection.target, 8, "\n".join(w.annotation.content.data.encode('utf8') for w in widgets))
-        elif targetType == config.data.target_type['timestamp']:
-            l=(encode_drop_parameters(timestamp=w.annotation.begin,
-                                      comment=self.controller.get_title(w.annotation)) for w in widgets)
-            selection.set(selection.target, 8, "\n".join(l))
-        else:
-            return False
-        return True
 
     def keypress(self, widget, event, annotation):
         """Handle the key-press event.
@@ -427,7 +384,7 @@ class AnnotationWidget(GenericColorButtonWidget):
             c.queue_action(c.update_status, status="set", position=pos)
             c.gui.set_current_annotation(annotation)
             return True
-        elif event.keyval == gtk.keysyms.Delete and event.state & gtk.gdk.SHIFT_MASK:
+        elif event.keyval == gtk.keysyms.Delete or event.keyval == gtk.keysyms.BackSpace:
             # Delete annotation or selection
             try:
                 widgets=self.container.get_selected_annotation_widgets()
@@ -498,6 +455,8 @@ class AnnotationWidget(GenericColorButtonWidget):
             # 100.0) of the height (FIXME: define a scale somewhere)
             l=[ (1 - v / 100.0) for v in self.annotation.content.parsed ]
             s=len(l)
+            if not s:
+                return
             if width < s:
                 # There are more samples than available pixels. Downsample the data
                 l=l[::(s/width)+1]
@@ -509,17 +468,22 @@ class AnnotationWidget(GenericColorButtonWidget):
             for v in l:
                 context.line_to(int(c), int(height * v))
                 c += w
-                context.line_to(int(c), int(height * v))                
+                context.line_to(int(c), int(height * v))
             context.line_to(int(c), height)
             context.fill()
             return
         elif self.annotation.content.mimetype == 'image/svg+xml' and rsvg is not None:
             if width < 6:
                 return
-            s=rsvg.Handle(data=self.annotation.content.data)
-            scale = 1.0 * height / s.get_dimension_data()[1]
-            context.set_matrix(cairo.Matrix( scale, 0, 0, scale, 0, 0 ))
-            s.render_cairo(context)
+            if self.annotation.content.data:
+                try:
+                    s=rsvg.Handle(data=self.annotation.content.data)
+                    scale = 1.0 * height / s.get_dimension_data()[1]
+                    context.set_matrix(cairo.Matrix( scale, 0, 0, scale, 0, 0 ))
+                    s.render_cairo(context)
+                except:
+                    print "Error when rendering SVG timeline component"
+                    pass
             return
 
         # Draw the border
@@ -535,11 +499,10 @@ class AnnotationWidget(GenericColorButtonWidget):
             return
 
         # Draw the text
-        # FIXME
-        #if self.annotation.relations:
-        #    slant=cairo.FONT_SLANT_ITALIC
-        #else:
-        slant=cairo.FONT_SLANT_NORMAL
+        if self.annotation.relations:
+            slant=cairo.FONT_SLANT_ITALIC
+        else:
+            slant=cairo.FONT_SLANT_NORMAL
         context.select_font_face("Helvetica",
                                  slant, cairo.FONT_WEIGHT_NORMAL)
         context.set_font_size(config.data.preferences['timeline']['font-size'])
@@ -826,8 +789,8 @@ class RelationRepresentation(gtk.Button):
 
     def refresh(self):
         l=self.get_children()[0]
-        t=u'%s %s %s' % (self.arrow[self.direction], 
-                         self.controller.get_title(self.relation), 
+        t=u'%s %s %s' % (self.arrow[self.direction],
+                         self.controller.get_title(self.relation),
                          self.arrow[self.direction])
         color=self.controller.get_element_color(self.relation)
         if color:
@@ -856,7 +819,7 @@ class TimestampRepresentation(gtk.Button):
     @ivar label: the label (timestamp) widget
     @type label: gtk.Label
     """
-    def __init__(self, value, controller, width=None, epsilon=None, comment_getter=None, visible_label=True, bgcolor=None):
+    def __init__(self, value, controller, width=None, epsilon=None, comment_getter=None, visible_label=True, bgcolor=None, callback=None):
         """Instanciate a new TimestampRepresentation.
 
         @param value: the timestamp value
@@ -873,6 +836,8 @@ class TimestampRepresentation(gtk.Button):
         @type visible_label: boolean
         @param bgcolor: background color
         @type bgcolor: string
+        @value callback: a callback that will be called before value modification
+        @type callback: method. If it returns False, then the modification will be cancelled
         """
         super(TimestampRepresentation, self).__init__()
         self._value=value
@@ -890,6 +855,9 @@ class TimestampRepresentation(gtk.Button):
         self.extend_popup_menu=None
         self.highlight=False
         self._bgcolor = None
+        # Displayed text.
+        self._text = '<span size="xx-small">%(timestamp)s</span>'
+        self.callback = callback
 
         box=gtk.VBox()
         self.image=gtk.Image()
@@ -902,7 +870,7 @@ class TimestampRepresentation(gtk.Button):
         self.add(box)
         self.box=box
 
-        self.bgcolor = bgcolor
+        self._bgcolor = bgcolor
 
         self.refresh()
 
@@ -940,13 +908,20 @@ class TimestampRepresentation(gtk.Button):
             self.label.set_style(style)
             self._bgcolor = color
     bgcolor = property(get_bgcolor, set_bgcolor)
-     
+
     def set_width(self, w):
         self._width = w
         self.refresh()
     def get_width(self):
         return self._width
     width = property(get_width, set_width)
+
+    def set_text(self, s):
+        self._text = s
+        self.refresh()
+    def get_text(self):
+        return self._text
+    text = property(get_text, set_text)
 
     def snapshot_update_cb(self, context, target):
         if abs(context.globals['position'] - self._value) <= self.epsilon:
@@ -961,6 +936,13 @@ class TimestampRepresentation(gtk.Button):
     def get_value(self):
         return self._value
     def set_value(self, v):
+        if v == self._value:
+            return
+        if self.callback is not None and v != self._value:
+            if self.callback(v) is False:
+                # If self.callback explicitly returns False (not
+                # None), then cancel the value setting.
+                return False
         if self.highlight:
             self.controller.notify('BookmarkUnhighlight', timestamp=self._value, immediate=True)
             self.highlight=False
@@ -977,7 +959,7 @@ class TimestampRepresentation(gtk.Button):
         # We have to check for is_initialized before doing the
         # update_status, since the snapshot may be updated by the update_status
         do_refresh=not cache.is_initialized(self._value, epsilon=self.epsilon)
-        self.controller.update_status("start", self._value)
+        self.controller.update_status("set", self._value)
         if do_refresh:
             # The image was invalidated (or not initialized). Use
             # a timer to update it after some time.
@@ -1020,7 +1002,7 @@ class TimestampRepresentation(gtk.Button):
             self.set_size_request(-1, -1)
             self.image.show()
         ts=helper.format_time(self._value)
-        self.label.set_markup('<small>%s</small>' % ts)
+        self.label.set_markup(self._text % { 'timestamp': ts })
         if self.visible_label and self.label.get_child_requisition()[0] <= 1.2 * self.image.get_child_requisition()[0]:
             self.label.show()
         else:
@@ -1039,12 +1021,6 @@ class TimestampRepresentation(gtk.Button):
         if with_timestamp:
             ret = ''.join( (ret, """<br /><em><a href="%(player_url)s">%(timestamp)s</a></em>""" % data) )
         return ret
-
-    def set_width(self, w):
-        """Set the width of the snapshot and refresh the display.
-        """
-        self.width=w
-        self.refresh()
 
     def refresh_snapshot(self, *p):
         """Refresh the snapshot image.
@@ -1082,6 +1058,10 @@ class TimestampRepresentation(gtk.Button):
             c.update_status (status="set", position=pos)
             return True
 
+        def save_as(it):
+            self.controller.gui.save_snapshot_as(self.value)
+            return True
+
         item = gtk.MenuItem(_("Play"))
         item.connect('activate', goto, self.value)
         menu.append(item)
@@ -1090,14 +1070,24 @@ class TimestampRepresentation(gtk.Button):
         item.connect('activate', self.refresh_snapshot)
         menu.append(item)
 
-        item = gtk.MenuItem(_("Use current player position"))
-        item.connect('activate', lambda i: self.set_value(p.current_position_value))
-        if p.status != p.PauseStatus and p.status != p.PlayingStatus:
-            item.set_sensitive(False)
+        item = gtk.MenuItem(_("Save as..."))
+        item.connect('activate', save_as)
         menu.append(item)
+
+        if self.callback is not None:
+            item = gtk.MenuItem(_("Use current player position"))
+            item.connect('activate', lambda i: self.set_value(p.current_position_value))
+            if p.status != p.PauseStatus and p.status != p.PlayingStatus:
+                item.set_sensitive(False)
+            menu.append(item)
+
+            item = gtk.MenuItem(_("Adjust timestamp"))
+            item.connect('activate', lambda i: self.set_value(self.controller.gui.adjust_timestamp(self.get_value())))
+            menu.append(item)
 
         if self.extend_popup_menu is not None:
             self.extend_popup_menu(menu, self)
+
         menu.show_all()
 
         if popup:

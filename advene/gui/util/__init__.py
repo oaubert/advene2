@@ -1,6 +1,6 @@
 #
 # Advene: Annotate Digital Videos, Exchange on the NEt
-# Copyright (C) 2008 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
+# Copyright (C) 2008-2012 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
 #
 # Advene is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -82,12 +82,11 @@ def png_to_pixbuf (png_data, width=None, height=None):
     else:
         return pixbuf
 
-def image_from_position(controller, position=None, width=None, height=None):
+def image_from_position(controller, position=None, width=None, height=None, epsilon=None):
     i=gtk.Image()
     if position is None:
         position=controller.player.current_position_value
-    pb=png_to_pixbuf (controller.package.imagecache[position],
-                                         width=width, height=height)
+    pb=png_to_pixbuf (controller.gui.imagecache.get(position, epsilon), width=width, height=height)
     i.set_from_pixbuf(pb)
     return i
 
@@ -214,7 +213,7 @@ def get_color_style(w, background=None, foreground=None):
         style.text[state]=f
         #style.base[state]=white
     return style
-    
+
 arrow_up_xpm="""13 16 2 1
        c None
 .      c #FF0000
@@ -292,30 +291,30 @@ def decode_drop_parameters(data):
 def get_target_types(el):
     """Return DND target types for element.
     """
+    targets = []
     if isinstance(el, Annotation):
-        targets= (config.data.drag_type['annotation']
-                  + config.data.drag_type['timestamp']
-                  + config.data.drag_type['tag'])
+        targets.extend(config.data.drag_type['annotation']
+                       + config.data.drag_type['timestamp']
+                       + config.data.drag_type['tag'])
     elif isinstance(el, Relation):
-        targets= config.data.drag_type['relation']
+        targets.extend(config.data.drag_type['relation'])
     elif isinstance(el, View):
         if helper.get_view_type(el) == 'adhoc':
-            targets=config.data.drag_type['adhoc-view']
+            targets.extend(config.data.drag_type['adhoc-view'])
         else:
-            targets=config.data.drag_type['view']
+            targets.extend(config.data.drag_type['view'])
     elif isinstance(el, AnnotationType):
-        targets=config.data.drag_type['annotation-type']
+        targets.extend(config.data.drag_type['annotation-type'])
     elif isinstance(el, RelationType):
-        targets=config.data.drag_type['relation-type']
+        targets.extend(config.data.drag_type['relation-type'])
     elif isinstance(el, Query):
-        targets=config.data.drag_type['query']
+        targets.extend(config.data.drag_type['query'])
     elif isinstance(el, Schema):
-        targets=config.data.drag_type['schema']
+        targets.extend(config.data.drag_type['schema'])
     elif isinstance(el, (int, long)):
-        targets=config.data.drag_type['timestamp']
+        targets.extend(config.data.drag_type['timestamp'])
     # FIXME: Resource
-    else:
-        targets=[]
+
     targets.extend(config.data.drag_type['uri-list']
                    + config.data.drag_type['text-plain']
                    + config.data.drag_type['TEXT']
@@ -334,6 +333,15 @@ def drag_data_get_cb(widget, context, selection, targetType, timestamp, controll
     """
     typ=config.data.target_type
     el = context._element
+    # FIXME: think about the generalisation of the notion of container
+    # selection (for timestamp lists for instance)
+    try:
+        widgets = widget.container.get_selected_annotation_widgets()
+        if not widget in widgets:
+            widgets = None
+    except AttributeError:
+        widgets=None
+
 
     d={ typ['annotation']: Annotation,
         typ['annotation-type']: AnnotationType,
@@ -346,7 +354,10 @@ def drag_data_get_cb(widget, context, selection, targetType, timestamp, controll
         # Directly pass URIs for Annotation, types and views
         if not isinstance(el, d[targetType]):
             return False
-        selection.set(selection.target, 8, el.uriref.encode('utf8'))
+        if widgets:
+            selection.set(selection.target, 8, "\n".join( w.annotation.uriref for w in widgets ).encode('utf8'))
+        else:
+            selection.set(selection.target, 8, el.uriref.encode('utf8'))
         return True
     elif targetType == typ['adhoc-view']:
         if helper.get_view_type(el) != 'adhoc':
@@ -354,12 +365,15 @@ def drag_data_get_cb(widget, context, selection, targetType, timestamp, controll
         selection.set(selection.target, 8, encode_drop_parameters(id=el.id))
         return True
     elif targetType == typ['uri-list']:
-        try:
-            ctx=controller.build_context(here=el)
-            uri=ctx.evaluate('here/absolute_url')
-        except:
-            uri="No URI for " + unicode(el)
-        selection.set(selection.target, 8, uri.encode('utf8'))
+
+        if widgets:
+            selection.set(selection.target, 8, "\n".join( controller.build_context(here=w.annotation).evaluate('here/absolute_url') for w in widgets ).encode('utf8'))
+        else:
+            try:
+                uri=controller.build_context(here=el).evaluate('here/absolute_url')
+            except:
+                uri="No URI for " + unicode(el)
+            selection.set(selection.target, 8, uri.encode('utf8'))
     elif targetType == typ['timestamp']:
         if isinstance(el, (int, long)):
             selection.set(selection.target, 8, encode_drop_parameters(timestamp=el))
@@ -379,6 +393,17 @@ def contextual_drag_begin(widget, context, element, controller):
     if callable(element):
         element=element()
     context._element=element
+
+    if hasattr(widget, '_drag_begin'):
+        if widget._drag_begin(widget, context):
+            return False
+
+    # set_icon_widget does not work on native Gtk on MacOS X
+    if config.data.os == 'darwin' and not os.environ.get('DISPLAY'):
+        return False
+    # set_icon_widget is broken ATM in recent gtk on win32.
+    elif config.data.os == 'win32':
+        return False
 
     w=gtk.Window(gtk.WINDOW_POPUP)
     w.set_decorated(False)
@@ -457,7 +482,7 @@ def contextual_drag_begin(widget, context, element, controller):
     return True
 
 def contextual_drag_end(widget, context):
-    if hasattr(widget, '_icon'):
+    if hasattr(widget, '_icon') and widget._icon:
         widget._icon.destroy()
         widget._icon=None
     return True
@@ -489,7 +514,7 @@ def gdk2intrgba(color, alpha=0xff):
          | ( (color.green >> 8) << 16) \
          | ( (color.blue >> 8) <<  8) \
          | alpha
-         
+
 def gdk2intrgb(color):
     """Convert a gdk.Color to int RGB.
     """

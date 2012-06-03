@@ -1,6 +1,6 @@
 #
 # Advene: Annotate Digital Videos, Exchange on the NEt
-# Copyright (C) 2008 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
+# Copyright (C) 2008-2012 Olivier Aubert <olivier.aubert@liris.cnrs.fr>
 #
 # Advene is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,7 +16,7 @@
 # along with Advene; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #
-"""VLC library functions."""
+"""Generic helper functions."""
 
 import time
 import StringIO
@@ -58,14 +58,15 @@ from libadvene.model.tales import iter_global_methods
 # helps generating readable XML through ElementTree (the appropriate
 # namespace prefixes will be used)
 import xml.etree.ElementTree as ET
-ET._namespace_map[config.data.namespace]='advene'
-ET._namespace_map['http://www.w3.org/2000/svg']='svg'
-ET._namespace_map['http://www.w3.org/1999/xlink']='xlink'
-ET._namespace_map['http://experience.univ-lyon1.fr/advene/ns/advenetool']='advenetool'
-ET._namespace_map['http://xml.zope.org/namespaces/tal']='tal'
-ET._namespace_map['http://xml.zope.org/namespaces/metal']='metal'
-ET._namespace_map[DC_NS_PREFIX]='dc'
-ET._namespace_map[ADVENE_NS_PREFIX]='advene2'
+ET._namespace_map.update({
+    config.data.namespace: 'advene',
+    'http://www.w3.org/2000/svg': 'svg',
+    'http://www.w3.org/1999/xlink': 'xlink',
+    'http://purl.org/dc/elements/1.1/': 'dc',
+    'http://experience.univ-lyon1.fr/advene/ns/advenetool': 'advenetool',
+    'http://xml.zope.org/namespaces/tal': 'tal',
+    'http://xml.zope.org/namespaces/metal': 'metal',
+    })
 
 def fourcc2rawcode (code):
     """VideoLan to PIL code conversion.
@@ -112,16 +113,18 @@ class TitledElement:
 class TypedUnicode(unicode):
     """Unicode string with a mimetype attribute.
     """
-    def __init__(self, *p, **kw):
-        super(TypedUnicode, self).__init__(*p, **kw)
-        self.contenttype='text/plain'
+    def __new__(cls, value=""):
+        s=unicode.__new__(cls, value)
+        s.contenttype='text/plain'
+        return s
 
 class TypedString(str):
     """String with a mimetype attribute.
     """
-    def __init__(self, *p, **kw):
-        super(TypedString, self).__init__(*p, **kw)
-        self.contenttype='text/plain'
+    def __new__(cls, value=""):
+        s=str.__new__(cls, value)
+        s.contenttype='text/plain'
+        return s
 
 def snapshot2png (image, output=None):
     """Convert a VLC RGBPicture to PNG.
@@ -146,6 +149,14 @@ def snapshot2png (image, output=None):
         png=TypedString(image.data)
         png.contenttype='image/png'
     elif code is not None:
+        try:
+            i = Image.fromstring ("RGB", (image.width, image.height), image.data,
+                                  "raw", code)
+            ostream = StringIO.StringIO ()
+            i.save(ostream, 'png')
+            png=TypedString(ostream.getvalue())
+            png.contenttype='image/png'
+        except NameError:
             print "snapshot: conversion module not available"
     else:
         print "snapshot: unknown image type ", repr(image.type)
@@ -225,7 +236,7 @@ def unaccent(t):
     for c in t:
         if not extended_valid_re.match(c):
             # Try to normalize
-            m=normalized_re.search(unicodedata.name(c))
+            m=normalized_re.search(unicodedata.name(c, ' '))
             if m:
                 c=m.group(2)
                 if m.group(1) == 'SMALL':
@@ -235,56 +246,120 @@ def unaccent(t):
         res.append(c)
     return "".join(res)
 
-def format_time (val=0):
+def format_time_reference(val = 0):
     """Formats a value (in milliseconds) into a time string.
+
+    Use the most complete format (HH:MM:SS.sss), for reference into
+    saved files.
+    """
+    if val is None:
+        return '--:--:--.---'
+    elif val < 0:
+        return '00:00:00.000'
+    (s, ms) = divmod(long(val), 1000)
+    # Format: HH:MM:SS.mmm
+    return "%s.%03d" % (time.strftime("%H:%M:%S", time.gmtime(s)), ms)
+
+def format_time (val = 0):
+    """Formats a value (in milliseconds) into a time string, respecting user preferences.
 
     @param val: the value
     @type val: int
     @return: the formatted string
     @rtype: string
     """
+    dummy = False
     if val is None:
-        return '--:--:--.---'
+        dummy = True
+        val = 0
     elif val < 0:
         val = 0
     (s, ms) = divmod(long(val), 1000)
-    # Format: HH:MM:SS.mmm
-    return "%s.%03d" % (time.strftime("%H:%M:%S", time.gmtime(s)), ms)
+    f = config.data.preferences['timestamp-format']
+    if f == '%S':
+        ret = str(s)
+    elif f == '%.S':
+        ret = '%d.%03d' % (s, ms)
+    else:
+        f = f.replace('''%.S''', '''%S.''' + '%03d' % ms).replace('''%fS''', '''%Sf''' + '%02d' % long(ms * config.data.preferences['default-fps'] / 1000))
+        ret = time.strftime(f, time.gmtime(s))
 
-small_time_regexp=re.compile('(?P<m>\d+):(?P<s>\d+)[.,]?(?P<ms>\d+)?$')
-time_regexp=re.compile('(?P<h>\d+):(?P<m>\d+):(?P<s>\d+)[.,]?(?P<ms>\d+)?$')
-def convert_time(s):
+    if dummy:
+        return ret.replace('0', '-')
+    else:
+        return ret
+
+class InvalidTimestamp(Exception):
+    pass
+
+small_time_regexp=re.compile('(?P<m>\d+):(?P<s>\d+)(?P<sep>[.,f]?)(?P<ms>\d+)?$')
+time_regexp=re.compile('(?P<h>\d+):(?P<m>\d+):(?P<s>\d+)(?P<sep>[.,:f]?)(?P<ms>\d+)?$')
+float_regexp = re.compile('(?P<s>\d*)\.(?P<ms>\d*)')
+def parse_time(s):
     """Convert a time string as long.
 
-    If the parameter is a number, it is considered as a ms value.
-    Else we try to parse a hh:mm:ss.xxx value
+    This function tries to handle multiple formats:
+
+    - plain integers are considered as milliseconds.
+      Regexp: \d+
+      Example: 2134 or 134 or 2000
+
+    - float numbers are considered as seconds
+      Regexp: \d*\.\d*
+      Example: 2.134 or .134 or 2.
+
+    - formatted timestamps with colons in them will be interpreted as follows.
+      m:s (1 colon)
+      m:s.ms (1 colon)
+      m:sfNN
+      h:m:s (2 colons)
+      h:m:s.ms (2 colons)
+      h:m:sfNN
+
+      Legend:
+      h: hours
+      m: minutes
+      s: seconds
+      ms: milliseconds
+      NN: frame number
     """
     try:
         val=long(s)
     except ValueError:
-        # It was not a number. Try to determine its format.
+        # It was not a plain integer. Try to determine its format.
         t=None
-        m=time_regexp.match(s)
+        m = float_regexp.match(s)
         if m:
-            t=m.groupdict()
+            t = m.groupdict()
         else:
-            m=small_time_regexp.match(s)
+            m=time_regexp.match(s)
             if m:
                 t=m.groupdict()
-                t['h'] = 0
+            else:
+                m=small_time_regexp.match(s)
+                if m:
+                    t=m.groupdict()
+                    t['h'] = 0
 
         if t is not None:
             if 'ms' in t and t['ms']:
-                t['ms']=(t['ms'] + ("0" * 4))[:3]
+                if t['sep'] == 'f':
+                    # Frame number
+                    t['ms'] = long(long(t['ms']) * (1000 / config.data.preferences['default-fps']))
+                else:
+                    t['ms']=(t['ms'] + ("0" * 4))[:3]
             else:
                 t['ms']=0
             for k in t:
                 if t[k] is None:
-                    t[k]=0
-                t[k] = long(t[k])
-            val= t['ms'] + t['s'] * 1000 + t['m'] * 60000 + t['h'] * 3600000
+                    t[k] = 0
+                try:
+                    t[k] = long(t[k] or 0)
+                except ValueError:
+                    t[k] = 0
+            val= t.get('ms', 0) + t.get('s', 0) * 1000 + t.get('m', 0) * 60000 + t.get('h', 0) * 3600000
         else:
-            raise Exception("Unknown time format for %s" % s)
+            raise InvalidTimestamp("Unknown time format for %s" % s)
     return val
 
 def matching_relationtypes(package, typ1, typ2):
@@ -359,10 +434,10 @@ def get_valid_members (el):
     # FIXME: return only simple items if not in expert mode
     l = []
     try:
-        l.extend(sorted(el.ids()))
+        l.extend(el.ids())
     except AttributeError:
         try:
-            l.extend(sorted(el.keys()))
+            l.extend(el.keys())
         except AttributeError:
             pass
     if l:
@@ -663,23 +738,6 @@ def find_in_path(name):
             return fullname
     return None
 
-def overlapping_annotations(t):
-    """Return a set of overlapping annotations (couples)
-    """
-    res=DefaultDict(default=[])
-    l=t.annotations[:]
-    l.sort(key=lambda a: a.begin)
-    while l:
-        a=l.pop()
-        begin=a.begin
-        end=a.end
-        for b in l:
-            be=b.begin
-            en=b.end
-            if not (end <= be or en <= begin):
-                res.append( (a, b) )
-    return res
-
 def common_fieldnames(elements):
     """Extract common fieldnames from simple structured elements.
     """
@@ -690,8 +748,37 @@ def common_fieldnames(elements):
             res.update( (regexp.findall(l) or [ '_error' ])[0] for l in e.content.data.split('\n') )
     return res
 
-class MediaTime(object):
-    def __init__(self, t, media_url=None, comment=None):
-        self.value=t
-        self.url=media_url
-        self.comment=comment
+parsed_representation = re.compile(r'^here/content/parsed/([\w\d_\.]+)$')
+empty_representation = re.compile(r'^\s*$')
+
+def title2content(new_title, original_content, representation):
+    """Converts a title (short representation) to the appropriate content.
+
+    It takes the 'representation' parameter into account. If it is
+    present, and in a common form (typically extraction of a field),
+    then we can convert the short representation back to the
+    appropriate content.
+
+    @return the new content or None if the content could not be updated.
+    """
+    r = None
+    if representation is None or empty_representation.match(representation):
+        r = unicode(new_title)
+    else:
+        m = parsed_representation.match(representation)
+        if m:
+            # We have a simple representation (here/content/parsed/name)
+            # so we can update the name field.
+            new_title = unicode(new_title).replace('\n', '\\n')
+            name=m.group(1)
+            reg = re.compile('^' + name + '=(.*?)$', re.MULTILINE)
+            if reg.search(original_content):
+                r = reg.sub(name + '=' + new_title, original_content)
+            else:
+                # The key is not present, add it
+                if original_content:
+                    r = original_content + "\n%s=%s" % (name, new_title)
+                else:
+                    r = "%s=%s" % (name, new_title)
+        # else: too complex representation. Return None as default value.
+    return r
