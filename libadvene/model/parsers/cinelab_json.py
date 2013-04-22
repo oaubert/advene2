@@ -96,9 +96,9 @@ class Parser(object):
                     self._parse_simple(i, package, npass, "resource")
                 for i in json.get("tags", ()):
                     self._parse_tag(i, package, npass, "user_tag")
-                for i in json.get("annotation_types", ()):
+                for i in json.get("annotation_types", json.get("annotation-types", ())):
                     self._parse_tag(i, package, npass, "annotation_type")
-                for i in json.get("relation_types", ()):
+                for i in json.get("relation_types", json.get("relation-types", ())):
                     self._parse_tag(i, package, npass, "relation_type")
                 for i in json.get("medias", ()):
                     self._parse_media(i, package, npass)
@@ -121,7 +121,7 @@ class Parser(object):
                 self._parse_tagging(i, package)
         finally:
             package.exit_no_event_section()
-    
+
     # end of public interface
 
     def __init__(self, file_, package):
@@ -187,7 +187,13 @@ class Parser(object):
             content = json.get("content")
             content_type = (content and content.get("mimetype")
                             or self.DEFAULTS["content@mimetype"])
-            atype = json["type"]
+            atype = json.get("type", None)
+            if atype is None:
+                # IRI misinterpretation
+                # Maybe we have an old IRI file, which mistook the id-ref attribute for the type information ?
+                meta = json.get("meta", None)
+                if meta:
+                    atype = meta.get("id-ref")
             if atype.find(":") <= 0: # same package
                 atype = pkg[atype] # already created thanks to parse order
             pkg.create_annotation(json["id"], media,
@@ -230,12 +236,15 @@ class Parser(object):
         elt.enter_no_event_section()
         try:
             for tagid in tags:
+                if isinstance(tagid, dict):
+                    # IRI misinterpretation
+                    tagid = tagid.get("id-ref")
                 if tagid.find(":") > 0: # imported
                     pkg.associate_user_tag(elt, tagid)
                 else:
                     pkg.associate_user_tag(elt, pkg[tagid])
         finally:
-            elt.exit_no_event_section()            
+            elt.exit_no_event_section()
 
     def _parse_meta(self, json, elt, pkg):
         meta = json.get("meta")
@@ -251,8 +260,12 @@ class Parser(object):
                 if not isinstance(val, dict):
                     elt.set_meta(key, val, False)
                 else:
-                    val = val["id_ref"]
-                    if val.find(":") > 0: # imported
+                    val = val.get("id_ref", val.get("id-ref", val))
+                    if isinstance(val, dict):
+                        # IRI misinterpretation
+                        # We could not find an id_ref. Serialize the dict as a string
+                        elt.set_meta(key, unicode(val))
+                    elif val.find(":") > 0: # imported
                         elt.set_meta(key, val, True)
                     else:
                         elt.set_meta(key, pkg[val])
@@ -262,7 +275,7 @@ class Parser(object):
     def _parse_tag_items(self, json, elt, pkg):
         for idref in json.get("imported_elements", ()):
             pkg.associate_user_tag(idref, elt)
-        
+
     def _parse_content(self, json, elt, pkg):
         content = json.get("content")
         if content is None:
@@ -299,6 +312,9 @@ class Parser(object):
         elt.enter_no_event_section()
         try:
             for i in items:
+                if isinstance(i, dict):
+                    # IRI misinterpretation
+                    i = i.get("id-ref")
                 if i.find(":") <= 0: # same package
                     i = pkg[i]
                 elt.append(i)
