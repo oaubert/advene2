@@ -181,15 +181,20 @@ def name2color(color):
         gtk_color = color
     elif color:
         # Found a color. Cache it.
-        try:
-            gtk_color=color_cache[color]
-        except KeyError:
+        gtk_color = color_cache.get('color', None)
+        if gtk_color is None:
             try:
-                color_cache[color]=gtk.gdk.color_parse(color)
+                gtk_color = gtk.gdk.color_parse(color)
+            except ValueError:
+                # IRI fix: they store colors as integers...
+                try:
+                    gtk_color = gtk.gdk.color_parse("#%x" % long(color))
+                except ValueError:
+                    gtk_color = None
             except (TypeError, ValueError):
                 print "Unable to parse ", color
-                color_cache[color]=None
-            gtk_color=color_cache[color]
+                gtk_color = None
+            color_cache[color] = gtk_color
     else:
         gtk_color=None
     return gtk_color
