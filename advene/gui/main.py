@@ -3118,7 +3118,7 @@ class AdveneGUI(object):
                     p.save(name=n)
             return True
 
-        if self.gui.win.get_title().endswith('(*)') ^ c.package._modified:
+        if (self.gui.win.get_title() or "").endswith('(*)') ^ c.package._modified:
             self.update_window_title()
         self.toolbuttons['undo'].set_sensitive(bool(c.undomanager.history))
         is_playing = (c.player.status in (c.player.PlayingStatus, c.player.PauseStatus))
