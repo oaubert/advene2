@@ -23,7 +23,7 @@ from weakref import ref
 from libadvene.model.consts import _RAISE, PACKAGED_ROOT
 from libadvene.model.content.register import iter_content_handlers, \
                                           iter_textual_mimetypes
-from libadvene.model.core.element import RELATION, RESOURCE
+from libadvene.model.core.element import RELATION, RESOURCE, VIEW
 from libadvene.model.exceptions import ModelError
 from libadvene.util.autoproperty import autoproperty
 from libadvene.util.files import recursive_mkdir
@@ -153,7 +153,7 @@ class WithContentMixin:
             if len(mimetype.split("/")) != 2:
                 raise ModelError("%r does not look like a mimetype" % mimetype)
             if mimetype == "x-advene/none":
-                if self.ADVENE_TYPE != RELATION:
+                if self.ADVENE_TYPE not in (RELATION, VIEW):
                     raise ModelError("Only relations may have an empty content")
                 if model_id is None and self.__model_id != "":
                     raise ModelError("Empty content must have no model")
