@@ -1,3 +1,17 @@
+Fixing tests
+============
+
+* unit tests pass when used with all.py,
+  but *not* with python -m unittest discover -s utest -p "[b-z]*.py"
+* might this depend on the order?
+  (indeed, all.py does execute backend_slite.py first, which would explain
+   why it passes)
+* all interactions seem to come from core_element;
+  here are the interactions that I spotted:
+  - TestEvents makes util_session.TestSession.testMultipleThreadUndefined fail
+  - TestUnreachable makes a lot of tests in backend_sqlite fail
+  - combinations of two of {TestElements, TestTagAsGroup and TestReferences} make those tests fail as well
+
 Questions
 =========
 
