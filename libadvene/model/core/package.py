@@ -519,7 +519,10 @@ class Package(WithMetaMixin, WithEventsMixin, WithAbsoluteUrlMixin, object):
             for p in ps.itervalues():
                 if package_uri == p.uri or package_uri == p.url:
                     return p.get_element(id, default)
-        raise NoSuchElementError(uriref)
+        if default is _RAISE:
+            raise UnreachableImportError(uriref)
+        else:
+            return default
 
     __getitem__ = get_element
 
