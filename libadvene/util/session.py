@@ -26,7 +26,11 @@ import sys
 from threading import local
 from shutil import rmtree
 
-_session_defaults = {"package": None, "user": os.getlogin()}
+try:
+    login = os.getlogin()
+except OSError:
+    login = os.environ.get("USER", "{unknown}")
+_session_defaults = {"package": None, "user": login}
 
 def get_session_defaults():
     return _session_defaults.copy()
