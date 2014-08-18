@@ -4,6 +4,8 @@ from unittest import main, TestCase, TestSuite
 
 import libadvene.model.backends.sqlite as backend_sqlite
 
+import rdflib # because rdflib does not like being imported through __import__
+
 backend_sqlite._set_module_debug(True) # enable assert statements
 
 dirname = path.dirname(__file__)

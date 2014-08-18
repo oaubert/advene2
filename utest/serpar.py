@@ -1,10 +1,12 @@
 """Unit test for serialization and parsing."""
 
-from os import fdopen, unlink
+from os import close, fdopen, unlink
 from tempfile import mkstemp
 from unittest import TestCase, main
 from urllib import pathname2url
 import warnings
+
+from rdflib import BNode, Graph, Literal, RDF, URIRef
 
 import libadvene.model.backends.sqlite as backend_sqlite
 from libadvene.model.cam.exceptions import UnsafeUseWarning
@@ -12,6 +14,7 @@ from libadvene.model.cam.package import Package as CamPackage
 from libadvene.model.consts import PACKAGED_ROOT, DC_NS_PREFIX, \
                                 RDFS_NS_PREFIX, PARSER_META_PREFIX
 from libadvene.model.core.diff import diff_packages
+from libadvene.model.core.element import IMPORT, RESOURCE
 from libadvene.model.core.package import Package
 from libadvene.model.parsers.exceptions import ParserError
 import libadvene.model.serializers.advene_xml as xml
@@ -19,6 +22,10 @@ import libadvene.model.serializers.advene_zip as zip
 import libadvene.model.serializers.cinelab_xml as cxml
 import libadvene.model.serializers.cinelab_zip as czip
 import libadvene.model.serializers.cinelab_json as cjson
+import libadvene.model.serializers.cinelab_rdf as crdf
+import libadvene.model.serializers.cinelab_ttl as cttl
+
+from libadvene.model.serializers.cinelab_rdf import CLD
 
 from core_diff import fill_package_step_by_step, fix_diff
 
@@ -55,13 +62,18 @@ class TestAdveneXml(TestCase):
 
     def tearDown(self):
         self.p1.close()
+        self.p1 = None
         if self.p2 and self.p2._backend:
             self.p2.close()
+            self.p2 = None
         unlink(self.filename1)
         try:
             unlink(self.filename2)
         except OSError:
             pass
+
+    def fix_diff(self, diff):
+        return fix_diff(diff)
 
     def fill_package_step_by_step(self):
         #return fill_package_step_by_step(self.p1, empty=True):
@@ -79,7 +91,7 @@ class TestAdveneXml(TestCase):
             except ParserError, e:
                 self.fail("ParserError: %s (%s)" % (e.args[0], self.filename2))
 
-            diff = fix_diff(diff_packages(p1, p2))
+            diff = self.fix_diff(diff_packages(p1, p2))
             #if (diff != []): import pdb; pdb.set_trace()
             self.assertEqual([], diff, (i, diff, self.filename2))
             p2.close()
@@ -103,7 +115,7 @@ class TestAdveneXml(TestCase):
             p2 = self.p2 = self.pkgcls(self.url)
         except ParserError, e:
             self.fail("ParserError: %s (%s)" % (e.args[0], self.filename2))
-        diff = fix_diff(diff_packages(p1, p2))
+        diff = self.fix_diff(diff_packages(p1, p2))
         self.assertEqual([], diff, (diff, self.filename2))
 
     def test_forward_reference_in_tagged_imports(self):
@@ -122,7 +134,7 @@ class TestAdveneXml(TestCase):
             p2 = self.p2 = self.pkgcls(self.url)
         except ParserError, e:
             self.fail("ParserError: %s (%s)" % (e.args[0], self.filename2))
-        diff = fix_diff(diff_packages(p1, p2))
+        diff = self.fix_diff(diff_packages(p1, p2))
         self.assertEqual([], diff, (diff, self.filename2))
 
     def test_base64(self):
@@ -138,7 +150,7 @@ class TestAdveneXml(TestCase):
             p2 = self.p2 = self.pkgcls(self.url)
         except ParserError, e:
             self.fail("ParserError: %s (%s)" % (e.args[0], self.filename2))
-        diff = fix_diff(diff_packages(p1, p2))
+        diff = self.fix_diff(diff_packages(p1, p2))
         self.assertEqual([('<setattr>', 'r', 'content_url', '')],
                          diff, (diff, self.filename2))
 
@@ -151,13 +163,23 @@ class TestCinelabXml(TestAdveneXml):
     pkgcls = CamPackage
     serpar = cxml
 
+    def setUp(self):
+        super(TestCinelabXml, self).setUp()
+        self.p3 = None
+
+    def tearDown(self):
+        super(TestCinelabXml, self).tearDown()
+        if self.p3:
+            self.p3.close()
+            self.p3 = None
+
     def fill_package_step_by_step(self):
         dc_creator = DC_NS_PREFIX + "creator"
         dc_description = DC_NS_PREFIX + "description"
         rdfs_seeAlso = RDFS_NS_PREFIX + "seeAlso"
         p = self.p1
         yield "empty"
-        p3 = self.pkgcls("urn:xyz", create=True)
+        p3 = self.p3 = self.pkgcls("urn:xyz", create=True)
         m3  = p3.create_media("m3", "http://example.com/m3.ogm")
         at3 = p3.create_annotation_type("at3")
         a3  = p3.create_annotation("a3", m3, 123, 456, "text/plain", type=at3)
@@ -191,7 +213,7 @@ class TestCinelabXml(TestAdveneXml):
         v = p.create_view("v", "text/html+tag"); yield 13
         v.content_url = "http://example.com/a-tal-view.html"; yield 14
         q = p.create_query("q", "text/x-python"); yield 15
-        q.content_url = "file:%s" % pathname2url(__file__); yield 16
+        q.content_url = "file://%s" % pathname2url(__file__); yield 16
         Ra = p.create_resource("Ra", "text/css"); yield 17
         sorted_p_own = list(p.own); sorted_p_own.sort(key=lambda x: x._id)
         for e in sorted_p_own:
@@ -205,7 +227,8 @@ class TestCinelabXml(TestAdveneXml):
         p.set_meta(dc_creator, "pchampin"); yield 23, e.id
         p.set_meta(dc_description, "a package used for testing diff"); yield 24
         p.set_meta(PARSER_META_PREFIX+"namespaces",
-                   "dc http://purl.org/dc/elements/1.1/")
+                   "dc http://purl.org/dc/elements/1.1/") ; yield 25
+        p.create_resource(":tricky:id", "text/plain")
         yield "done"
 
 class TestCinelabZip(TestCinelabXml, TestAdveneZip):
@@ -372,6 +395,234 @@ UNORDERED_XML = """
   """
 }
         
+class TestRdf(TestCinelabXml):
+    serpar = crdf
+
+    def fix_diff(self, diff):
+        return [
+            d for d in super(TestRdf, self).fix_diff(diff)
+            if d[:4] != ('set_meta', '', '', PARSER_META_PREFIX + "namespaces")
+            # namespace declarations are not exactly preserved through RDF
+            and not (d[0] == '<setattr>' and d[2:] == ('uri', u''))
+            # RDF parser always sets a URI (using URL if required)
+        ]
+
+    def fill_package_step_by_step(self):
+        for i in TestCinelabXml.fill_package_step_by_step(self):
+            if i != "done":
+                yield i
+        p = self.p1
+        a = p["a"]
+        a.set_meta(CLD.fragDimXywh, "percent:25,25,50,50")
+        yield 100
+        a.set_meta(CLD.fragDimTrack, "fre-dubbed")
+        yield 101
+        a.set_meta(CLD.fragDimId, "frag101")
+        yield 102
+
+        yield "done"
+
+class TestTurtle(TestRdf):
+    serpar = cttl
+
+class TestRdfSpecifics(TestCase):
+
+    def setUp(self):
+        fd, self.filename = mkstemp(".ttl", "advebe2_utest_serpar_")
+        self.f = fdopen(fd, "w")
+        self.f.write("@prefix : <{}> .\n".format(CLD))
+        self.p = None
+
+    def tearDown(self):
+        if self.p:
+            self.p.close()
+        if self.f:
+            self.f.close()
+        unlink(self.filename)
+
+    def test_bnode_element(self):
+        self.f.write("""
+        <> a :Package ;
+            :hasElement [
+                a :Resource ;
+                :hasContent [
+                    :mimetype "text/plain" ;
+                    :data "hello world" ;
+                ];
+            ];
+        .
+        """)
+        self.f.close()
+
+        p = self.p = CamPackage("file://" + pathname2url(self.filename))
+        elts = list(p.own)
+        assert len(elts) == 1, len(elts)
+        res = elts[0]
+        assert res.ADVENE_TYPE == RESOURCE, res.ADVENE_TYPE
+        assert res.content_data == "hello world", res.content_data
+
+    def test_semiexplicit_import(self):
+        self.f.write("""
+        <> a :Package ;
+            :imports <http://example.org/pkg> ;
+        .
+        """)
+        self.f.close()
+
+        p = self.p = CamPackage("file://" + pathname2url(self.filename))
+        elts = list(p.own)
+        assert len(elts) == 1, len(elts)
+        imp = elts[0]
+        assert imp.ADVENE_TYPE == IMPORT, imp.ADVENE_TYPE
+        assert imp.uri == "http://example.org/pkg", imp.uri
+
+    def test_semiexplicit_relation(self):
+        self.f.write("""
+        <> a :Package ;
+            :hasElement <#m>, <#at>, <#rt>, <#a1>, <#a2> .
+        <#at> a :AnnotationType .
+        <#rt> a :RelationType .
+        <#m> a :Media ; :represents <http://example.org/movie.mp4> .
+        <#a1> a :Annotation ;
+            :hasAType <#at> ;
+            :hasFragment <http://example.org/movie.mp4#t=1.234,5.678> ;
+            :hasContent [ :data "hello world" ] ;
+        .
+        <#a2> a :Annotation ;
+            :hasAType <#at> ;
+            :hasFragment <http://example.org/movie.mp4#t=9,10> ;
+            :hasContent [ :data "how are you?" ] ;
+        .
+        <#a1> <#rt> <#a2> .
+        """)
+        self.f.close()
+
+        p = self.p = CamPackage("file://" + pathname2url(self.filename))
+        elts = list(p.own.relations)
+        assert len(elts) == 1, len(elts)
+        rel = elts[0]
+        assert rel.type == p["rt"], rel.type
+        assert list(rel) == [p["a1"], p["a2"]], list(rel)
+
+    def test_implicit_import(self):
+        self.f.write("""
+        <> a :Package ;
+            :hasElement <#r> .
+        <#r> a :Resource ;
+            :hasContent [
+                :mimetype "text/plain" ;
+                :data "hello world" ;
+                :hasModel <http://example.org/pkg#schema> ;
+            ];
+        .
+        """)
+        self.f.close()
+
+        p = self.p = CamPackage("file://" + pathname2url(self.filename))
+        elts = list(p.own.imports)
+        assert len(elts) == 1, len(elts)
+        imp = elts[0]
+        assert imp.uri == "http://example.org/pkg", imp.uri
+
+    def test_implicit_media(self):
+        self.f.write("""
+        <> a :Package ;
+            :hasElement <#at>, <#a> .
+        <#at> a :AnnotationType .
+        <#a> a :Annotation ;
+            :hasAType <#at> ;
+            :hasFragment <http://example.org/movie.mp4#t=1.234,5.678> ;
+            :hasContent [ :data "hello world" ] ;
+        .
+        """)
+        self.f.close()
+
+        p = self.p = CamPackage("file://" + pathname2url(self.filename))
+        # implicit media has been created
+        elts = list(p.own.medias)
+        assert len(elts) == 1, len(elts)
+        med = elts[0]
+        assert med.url == "http://example.org/movie.mp4", med.url
+        # annotation associated with new media
+        assert p["a"].media is med, p["a"].media
+
+
+    def test_fragment_explicit_media(self):
+        self.f.write("""
+        <> a :Package ;
+            :hasElement <#m>, <#at>, <#a> .
+        <#at> a :AnnotationType .
+        <#m> a :Media ; :represents <http://example.org/movie.mp4> .
+        <#a> a :Annotation ;
+            :hasAType <#at> ;
+            :hasFragment <http://example.org/movie.mp4#t=1.234,5.678> ;
+            :hasContent [ :data "hello world" ] ;
+        .
+        """)
+        self.f.close()
+
+        p = self.p = CamPackage("file://" + pathname2url(self.filename))
+        # no new media created here
+        elts = list(p.own.medias)
+        assert len(elts) == 1, len(elts)
+        # annotation has right media
+        assert p["a"].media is p["m"], p["a"].media
+
+
+    def test_xywh_fragment(self):
+        self.f.write("""
+        <> a :Package ;
+            :hasElement <#at>, <#a> .
+        <#at> a :AnnotationType .
+        <#a> a :Annotation ;
+            :hasAType <#at> ;
+            :hasFragment <http://example.org/movie.mp4#xywh=10,20,30,40&t=1.234,5.678> ;
+            :hasContent [ :data "hello world" ] ;
+        .
+        """)
+        self.f.close()
+        p = self.p = CamPackage("file://" + pathname2url(self.filename))
+        a = p["a"]
+        assert a.get_meta(CLD.fragDimXywh, None) == "10,20,30,40"
+        # check that t= was still correctly retrieved
+        assert a.begin, a.end == (1234, 5678)
+
+    def test_track_fragment(self):
+        self.f.write("""
+        <> a :Package ;
+            :hasElement <#at>, <#a> .
+        <#at> a :AnnotationType .
+        <#a> a :Annotation ;
+            :hasAType <#at> ;
+            :hasFragment <http://example.org/movie.mp4#track=fre-dubbed&t=1.234,5.678> ;
+            :hasContent [ :data "hello world" ] ;
+        .
+        """)
+        self.f.close()
+        p = self.p = CamPackage("file://" + pathname2url(self.filename))
+        a = p["a"]
+        assert a.get_meta(CLD.fragDimTrack, None) == "fre-dubbed"
+        # check that t= was still correctly retrieved
+        assert a.begin, a.end == (1234, 5678)
+
+    def test_id_fragment(self):
+        self.f.write("""
+        <> a :Package ;
+            :hasElement <#at>, <#a> .
+        <#at> a :AnnotationType .
+        <#a> a :Annotation ;
+            :hasAType <#at> ;
+            :hasFragment <http://example.org/movie.mp4#id=frag101&t=1.234,5.678> ;
+            :hasContent [ :data "hello world" ] ;
+        .
+        """)
+        self.f.close()
+        p = self.p = CamPackage("file://" + pathname2url(self.filename))
+        a = p["a"]
+        assert a.get_meta(CLD.fragDimId, None) == "frag101"
+        # check that t= was still correctly retrieved
+        assert a.begin, a.end == (1234, 5678)
+
 
 if __name__ == "__main__":
     main()
