@@ -7,4 +7,5 @@ The libadvene module depends on the following python libs:
 
 Additionnaly, the following modules are recommended, but optional:
   * python-lxml, from http://lxml.de/
+  * rdflib, from http://rdflib.net/
 
