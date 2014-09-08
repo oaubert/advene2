@@ -66,7 +66,7 @@ class _Serializer(object):
     def serialize(self):
         """Perform the actual serialization."""
         self.prepare_graph()
-        self.graph.serialize(self.file, self.format)
+        self.graph.serialize(self.file, self.format, self.package_uri)
 
     # end of the public interface of Serializer
 
