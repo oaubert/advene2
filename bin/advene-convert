@@ -17,22 +17,53 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
+import atexit
+from os import unlink
 from os.path import exists
-from sys import argv, stderr
+from sys import argv, stderr, stdin, stdout
+from tempfile import NamedTemporaryFile
 
 from libadvene.model.cam.package import Package
 
+doc = """ @<ext> can be used instead of a filenames to represent stdin or stdout
+ respectively, where <ext> is the extension corresponding to a format.
+ E.g.:  cjp-producer | advene-convert @cjp @ttl | ttl-consummer
+ Actual filenames and @-pseudo-filenames can be mixed.
+ E.g.:  advene-convert a_package.czp @ttl | ttl-consummer
+"""
+
 def main():
     if len(argv) != 3:
-        print >>stderr, "usage: %s <source-package> <dest-package>" \
-            % argv[0]
+        print >>stderr, "\nusage: %s <source-package> <dest-package>\n\n%s" \
+            % (argv[0], doc)
         exit(-1)
     if exists(argv[2]):
         print "sorry, %s can not override existing file" % argv[0]
         exit(-2)
-        
-    p1 = Package(argv[1], readonly=True)
-    p1.save_as(argv[2])
+
+    if argv[1][0] == "@":
+        infile = NamedTemporaryFile(suffix="." + argv[1][1:], delete=False)
+        infname = infile.name
+        atexit.register(unlink, infname)
+        infile.write(stdin.read())
+        infile.close()
+    else:
+        infname = argv[1]
+
+    if argv[2][0] == "@":
+        outfile = NamedTemporaryFile(suffix="." + argv[2][1:], delete=False)
+        outfname = outfile.name
+        atexit.register(unlink, outfname)
+        outfile.close()
+    else:
+        outfname = argv[2]
+
+    p1 = Package(infname, readonly=True)
+    p1.save_as(outfname, erase=True)
+
+    if argv[2][0] == "@":
+        with open(outfname) as f:
+            stdout.write(f.read())
 
 if __name__ == "__main__":
    main()
