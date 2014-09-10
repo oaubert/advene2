@@ -2,10 +2,41 @@ Dependencies
 ============
 
 The libadvene module depends on the following python libs:
-  * pygobject, from http://pygtk.org/downloads.html
   * SimpleTAL, from http://www.owlfish.com/software/simpleTAL/
+  * lxml, from http://lxml.de/
 
 Additionnaly, the following modules are recommended, but optional:
-  * python-lxml, from http://lxml.de/
   * rdflib, from http://rdflib.net/
+
+The advene module depends on libadvene plus the following libs:
+  * pygobject, from http://pygtk.org/downloads.html
+
+Installing dependencies with packages on Ubuntu/Debian
+======================================================
+
+  * SimpleTAL is provided by package python-simpletal
+  * lxml is provided by package python-lxml
+  * rdflib is only provided in an old version;
+    you need to install it for example with pip (see below)
+  * pygobject is provided by package python-gobject
+
+Installing dependencies with pip on Ubuntu/Debian
+=================================================
+
+You may prefer to install the dependencies with pip (e.g. in a virtualenv).
+
+  * SimpleTAL is not available on the standard repositories,
+    but can be installed with
+
+    pip install -f http://www.owlfish.com/software/simpleTAL/downloads/SimpleTAL-4.3.tar.gz SimpleTAL
+
+  * lxml requires some compilation, so you need the following packages:
+      python-dev gcc libxml2-dev libxslt-dev
+    then simply
+      pip install lxml
+
+  * rdflib can be simply installed with
+      pip install rdflib
+
+  * as far as we know, there is no simple way to install pygobject with pip
 
