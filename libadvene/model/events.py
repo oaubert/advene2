@@ -6,409 +6,595 @@ object do not inherit GObject, since they do not provide other functionalities
 than events.
 """
 
+from logging import getLogger
+import libadvene
 from libadvene.util.synchronized import enter_cs, exit_cs
 
-import gobject
+LOG = getLogger(__name__)
 
-class EventDelegate(gobject.GObject):
-    """
-    Base class of event delegate.
-    """
-    def __init__(self, boss):
-        gobject.GObject.__init__(self)
-        self._boss = boss
+if not libadvene.USE_GOBJECT_EVENTS:
 
-class PackageEventDelegate(EventDelegate):
-    """
-    Class for event-delegate for packages.
-    """
-    pass
+    LOG.debug("NOT using gobject events")
 
-class ElementEventDelegate(EventDelegate):
-    """
-    Class for event-delegate for elements.
-    """
-    pass
+    from uuid import uuid4 as uuid
 
-def _handler_wrapper(gobj, *args):
-    original_handler = args[-1]
-    args = args[:-1]
-    return original_handler(gobj._boss, *args)
-
-class WithEventsMixin(object):
-    """
-    This mixin class assumes that the mixed-in class will provide a
-    `_make_event_delegate` method returning an instance of the appropriate
-    subclass of EventDelegate.
-    """
-
-    __event_delegate = None
-    __disabling_count = 0
-
-    def connect(self, detailed_signal, handler, *args):
+    class EventDelegate(object):
         """
-        Connect the given handler to the (optionally detailed) signal.
-        Additional arguments for the handler can be given.
-
-        Return the handler_id, which can be used to disconnect the handler.
+        Dummy class of event delegate.
         """
-        if self.__event_delegate is None:
-            self.__event_delegate = self._make_event_delegate()
-        wrapper_args = list(args) + [handler,]
-        return self.__event_delegate.connect(detailed_signal, _handler_wrapper,
-                                             *wrapper_args)
+        def __init__(self, boss):
+            pass
 
-    def disconnect(self, handler_id):
-        """Disconnect the handler associated to the given handler_id."""
-        assert self.has_handler(handler_id), "Handler-id %d is not connected" % handler_id
-        return self.__event_delegate.disconnect(handler_id)
-
-    def has_handler(self, handler_id):
+    class PackageEventDelegate(EventDelegate):
         """
-        Return True iff the given handler_id represents a connected handler.
-
-        NB: this has been renamed from GObject.handler_is_connected to comply
-        with Advene coding style (methode names should start with a verb).
+        Dummy class for event-delegate for packages.
         """
-        return self.__event_delegate is not None \
-           and self.__event_delegate.handler_is_connected(handler_id)
+        pass
 
-    def block_handler(self, handler_id):
+    class ElementEventDelegate(EventDelegate):
         """
-        Prevent the handler identified by handler_id to be invoked until it is
-        unblocked.
-
-        NB: this has been renamed from GObject.handler_block to comply
-        with Advene coding style (methode names should start with a verb).
+        Dummy class for event-delegate for elements.
         """
-        assert self.has_handler(handler_id), "Handler-id %d is not connected" % handler_id
-        return self.__event_delegate.handler_block(handler_id)
+        pass
 
-    def unblock_handler(self, handler_id):
+    class WithEventsMixin(object):
         """
-        Unblock the blocked handler identified by handler_id so it can be
-        invoked again.
-
-        NB: this has been renamed from GObject.handler_unblock to comply
-        with Advene coding style (methode names should start with a verb).
+        This mixin class is a drop-in replacement
+        for the gobject-based version below.
         """
-        assert self.has_handler(handler_id), "Handler-id %d is not connected" % handler_id
-        return self.__event_delegate.handler_unblock(handler_id)
 
-    def emit(self, detailed_signal, *args):
+        __disabling_count = 0
+        __handlers = None
+
+        def connect(self, detailed_signal, handler, *args):
+            """
+            Connect the given handler to the (optionally detailed) signal.
+            Additional arguments for the handler can be given.
+
+            Return the handler_id, which can be used to disconnect the handler.
+            """
+            if self.__handlers is None:
+                self.__handlers = ({}, {})
+            by_signal, by_handler_id = self.__handlers
+
+            while True:
+                handler_id = uuid()
+                if handler_id not in by_handler_id:
+                    break
+
+            signal_handlers = by_signal.get(detailed_signal)
+            if signal_handlers is None:
+                signal_handlers = by_signal[detailed_signal] = {}
+            signal_handlers[handler_id] = (handler, tuple(args), False)
+            by_handler_id[handler_id] = signal_handlers
+
+            return handler_id
+
+        def disconnect(self, handler_id):
+            """Disconnect the handler associated to the given handler_id."""
+            assert self.__handlers is not None, "Handler-id %d is not connected" % handler_id
+            by_handler_id = self.__handlers[1]
+            signal_handlers = by_handler_id.pop(handler_id, None)
+            if signal_handlers is None:
+                raise ValueError("Handler-id %d is not connected" % handler_id)
+            signal_handlers.pop(handler_id)
+
+        def has_handler(self, handler_id):
+            """
+            Return True iff the given handler_id represents a connected handler.
+
+            NB: this has been renamed from GObject.handler_is_connected to comply
+            with Advene coding style (methode names should start with a verb).
+            """
+            return self.__handlers is not None \
+               and handler_id in self.__handlers[1]
+
+        def block_handler(self, handler_id):
+            """
+            Prevent the handler identified by handler_id to be invoked until it is
+            unblocked.
+            """
+            assert self.__handlers is not None, "Handler-id %d is not connected" % handler_id
+            by_handler_id = self.__handlers[1]
+            signal_handlers = by_handler_id.pop(handler_id, None)
+            if signal_handlers is None:
+                raise ValueError("Handler-id %d is not connected" % handler_id)
+            handler, args, _ = signal_handlers[handler_id]
+            signal_handlers[handler_id] = (handler, args, True)
+
+        def unblock_handler(self, handler_id):
+            """
+            Unblock the blocked handler identified by handler_id so it can be
+            invoked again.
+            """
+            assert self.__handlers is not None, "Handler-id %d is not connected" % handler_id
+            by_handler_id = self.__handlers[1]
+            signal_handlers = by_handler_id.pop(handler_id, None)
+            if signal_handlers is None:
+                raise ValueError("Handler-id %d is not connected" % handler_id)
+            handler, args, _ = signal_handlers[handler_id]
+            signal_handlers[handler_id] = (handler, args, False)
+
+        def emit(self, detailed_signal, *args):
+            """
+            Cause the object to emit the signal specified by detailed_signal.
+            The additional parameters must match the number and type of the
+            required signal handler parameters.
+            """
+            if self.__disabling_count > 0:
+                return
+            if self.__handlers is None:
+                return
+            by_signal = self.__handlers[0]
+
+            detail = detailed_signal.split("::")
+            assert len(detail) <= 2, \
+                "Don't know how to handle signal %s" % detailed_signal
+            if len(detail) == 1:
+                all_signals = detail
+            else:
+                all_signals = [detail[0], detailed_signal]
+            for signal in all_signals:
+                signal_handlers = by_signal.get(signal)
+                if signal_handlers is None:
+                    continue
+                for handler, init_args, blocked in signal_handlers.itervalues():
+                    if blocked:
+                        continue
+                    whole_args = (self,) + args + init_args
+                    handler(*whole_args)
+
+        def emit_lazy(self, lazy_params):
+            """
+            Like emit, but lazy_params is assumed to be a function returning an
+            iterable of the params to send to emit.
+            The rationale is that, since emit does nothing if we have no
+            EventDelegate, the parameters would not be evaluated.
+            """
+            if self.__handlers is not None:
+                return self.emit(*lazy_params())
+
+        def stop_emission(self, detailed_signal):
+            """
+            Stop the current emission of the signal specified by detailed_signal.
+            Any signal handlers in the list still to be run will not be
+            invoked.
+            """
+            raise NotImplementedError()
+
+        # synonyms for the sake of readability in GTK applications
+
+        handler_is_connected = has_handler
+        handler_block = block_handler
+        handler_unblock = unblock_handler
+
+        # advene specific methods
+
+        def enter_no_event_section(self):
+            """
+            Disable all event emission for this object, until
+            `exit_no_event_section` is called.
+
+            Not also that a "no event section is a critical section for the object
+            (in the sense of the `libadvene.util.synchronized` module).
+            """
+            enter_cs(self)
+            self.__disabling_count += 1
+
+        def exit_no_event_section(self):
+            """
+            Re-enables all event emission for this object.
+
+            :see-also: `enter_no_event_section`
+            """
+            self.__disabling_count -= 1
+            exit_cs(self)
+
+else:
+
+    LOG.debug("Using gobject events")
+
+    import gobject
+
+    class EventDelegate(gobject.GObject):
         """
-        Cause the object to emit the signal specified by detailed_signal.
-        The additional parameters must match the number and type of the
-        required signal handler parameters.
+        Base class of event delegate.
         """
-        if self.__event_delegate is not None and self.__disabling_count == 0:
-            return self.__event_delegate.emit(detailed_signal, *args)
+        def __init__(self, boss):
+            gobject.GObject.__init__(self)
+            self._boss = boss
 
-    def emit_lazy(self, lazy_params):
+    class PackageEventDelegate(EventDelegate):
         """
-        Like emit, but lazy_params is assumed to be a function returning an
-        iterable of the params to send to emit.
-        The rationale is that, since emit does nothing if we have no
-        EventDelegate, the parameters would not be evaluated.
+        Class for event-delegate for packages.
         """
-        if self.__event_delegate is not None:
-            return self.__event_delegate.emit(*lazy_params())
+        pass
 
-    def stop_emission(self, detailed_signal):
+    class ElementEventDelegate(EventDelegate):
         """
-        Stop the current emission of the signal specified by detailed_signal.
-        Any signal handlers in the list still to be run will not be
-        invoked.
+        Class for event-delegate for elements.
         """
-        assert self.__event_delegate is not None
-        return self.__event_delegate.stop_emission(detailed_signal)
+        pass
 
-    # synonyms for the sake of readability in GTK applications
+    def _handler_wrapper(gobj, *args):
+        original_handler = args[-1]
+        args = args[:-1]
+        return original_handler(gobj._boss, *args)
 
-    handler_is_connected = has_handler
-    handler_block = block_handler
-    handler_unblock = unblock_handler
-
-    # advene specific methods
-
-    def enter_no_event_section(self):
+    class WithEventsMixin(object):
         """
-        Disable all event emission for this object, until
-        `exit_no_event_section` is called.
-
-        Not also that a "no event section is a critical section for the object
-        (in the sense of the `libadvene.util.synchronized` module).
+        This mixin class assumes that the mixed-in class will provide a
+        `_make_event_delegate` method returning an instance of the appropriate
+        subclass of EventDelegate.
         """
-        enter_cs(self)
-        self.__disabling_count += 1
 
-    def exit_no_event_section(self):
-        """
-        Re-enables all event emission for this object.
+        __event_delegate = None
+        __disabling_count = 0
 
-        :see-also: `enter_no_event_section`
-        """
-        self.__disabling_count -= 1
-        exit_cs(self)
+        def connect(self, detailed_signal, handler, *args):
+            """
+            Connect the given handler to the (optionally detailed) signal.
+            Additional arguments for the handler can be given.
 
+            Return the handler_id, which can be used to disconnect the handler.
+            """
+            if self.__event_delegate is None:
+                self.__event_delegate = self._make_event_delegate()
+            wrapper_args = list(args) + [handler,]
+            return self.__event_delegate.connect(detailed_signal, _handler_wrapper,
+                                                 *wrapper_args)
 
-# Common signals
-# ==============
-#
-# NB: all signals involving a change have a "pre-" form, which is emitted
-# *before* the actual change takes place. This can be useful for handlers
-# requiring the state preceding the change (like EDL).
-#
-# signal:`modified`
-# ----------------
-#
-# Emitted everytime an attribute is modified in the object
-# 
-# detail:: (depending on the object type) uri, url, frame_of_reference, media,
-#          begin, end
-# params::
-#     * the attribute name
-#     * the new value of the modified attribute
-#
-# This signal also has a "pre-" form.
+        def disconnect(self, handler_id):
+            """Disconnect the handler associated to the given handler_id."""
+            assert self.has_handler(handler_id), "Handler-id %d is not connected" % handler_id
+            return self.__event_delegate.disconnect(handler_id)
 
-gobject.signal_new("pre-modified", EventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,object,))
+        def has_handler(self, handler_id):
+            """
+            Return True iff the given handler_id represents a connected handler.
 
-gobject.signal_new("modified", EventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,object,))
+            NB: this has been renamed from GObject.handler_is_connected to comply
+            with Advene coding style (methode names should start with a verb).
+            """
+            return self.__event_delegate is not None \
+               and self.__event_delegate.handler_is_connected(handler_id)
 
-# signal:`modified-meta`
-# -------------------
-#
-# Emitted everytime a meta-data is created/modified in the object
-# 
-# detail:: the URL key of the created/modified metadata
-# params::
-#     * the URL key of the metadata
-#     * the new value of the modified meta-data (None if deleted)
-#
-# This signal also has a "pre-" form.
+        def block_handler(self, handler_id):
+            """
+            Prevent the handler identified by handler_id to be invoked until it is
+            unblocked.
 
-gobject.signal_new("pre-modified-meta", EventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,object,))
+            NB: this has been renamed from GObject.handler_block to comply
+            with Advene coding style (methode names should start with a verb).
+            """
+            assert self.has_handler(handler_id), "Handler-id %d is not connected" % handler_id
+            return self.__event_delegate.handler_block(handler_id)
 
-gobject.signal_new("modified-meta", EventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,object,))
+        def unblock_handler(self, handler_id):
+            """
+            Unblock the blocked handler identified by handler_id so it can be
+            invoked again.
 
-# Package signals
-# ===============
-#
-# signal:`created`
-# ----------------
-#
-# Emitted everytime an element is created in the package
-#
-# detail:: media, annotation, relation, tag, list, query, view, resource,
-#          import, content_url, content_mimetype, content_schema
-# params::
-#     * the object just created
-# 
+            NB: this has been renamed from GObject.handler_unblock to comply
+            with Advene coding style (methode names should start with a verb).
+            """
+            assert self.has_handler(handler_id), "Handler-id %d is not connected" % handler_id
+            return self.__event_delegate.handler_unblock(handler_id)
 
-gobject.signal_new("created", PackageEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,))
+        def emit(self, detailed_signal, *args):
+            """
+            Cause the object to emit the signal specified by detailed_signal.
+            The additional parameters must match the number and type of the
+            required signal handler parameters.
+            """
+            if self.__event_delegate is not None and self.__disabling_count == 0:
+                return self.__event_delegate.emit(detailed_signal, *args)
 
-# signal:`package-closed`
-# ----------------
-#
-# Emitted when the package is closed.
-# NB: the package is already closed, so it is an error to use it when receiving
-# this signal. However, the URL and URI of the package are given as parameters.
-#
-# params::
-#     * the package URL
-#     * the package URI
-#
+        def emit_lazy(self, lazy_params):
+            """
+            Like emit, but lazy_params is assumed to be a function returning an
+            iterable of the params to send to emit.
+            The rationale is that, since emit does nothing if we have no
+            EventDelegate, the parameters would not be evaluated.
+            """
+            if self.__event_delegate is not None:
+                return self.__event_delegate.emit(*lazy_params())
 
-gobject.signal_new("package-closed", PackageEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST,
-                   gobject.TYPE_NONE, (object, object,))
+        def stop_emission(self, detailed_signal):
+            """
+            Stop the current emission of the signal specified by detailed_signal.
+            Any signal handlers in the list still to be run will not be
+            invoked.
+            """
+            assert self.__event_delegate is not None
+            return self.__event_delegate.stop_emission(detailed_signal)
 
-# signals:<element_type>
-# ----------------------
-#
-# Instead of subscribint to each individual element, one can choose to
-# subscribe globally to all elements of a given type in a package, using
-# the signal named after that element type.
-#
-# The detail for this signal is the name of the corresponding element signal,
-# without its detail. E.g. media::modified, list::pre-modified-items...
-#
-# signal:: media, annotation, relation, tag, list, query, view, resource,
-#          import
-#
-# detail:: any element related signal
-#
-# params::
-#     * the element to which the event is related
-#     * a list of ojects corresponding to the parameters of the element       
-#       signal
+        # synonyms for the sake of readability in GTK applications
 
-gobject.signal_new("media", PackageEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,str,object,))
+        handler_is_connected = has_handler
+        handler_block = block_handler
+        handler_unblock = unblock_handler
 
-gobject.signal_new("annotation", PackageEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,str,object,))
+        # advene specific methods
 
-gobject.signal_new("relation", PackageEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,str,object,))
+        def enter_no_event_section(self):
+            """
+            Disable all event emission for this object, until
+            `exit_no_event_section` is called.
 
-gobject.signal_new("tag", PackageEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,str,object,))
+            Not also that a "no event section is a critical section for the object
+            (in the sense of the `libadvene.util.synchronized` module).
+            """
+            enter_cs(self)
+            self.__disabling_count += 1
 
-gobject.signal_new("list", PackageEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,str,object,))
+        def exit_no_event_section(self):
+            """
+            Re-enables all event emission for this object.
 
-gobject.signal_new("query", PackageEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,str,object,))
-
-gobject.signal_new("view", PackageEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,str,object,))
-
-gobject.signal_new("resource", PackageEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,str,object,))
-
-gobject.signal_new("import", PackageEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
-                   gobject.TYPE_NONE, (object,str,object,))
+            :see-also: `enter_no_event_section`
+            """
+            self.__disabling_count -= 1
+            exit_cs(self)
 
 
-# Element signals
-# ===============
-#
-# signal:`modified-items`
-# ----------------------
-#
-# Emitted for lists and relations when the structure of their items changes.
-#
-# params::
-#     * a slice with only positive indices, relative to the old structure,
-#       embeding all the modified indices
-#     * a python list representing the new structure of the slice
-#
-# NB: because of the current implementation, some operations (set a slice,
-# delete a slice, extend) are actually implemented using more atomic operations
-# (__setitem__, __delitem__, append) and will hence emit no event by themselves
-# but let the underlying operations send several "atomic" events.
-#
-# This signal also has a "pre-" form.
+    # Common signals
+    # ==============
+    #
+    # NB: all signals involving a change have a "pre-" form, which is emitted
+    # *before* the actual change takes place. This can be useful for handlers
+    # requiring the state preceding the change (like EDL).
+    #
+    # signal:`modified`
+    # ----------------
+    #
+    # Emitted everytime an attribute is modified in the object
+    #
+    # detail:: (depending on the object type) uri, url, frame_of_reference, media,
+    #          begin, end
+    # params::
+    #     * the attribute name
+    #     * the new value of the modified attribute
+    #
+    # This signal also has a "pre-" form.
 
-gobject.signal_new("pre-modified-items", ElementEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST,
-                   gobject.TYPE_NONE, (object, object,))
+    gobject.signal_new("pre-modified", EventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,object,))
 
-gobject.signal_new("modified-items", ElementEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST,
-                   gobject.TYPE_NONE, (object, object,))
+    gobject.signal_new("modified", EventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,object,))
 
-# signal:`modified-content-data`
-# -----------------------------
-#
-# Emitted for elements with content when their content data is modified.
-#
-# params::
-#     * TODO: find a way to represent a versatile (i.e. text or binary) diff.
-#       Can be None if such a diff mechanism is not implemented.
+    # signal:`modified-meta`
+    # -------------------
+    #
+    # Emitted everytime a meta-data is created/modified in the object
+    #
+    # detail:: the URL key of the created/modified metadata
+    # params::
+    #     * the URL key of the metadata
+    #     * the new value of the modified meta-data (None if deleted)
+    #
+    # This signal also has a "pre-" form.
 
-gobject.signal_new("modified-content-data", ElementEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST,
-                   gobject.TYPE_NONE, (object,))
+    gobject.signal_new("pre-modified-meta", EventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,object,))
 
-# signal:`renamed`
-# ----------------
-#
-# Emitted when the ID of this element changes.
-#
-# This signal also has a "pre-" form.
+    gobject.signal_new("modified-meta", EventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,object,))
 
-gobject.signal_new("pre-renamed", ElementEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST,
-                   gobject.TYPE_NONE, ())
+    # Package signals
+    # ===============
+    #
+    # signal:`created`
+    # ----------------
+    #
+    # Emitted everytime an element is created in the package
+    #
+    # detail:: media, annotation, relation, tag, list, query, view, resource,
+    #          import, content_url, content_mimetype, content_schema
+    # params::
+    #     * the object just created
+    #
 
-gobject.signal_new("renamed", ElementEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST,
-                   gobject.TYPE_NONE, ())
+    gobject.signal_new("created", PackageEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,))
 
-# signal:`deleted`
-# ----------------
-#
-# Emitted when the ID of this element is deleted.
-#
-# This signal also has a "pre-" form.
+    # signal:`package-closed`
+    # ----------------
+    #
+    # Emitted when the package is closed.
+    # NB: the package is already closed, so it is an error to use it when receiving
+    # this signal. However, the URL and URI of the package are given as parameters.
+    #
+    # params::
+    #     * the package URL
+    #     * the package URI
+    #
 
-gobject.signal_new("pre-deleted", ElementEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST,
-                   gobject.TYPE_NONE, ())
+    gobject.signal_new("package-closed", PackageEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST,
+                       gobject.TYPE_NONE, (object, object,))
 
-gobject.signal_new("deleted", ElementEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST,
-                   gobject.TYPE_NONE, ())
+    # signals:<element_type>
+    # ----------------------
+    #
+    # Instead of subscribint to each individual element, one can choose to
+    # subscribe globally to all elements of a given type in a package, using
+    # the signal named after that element type.
+    #
+    # The detail for this signal is the name of the corresponding element signal,
+    # without its detail. E.g. media::modified, list::pre-modified-items...
+    #
+    # signal:: media, annotation, relation, tag, list, query, view, resource,
+    #          import
+    #
+    # detail:: any element related signal
+    #
+    # params::
+    #     * the element to which the event is related
+    #     * a list of ojects corresponding to the parameters of the element
+    #       signal
 
-# signal:`added-tag`
-# ------------------
-#
-# Emitted when the element has a tag added to it.
-#
-# params::
-#     * the tag that has been added
+    gobject.signal_new("media", PackageEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,str,object,))
 
-gobject.signal_new("added-tag", ElementEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST,
-                   gobject.TYPE_NONE, (object,)) 
+    gobject.signal_new("annotation", PackageEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,str,object,))
 
-# signal:`removed-tag`
-# --------------------
-#
-# Emitted when the element has a tag removed from it.
-#
-# params::
-#     * the tag that has been removed
+    gobject.signal_new("relation", PackageEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,str,object,))
 
-gobject.signal_new("removed-tag", ElementEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST,
-                   gobject.TYPE_NONE, (object,))
+    gobject.signal_new("tag", PackageEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,str,object,))
 
-# signal:`added`
-# --------------
-#
-# Emitted by tags when added to an element.
-#
-# params::
-#     * the element this tag has been added to.
+    gobject.signal_new("list", PackageEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,str,object,))
 
-gobject.signal_new("added", ElementEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST,
-                   gobject.TYPE_NONE, (object,)) 
+    gobject.signal_new("query", PackageEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,str,object,))
 
-# signal:`removed`
-# ----------------
-#
-# Emitted by tags when removed from an element.
-#
-# params::
-#     * the element this tag has been removed from.
+    gobject.signal_new("view", PackageEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,str,object,))
 
-gobject.signal_new("removed", ElementEventDelegate,
-                   gobject.SIGNAL_RUN_FIRST,
-                   gobject.TYPE_NONE, (object,)) 
+    gobject.signal_new("resource", PackageEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,str,object,))
 
-# TODO :
-# * signal de suppression pour les elements
+    gobject.signal_new("import", PackageEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST|gobject.SIGNAL_DETAILED,
+                       gobject.TYPE_NONE, (object,str,object,))
+
+
+    # Element signals
+    # ===============
+    #
+    # signal:`modified-items`
+    # ----------------------
+    #
+    # Emitted for lists and relations when the structure of their items changes.
+    #
+    # params::
+    #     * a slice with only positive indices, relative to the old structure,
+    #       embeding all the modified indices
+    #     * a python list representing the new structure of the slice
+    #
+    # NB: because of the current implementation, some operations (set a slice,
+    # delete a slice, extend) are actually implemented using more atomic operations
+    # (__setitem__, __delitem__, append) and will hence emit no event by themselves
+    # but let the underlying operations send several "atomic" events.
+    #
+    # This signal also has a "pre-" form.
+
+    gobject.signal_new("pre-modified-items", ElementEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST,
+                       gobject.TYPE_NONE, (object, object,))
+
+    gobject.signal_new("modified-items", ElementEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST,
+                       gobject.TYPE_NONE, (object, object,))
+
+    # signal:`modified-content-data`
+    # -----------------------------
+    #
+    # Emitted for elements with content when their content data is modified.
+    #
+    # params::
+    #     * TODO: find a way to represent a versatile (i.e. text or binary) diff.
+    #       Can be None if such a diff mechanism is not implemented.
+
+    gobject.signal_new("modified-content-data", ElementEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST,
+                       gobject.TYPE_NONE, (object,))
+
+    # signal:`renamed`
+    # ----------------
+    #
+    # Emitted when the ID of this element changes.
+    #
+    # This signal also has a "pre-" form.
+
+    gobject.signal_new("pre-renamed", ElementEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST,
+                       gobject.TYPE_NONE, ())
+
+    gobject.signal_new("renamed", ElementEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST,
+                       gobject.TYPE_NONE, ())
+
+    # signal:`deleted`
+    # ----------------
+    #
+    # Emitted when the ID of this element is deleted.
+    #
+    # This signal also has a "pre-" form.
+
+    gobject.signal_new("pre-deleted", ElementEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST,
+                       gobject.TYPE_NONE, ())
+
+    gobject.signal_new("deleted", ElementEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST,
+                       gobject.TYPE_NONE, ())
+
+    # signal:`added-tag`
+    # ------------------
+    #
+    # Emitted when the element has a tag added to it.
+    #
+    # params::
+    #     * the tag that has been added
+
+    gobject.signal_new("added-tag", ElementEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST,
+                       gobject.TYPE_NONE, (object,))
+
+    # signal:`removed-tag`
+    # --------------------
+    #
+    # Emitted when the element has a tag removed from it.
+    #
+    # params::
+    #     * the tag that has been removed
+
+    gobject.signal_new("removed-tag", ElementEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST,
+                       gobject.TYPE_NONE, (object,))
+
+    # signal:`added`
+    # --------------
+    #
+    # Emitted by tags when added to an element.
+    #
+    # params::
+    #     * the element this tag has been added to.
+
+    gobject.signal_new("added", ElementEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST,
+                       gobject.TYPE_NONE, (object,))
+
+    # signal:`removed`
+    # ----------------
+    #
+    # Emitted by tags when removed from an element.
+    #
+    # params::
+    #     * the element this tag has been removed from.
+
+    gobject.signal_new("removed", ElementEventDelegate,
+                       gobject.SIGNAL_RUN_FIRST,
+                       gobject.TYPE_NONE, (object,))
+
+    # TODO :
+    # * signal de suppression pour les elements
