@@ -1,5 +1,5 @@
 import libadvene.model.content.avpairs as avpairs
-import libadvene.model.content.json as json
+import libadvene.model.content.json_content as json
 import libadvene.model.content.values as values
 
 # content_handler register functions
