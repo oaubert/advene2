@@ -85,7 +85,7 @@ class _Serializer(object):
 
         add((self.package_uri, RDF.type, CLD.Package))
         if package.uri and package.uri != package.url:
-            add((self.package_uri, CLD.url, Literal(package.uri, datatype=XSD.anyURI)))
+            add((self.package_uri, CLD.url, Literal(package.url, datatype=XSD.anyURI)))
 
         for i in package.own.imports:
             for triple in self._serialize_import(i):
