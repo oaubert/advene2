@@ -257,6 +257,11 @@ class TestCinelabJson(TestCinelabXml):
 
         yield "done"
 
+    def test_parse_json_directly(self):
+        from libadvene.model.parsers.cinelab_json import Parser as JsonParser
+        p = CamPackage("http://localhost:1234/test.json", create=True)
+        JsonParser.parse_into({}, p)
+
 class TestUnorderedCinelabXml(TestCase):
     """
     I check that cinelab XML files can have the subelements of <package> in

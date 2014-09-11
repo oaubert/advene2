@@ -56,29 +56,35 @@ class Parser(object):
         return r
 
     @classmethod
-    def make_parser(cls, file_, package):
+    def make_parser(cls, file_or_json, package):
         """Return a parser that will parse `file_` into `package`.
 
-        `file_` is a writable file-like object. It is the responsability of the
-        caller to close it.
+        `file_or_json` is either
+        - a writable file-like object
+          (it is then the responsability of the caller to close it), or
+        - a JSON object
 
         The returned object must implement the interface for which
         :class:`_Parser` is the reference implementation.
         """
-        return cls(file_, package)
+        return cls(file_or_json, package)
 
     @classmethod
-    def parse_into(cls, file_, package):
-        """A shortcut for ``make_parser(file_, package).parse()``.
+    def parse_into(cls, file_or_json, package):
+        """A shortcut for ``make_parser(file_or_json, package).parse()``.
 
         See also `make_parser`.
         """
-        cls(file_, package).parse()
+        cls(file_or_json, package).parse()
 
     def parse(self):
         "Do the actual parsing."
         package = self.package
-        json = load(self.file)
+        file_or_json = self.file_or_json
+        if hasattr(file_or_json, "read"):
+            json = load(file_or_json)
+        else:
+            json = file_or_json
         package.enter_no_event_section()
         context = json.get("@context")
         if context:
@@ -124,8 +130,8 @@ class Parser(object):
 
     # end of public interface
 
-    def __init__(self, file_, package):
-        self.file = file_
+    def __init__(self, file_or_json, package):
+        self.file_or_json = file_or_json
         self.package = package
         self.namespaces = {}
 
