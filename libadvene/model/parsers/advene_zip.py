@@ -3,9 +3,10 @@ Unstable and experimental parser implementation.
 
 See `libadvene.model.parsers.advene_xml` for the reference implementation.
 """
-
+import atexit
 from tempfile import mkdtemp
 from os import path, tmpfile
+from shutil import rmtree
 from zipfile import BadZipfile, ZipFile
 
 from libadvene.model.consts import PACKAGED_ROOT
@@ -105,6 +106,7 @@ class Parser(object):
 
     def __init__(self, file_, package):
         self.dir = d = mkdtemp(prefix="advene2_zip_")
+        atexit.register(rmtree, d, True)
 
         if hasattr(file_, "seek"):
             g = None

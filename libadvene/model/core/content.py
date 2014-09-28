@@ -12,9 +12,11 @@ efficient (less lookup). Maybe the former should be eventually
 deprecated...
 """
 
+import atexit
 from cStringIO import StringIO
 from os import path, tmpfile, unlink
 from os.path import dirname, exists, join, sep
+from shutil import rmtree
 from tempfile import mkdtemp
 from urllib2 import urlopen, url2pathname
 from urlparse import urljoin, urlparse
@@ -796,6 +798,7 @@ class ContentDataFile(object):
 def create_temporary_packaged_root(package):
     d = mkdtemp(prefix="advene2_pkg_")
     package.set_meta(PACKAGED_ROOT, d)
+    atexit.register(rmtree, d, True)
     return d
 
 def safe_encode(data):
