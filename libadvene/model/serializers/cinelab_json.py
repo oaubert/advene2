@@ -131,6 +131,9 @@ class _Serializer(object):
         ret["content"] = self._serialize_content(a)
         ret["tags"] = self._serialize_element_tags(a)
         ret["meta"] = self._serialize_meta(a)
+        # IRI Misinterpretation
+        if a.content_mimetype == "application/x-ldt-structured":
+            ret["meta"]["id-ref"] = tid
         _clean_json(ret)
         return ret
 
@@ -183,6 +186,11 @@ class _Serializer(object):
         mimetype = elt.content_mimetype
         if mimetype == "x-advene/none":
             return None
+        if mimetype == "application/x-ldt-structured":
+            # IRI Misinterpretation
+            ret = elt.content_parsed
+            ret["mimetype"] = mimetype
+            return ret
 
         ret = {}
         if mimetype != DEFAULTS["content@mimetype"]:

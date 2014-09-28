@@ -262,6 +262,60 @@ class TestCinelabJson(TestCinelabXml):
         p = CamPackage("http://localhost:1234/test.json", create=True)
         JsonParser.parse_into({}, p)
 
+    def test_parse_iri_misinterpretation(self):
+        from libadvene.model.parsers.cinelab_json import Parser as JsonParser
+        json= {
+            "format": "http://advene.org/ns/cinelab/", 
+            "@context": {
+                "dc": "http://purl.org/dc/elements/1.1/"
+            }, 
+            "meta": {
+                "creator": "pa", 
+                "created": "2014-09-28T21:03:02.795939"
+            }, 
+            "annotation_types": [
+                { "id": "at", },
+            ], 
+            "medias": [
+                { "id": "m", "url": "foo.mp4", },
+            ], 
+            "annotations": [
+                {
+                    "id": "a1",
+                    "begin": 12, 
+                    "end": 34, 
+                    "media": "m", 
+                    "content": {
+                        "mimetype": "application/x-ldt-structured", 
+                        "foo": "bar", 
+                        "toto": "tata"
+                    },
+                    "meta": {
+                        "id-ref": "at",
+                    },
+                }
+            ]
+        }
+        p = CamPackage("http://localhost:1234/test.json", create=True)
+        JsonParser.parse_into(json, p)
+        assert p["a1"].type == p["at"]
+        assert "foo" in p["a1"].content_parsed
+
+    def test_serialize_iri_misinterpretation(self):
+        from json import load
+        p = self.p1
+        at = p.create_annotation_type("at")
+        m = p.create_media("m", "foo.mp4")
+        a = p.create_annotation("a1", m, 12, 34, "application/x-ldt-structured", type=at)
+        a.content.data = '{"foo": "bar", "toto": "tata"}'
+        p.save()
+        with open(self.filename1) as f:
+            json = load(f)
+        assert json["annotations"][0]["meta"].get("id-ref") == "at"
+        assert json["annotations"][0]["content"].get("foo") == "bar"
+        assert json["annotations"][0]["content"].get("mimetype") == "application/x-ldt-structured"
+        assert json["annotations"][0]["content"].get("toto") == "tata"
+
 class TestUnorderedCinelabXml(TestCase):
     """
     I check that cinelab XML files can have the subelements of <package> in
