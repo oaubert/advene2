@@ -53,6 +53,7 @@ _textual_mimetypes = []
 register_textual_mimetype("application/json")
 register_textual_mimetype("application/schema+json")
 register_textual_mimetype("application/xml")
+register_textual_mimetype("application/x-ldt-structured")
 register_textual_mimetype("image/svg")
 for mimetype in avpairs.MIMETYPES:
     register_textual_mimetype(mimetype)

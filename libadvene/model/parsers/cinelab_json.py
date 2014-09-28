@@ -290,6 +290,10 @@ class Parser(object):
         mimetype = content.get("mimetype")
         if mimetype:
             elt.content_mimetype = mimetype
+        if mimetype == "application/x-ldt-structured":
+            # IRI misinterpretation
+            del content["mimetype"]
+            content = {"data": content}
         model = content.get("model")
         if model and model.find(":") <= 0: # same package
             model = pkg[model]
